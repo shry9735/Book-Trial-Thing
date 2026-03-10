@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spark's Big Prototype Problem — Opening Scene</title>
+  <style>
+    /*
+    ============================================================
+    FONT STACK
+    Web-safe only — no CDN. Falls back gracefully in EPUB readers
+    and print pipelines. For final production, replace these
+    stacks with @font-face declarations pointing to local files.
+    ============================================================
+    */
+    :root {
+      --font-body:    Georgia, "Times New Roman", serif;
+      --font-display: "Trebuchet MS", "Arial Rounded MT Bold", Verdana, sans-serif;
+      --font-hand:    "Comic Sans MS", "Chalkboard SE", cursive;
+
+      --ink:          #1a1a2e;
+      --paper:        #fdf6e3;
+      --paper-mid:    #f2e8cc;
+      --orange:       #d4521a;
+      --teal:         #1a8a82;
+      --purple:       #5c3d8f;
+      --rule:         #d4c5a0;
+      --rule-light:   #ebe0c8;
+
+      --page-width:   34em;
+    }
+
+    /* ============================================================
+       RESET & BASE
+    ============================================================ */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 18px; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ============================================================
+       PAGE CONTAINER
+    ============================================================ */
+    .page {
+      max-width: var(--page-width);
+      margin: 0 auto;
+      padding: 3em 2.5em 4em;
+    }
+
+    /* ============================================================
+       PRINT / PAGED MEDIA
+    ============================================================ */
+    @media print {
+      html { font-size: 11pt; }
+      body { background: white; color: black; }
+      .page { max-width: 100%; padding: 0; margin: 0; }
+      figure, blockquote, aside, .choice-list { page-break-inside: avoid; }
+      .choice-section { page-break-before: always; }
+    }
+
+    @page {
+      size: 8in 10in;
+      margin: 1in 1.1in 1.2in;
+      @bottom-center {
+        content: counter(page);
+        font-family: var(--font-display);
+        font-size: 9pt;
+        color: #888;
+      }
+    }
+
+    /* ============================================================
+       NOTEBOOK RULE LINES — screen only
+    ============================================================ */
+    @media screen {
+      body {
+        background-image: repeating-linear-gradient(
+          transparent,
+          transparent 30px,
+          var(--rule-light) 30px,
+          var(--rule-light) 31px
+        );
+      }
+      .page::before {
+        content: '';
+        position: fixed;
+        top: 0; bottom: 0;
+        left: calc(50% - (var(--page-width) / 2) + 2em);
+        width: 1.5px;
+        background: rgba(212, 82, 26, 0.18);
+        pointer-events: none;
+      }
+    }
+
+    /* ============================================================
+       TYPOGRAPHY
+    ============================================================ */
+    h1 {
+      font-family: var(--font-display);
+      font-size: 2.2em;
+      font-weight: 900;
+      line-height: 1.15;
+      color: var(--ink);
+      margin-bottom: 0.15em;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--orange);
+    }
+
+    .chapter-label {
+      font-family: var(--font-display);
+      font-size: 0.65em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--orange);
+      margin-bottom: 0.5em;
+    }
+
+    .subtitle {
+      font-family: var(--font-hand);
+      font-size: 0.85em;
+      color: var(--purple);
+      margin-bottom: 2.5em;
+    }
+
+    p {
+      margin-bottom: 1.5em;
+      text-indent: 1.4em;
+    }
+
+    /* No indent after structural elements */
+    h1 + p, .subtitle + p, hr + p,
+    figure + p, blockquote + p, aside + p {
+      text-indent: 0;
+    }
+
+    em { font-style: italic; }
+
+    /* ============================================================
+       SCENE BREAK
+    ============================================================ */
+    hr {
+      border: none;
+      text-align: center;
+      margin: 1.8em 0;
+      color: var(--rule);
+      font-size: 1.1em;
+      letter-spacing: 0.5em;
+    }
+    hr::before { content: '· · ·'; }
+
+    /* ============================================================
+       DIALOGUE — semantic blockquote + cite
+    ============================================================ */
+    blockquote {
+      margin: 0.2em 0 1.5em;
+      padding: 0.75em 1em 0.75em 1.1em;
+      border-left: 4px solid var(--rule);
+      background: white;
+      border-radius: 0 6px 6px 0;
+      font-family: var(--font-hand);
+      font-size: 0.9em;
+      line-height: 1.65;
+    }
+
+    blockquote.spark { border-left-color: var(--orange); }
+    blockquote.bitsy { border-left-color: var(--teal); }
+    blockquote.dude  { border-left-color: var(--purple); }
+
+    blockquote cite {
+      display: block;
+      font-style: normal;
+      font-family: var(--font-display);
+      font-size: 0.68em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.4em;
+    }
+
+    blockquote.spark cite { color: var(--orange); }
+    blockquote.bitsy cite { color: var(--teal); }
+    blockquote.dude  cite { color: var(--purple); }
+
+    /* ============================================================
+       DUDE-AD ACTION CARDS — semantic aside
+    ============================================================ */
+    aside.dude-ad-action {
+      display: flex;
+      gap: 0.75em;
+      align-items: flex-start;
+      background: #f0ebfa;
+      border: 1.5px solid var(--purple);
+      border-radius: 8px;
+      padding: 0.85em 1em;
+      margin: 0.2em 0 1.5em;
+      page-break-inside: avoid;
+    }
+
+    aside.dude-ad-action .icon {
+      font-size: 1.3em;
+      flex-shrink: 0;
+      line-height: 1.4;
+    }
+
+    aside.dude-ad-action .body {
+      font-size: 0.85em;
+      line-height: 1.55;
+      color: #3d2e5c;
+    }
+
+    aside.dude-ad-action .body strong {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 0.72em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--purple);
+      margin-bottom: 0.25em;
+    }
+
+    /* ============================================================
+       FIGURES — semantic figure + figcaption
+       Placeholder box on screen; art brief on print.
+    ============================================================ */
+    figure {
+      margin: 0.5em 0 2em;
+      page-break-inside: avoid;
+    }
+
+    figure .image-placeholder {
+      background: var(--paper-mid);
+      border: 1.5px dashed var(--rule);
+      border-radius: 8px;
+      padding: 1.2em 1.4em;
+      display: flex;
+      gap: 0.75em;
+      align-items: flex-start;
+      min-height: 6em;
+    }
+
+    figure .image-placeholder .ph-icon {
+      font-size: 1.4em;
+      flex-shrink: 0;
+      opacity: 0.5;
+    }
+
+    figcaption {
+      font-family: var(--font-display);
+      font-size: 0.72em;
+      color: #7a6a4a;
+      line-height: 1.5;
+      padding: 0.5em 0.4em 0;
+    }
+
+    figcaption strong {
+      display: block;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--orange);
+      font-size: 0.85em;
+      margin-bottom: 0.2em;
+    }
+
+    @media print {
+      figure .image-placeholder {
+        min-height: 160pt;
+        background: #f5f5f5;
+        border: 1pt dashed #bbb;
+      }
+      figure .image-placeholder .ph-icon { display: none; }
+    }
+
+    /* ============================================================
+       CHOICE SECTION
+    ============================================================ */
+    .choice-section { margin-top: 2.5em; }
+
+    .choice-intro {
+      font-family: var(--font-hand);
+      font-size: 1em;
+      text-align: center;
+      margin-bottom: 1.4em;
+      color: var(--ink);
+      text-indent: 0;
+    }
+
+    ol.choice-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85em;
+    }
+
+    ol.choice-list li a {
+      display: flex;
+      align-items: center;
+      gap: 0.9em;
+      text-decoration: none;
+      color: var(--ink);
+      background: white;
+      border: 2px solid var(--ink);
+      border-radius: 10px;
+      padding: 0.85em 1em;
+      font-family: var(--font-body);
+      font-size: 0.95em;
+      line-height: 1.4;
+    }
+
+    ol.choice-list li a .badge {
+      width: 2.2em;
+      height: 2.2em;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1em;
+      flex-shrink: 0;
+    }
+
+    ol.choice-list li:nth-child(1) a .badge { background: #fdeee5; }
+    ol.choice-list li:nth-child(2) a .badge { background: #e5f5f4; }
+    ol.choice-list li:nth-child(3) a .badge { background: #ede8f7; }
+
+    ol.choice-list li a .label { flex: 1; }
+
+    ol.choice-list li a .path-tag {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 0.65em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.15em;
+    }
+
+    ol.choice-list li:nth-child(1) a .path-tag { color: var(--orange); }
+    ol.choice-list li:nth-child(2) a .path-tag { color: var(--teal); }
+    ol.choice-list li:nth-child(3) a .path-tag { color: var(--purple); }
+
+    ol.choice-list li a .arrow {
+      font-size: 1.1em;
+      opacity: 0.3;
+    }
+
+    @media screen {
+      ol.choice-list li a {
+        box-shadow: 3px 3px 0 var(--ink);
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+      }
+      ol.choice-list li a:hover {
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 var(--ink);
+      }
+      ol.choice-list li a:hover .arrow { opacity: 1; }
+    }
+
+    @media print {
+      ol.choice-list li a {
+        border: 1pt solid #999;
+        border-radius: 4pt;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <p class="chapter-label">Chapter 1 · Opening Scene</p>
+    <h1>Spark's Big<br/><em>Prototype Problem</em></h1>
+    <p class="subtitle">A choose-your-own-adventure about electronics</p>
+
+    <!-- ILLUSTRATION 1 -->
+    <figure>
+      <div class="image-placeholder">
+        <span class="ph-icon">🎨</span>
+      </div>
+      <figcaption>
+        <strong>Illustration 1 — The Workshop</strong>
+        Spark at his workbench, surrounded by tools, wires, and half-built gadgets. Morning light through a window. Dude-ad sits powered-down on a shelf nearby. A small delivery drone is visible through the window, carrying a brown package. Warm and cluttered — a place where things get made and broken and fixed again.
+      </figcaption>
+    </figure>
+
+    <p>A drone dropped a package on Spark's doorstep at 7:43 in the morning.</p>
+
+    <p>It was small. Brown. Covered in stamps. And in the corner, in messy handwriting: <em>From Professor Ohm. Handle with care. Seriously.</em></p>
+
+    <p>Spark grabbed his wire cutters and got to work on the twine.</p>
+
+    <!-- ILLUSTRATION 2 -->
+    <figure>
+      <div class="image-placeholder">
+        <span class="ph-icon">🎨</span>
+      </div>
+      <figcaption>
+        <strong>Illustration 2 — The Prototype</strong>
+        Spark lifting the prototype out of foam packaging with wide eyes. The device is compact and strange-looking — small screen, coloured wires, a motor behind a clear panel, and a single big button on the side. A crumpled note sits in the box beside it.
+      </figcaption>
+    </figure>
+
+    <p>Inside, packed in foam, was a gadget. It had a small screen, a motor behind a clear plastic window, a tangle of coloured wires, and one big button on the side. There was also a note, crumpled like it had been written in a hurry.</p>
+
+    <blockquote class="spark">
+      <cite>Spark reads aloud</cite>
+      "Spark — I need your help. This is my newest prototype. Something's wrong with it and I can't figure out what. The Maker Faire is in THREE DAYS. Please fix it. I believe in you. — Prof. Ohm. P.S. Don't drop it."
+    </blockquote>
+
+    <p>Spark stared at the device for exactly two seconds. Then he pressed the button.</p>
+
+    <p>The screen flickered on. A loading bar crawled across it. There was a hopeful little <em>ding —</em></p>
+
+    <p>And then everything went wrong at once. The motor stuttered and stopped. A light blinked three times. The screen went blank — and then showed one thing:</p>
+
+    <p><strong>?</strong></p>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "Okay. So it's broken. Cool. Cool cool cool."
+    </blockquote>
+
+    <!-- ILLUSTRATION 3 -->
+    <figure>
+      <div class="image-placeholder">
+        <span class="ph-icon">🎨</span>
+      </div>
+      <figcaption>
+        <strong>Illustration 3 — Dude-ad Powers On</strong>
+        Dude-ad booting up on the workbench shelf — eyes flickering on like LEDs, antenna popping up with a snap. His chest screen shows a loading bar. Spark is watching him, grinning. The prototype sits on the bench below.
+      </figcaption>
+    </figure>
+
+    <p>A whirring sound came from the shelf. Dude-ad — Spark's robot — was waking up. His eyes lit up. His antenna snapped out. His chest screen flashed: <em>READY.</em></p>
+
+    <blockquote class="dude">
+      <cite>Dude-ad</cite>
+      "Morning. Ooh — new hardware. Want me to scan it?"
+    </blockquote>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "Yes. And pull up anything you have on Professor Ohm's builds. Specs, diagrams, whatever you've got."
+    </blockquote>
+
+    <aside class="dude-ad-action">
+      <span class="icon">📋</span>
+      <div class="body">
+        <strong>Dude-ad pulls up a reference</strong>
+        Dude-ad projects Professor Ohm's project files — schematics, component lists, power specs. One note near the bottom is highlighted in red: <em>"WARNING: Do not expose to humidity."</em> Nobody mentions this. Yet.
+      </div>
+    </aside>
+
+    <p>The workshop door banged open. Bitsy skidded in, backpack half-zipped, a piece of toast clamped in her teeth.</p>
+
+    <!-- ILLUSTRATION 4 -->
+    <figure>
+      <div class="image-placeholder">
+        <span class="ph-icon">🎨</span>
+      </div>
+      <figcaption>
+        <strong>Illustration 4 — Bitsy Arrives</strong>
+        Bitsy bursting through the door mid-skid, toast in mouth, pointing at the prototype with a huge grin. Spark and Dude-ad both staring at her. The workshop is messy and full of interesting junk in the background.
+      </figcaption>
+    </figure>
+
+    <blockquote class="bitsy">
+      <cite>Bitsy</cite>
+      "Is that an Ohm prototype?! I saw the drone from my window! Can I test it? My workshop has way more outlets than yours."
+    </blockquote>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "It's broken. Three days to fix it. We need to figure out what's wrong first."
+    </blockquote>
+
+    <p>All three of them leaned over the workbench. The question mark blinked on the little screen.</p>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "Okay. Let's think. When I pressed the button — what actually happened?"
+    </blockquote>
+
+    <blockquote class="bitsy">
+      <cite>Bitsy</cite>
+      "The screen came on. There was a loading bar."
+    </blockquote>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "Right. And then?"
+    </blockquote>
+
+    <blockquote class="bitsy">
+      <cite>Bitsy</cite>
+      "The motor made that stuttery noise. And the light blinked — three times, I counted."
+    </blockquote>
+
+    <blockquote class="spark">
+      <cite>Spark</cite>
+      "And then the screen crashed and showed the question mark. So that's three things. Three separate things."
+    </blockquote>
+
+    <p>Spark grabbed a marker and wrote on the whiteboard behind the bench:</p>
+
+    <blockquote class="spark">
+      <cite>Spark — whiteboard</cite>
+      1. Motor stuttered.<br/>
+      2. Light blinked 3×.<br/>
+      3. Screen → ?
+    </blockquote>
+
+    <p>He stared at the list. Bitsy stared at the list. Dude-ad's antenna tilted to one side — his thinking pose. Then his chest screen lit up.</p>
+
+    <aside class="dude-ad-action">
+      <span class="icon">💬</span>
+      <div class="body">
+        <strong>Dude-ad responds</strong>
+        "Good. Three symptoms. They might all be connected — or they might not be. So: where do you want to start?"
+      </div>
+    </aside>
+
+    <p>Three problems. Three days. One choice.</p>
+
+    <hr />
+
+    <!-- PATH CHOICE -->
+    <section class="choice-section">
+      <p class="choice-intro">This is where <em>you</em> decide.<br/>What do you investigate first?</p>
+
+      <ol class="choice-list">
+        <li>
+          <a href="path-1-conductors.html">
+            <span class="badge">⚡</span>
+            <span class="label">
+              <span class="path-tag">Path 1 · Conductors &amp; Circuits</span>
+              "Let's figure out what this thing is even made of."
+            </span>
+            <span class="arrow">→</span>
+          </a>
+        </li>
+        <li>
+          <a href="path-2-wattage.html">
+            <span class="badge">🔌</span>
+            <span class="label">
+              <span class="path-tag">Path 2 · The Wattage Mystery</span>
+              "Let's plug it in at Bitsy's place and see what happens."
+            </span>
+            <span class="arrow">→</span>
+          </a>
+        </li>
+        <li>
+          <a href="path-3-batteries.html">
+            <span class="badge">🔋</span>
+            <span class="label">
+              <span class="path-tag">Path 3 · Battery Basics</span>
+              "What if the batteries die during the demo?!"
+            </span>
+            <span class="arrow">→</span>
+          </a>
+        </li>
+      </ol>
+    </section>
+
+  </div>
+</body>
+</html>
