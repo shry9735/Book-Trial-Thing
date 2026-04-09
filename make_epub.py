@@ -10,6 +10,7 @@ Examples:
     python make_epub.py ./my-book/ -o my_book.epub -t "My Book" -a "Jane Doe"
     python make_epub.py chapter1.md chapter2.md chapter3.html -o novel.epub
     python make_epub.py ./docs/ --cover cover.jpg
+    python make_epub.py Book2/story.md -t "SPARK!" --art-dir Book2/art/
 
 Supported input formats:
     .md / .markdown   → Markdown (converted to HTML)
@@ -41,6 +42,53 @@ except ImportError:
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+def load_art_map(art_dir: Path | None) -> dict[str, Path]:
+    """
+    Scan art_dir for generated images and return {stem: Path}.
+    Recognises page_001.png, page_1.png, front.png, etc.
+    """
+    if not art_dir or not art_dir.is_dir():
+        return {}
+    return {
+        img.stem: img
+        for img in sorted(art_dir.iterdir())
+        if img.is_file() and img.suffix.lower() in (".png", ".jpg", ".jpeg")
+    }
+
+
+def inject_page_images(html_body: str, art_map: dict[str, Path]) -> tuple[str, list[Path]]:
+    """
+    Insert an <img> tag immediately after each <h2>Page N</h2> heading
+    that has a matching image in art_map.
+    Returns (modified_html, list_of_image_paths_used).
+    """
+    if not art_map:
+        return html_body, []
+
+    used: list[Path] = []
+
+    def replace_h2(m: re.Match) -> str:
+        heading_text = re.sub(r"<[^>]+>", "", m.group(0))
+        num_m = re.search(r"\bPage\s+(\d+)\b", heading_text, re.IGNORECASE)
+        if not num_m:
+            return m.group(0)
+        num = int(num_m.group(1))
+        # Accept zero-padded (page_001) or plain (page_1)
+        label = f"page_{num:03d}" if f"page_{num:03d}" in art_map else f"page_{num}"
+        if label not in art_map:
+            return m.group(0)
+        img_path = art_map[label]
+        used.append(img_path)
+        tag = (
+            f'<img src="images/{img_path.name}" alt="Illustration for Page {num}" '
+            f'style="width:100%;max-width:600px;display:block;margin:0.5em auto 1.5em;" />'
+        )
+        return m.group(0) + tag
+
+    modified = re.sub(r"<h2[^>]*>.*?</h2>", replace_h2, html_body, flags=re.IGNORECASE | re.DOTALL)
+    return modified, used
+
 
 def slugify(text: str) -> str:
     """Turn arbitrary text into a safe identifier."""
@@ -117,6 +165,7 @@ def build_epub(
     author: str,
     language: str,
     cover: str | None,
+    art_dir: str | None = None,
 ) -> None:
     files = collect_files(input_paths)
     if not files:
@@ -125,6 +174,10 @@ def build_epub(
     print(f"Found {len(files)} file(s):")
     for f in files:
         print(f"  {f}")
+
+    art_map = load_art_map(Path(art_dir) if art_dir else None)
+    if art_map:
+        print(f"Art directory: {art_dir}  ({len(art_map)} image(s) found)")
 
     book = epub.EpubBook()
     book.set_identifier(f"id-{slugify(title)}")
@@ -143,9 +196,15 @@ def build_epub(
             print(f"Warning: cover file not found: {cover}", file=sys.stderr)
 
     chapters: list[epub.EpubHtml] = []
+    all_used_images: list[Path] = []
 
     for i, fpath in enumerate(files, start=1):
         ch_title, body = file_to_html(fpath)
+
+        if art_map:
+            body, used = inject_page_images(body, art_map)
+            all_used_images.extend(used)
+
         uid = f"chap-{i:03d}-{slugify(fpath.stem)}"
 
         chapter = epub.EpubHtml(
@@ -160,7 +219,23 @@ def build_epub(
         ).encode("utf-8")
         book.add_item(chapter)
         chapters.append(chapter)
-        print(f"  [{i:>3}] {ch_title}  ← {fpath.name}")
+        img_note = f"  (+{len(used)} image(s))" if art_map else ""
+        print(f"  [{i:>3}] {ch_title}  ← {fpath.name}{img_note}")
+
+    # Embed collected images as EPUB items
+    seen_images: set[str] = set()
+    for img_path in all_used_images:
+        if img_path.name in seen_images:
+            continue
+        seen_images.add(img_path.name)
+        mime = "image/jpeg" if img_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+        img_item = epub.EpubImage(
+            uid=f"img-{slugify(img_path.stem)}",
+            file_name=f"images/{img_path.name}",
+            media_type=mime,
+            content=img_path.read_bytes(),
+        )
+        book.add_item(img_item)
 
     # Navigation
     book.toc = tuple(epub.Link(c.file_name, c.title, c.id) for c in chapters)
@@ -236,6 +311,11 @@ def main():
         "--cover", default=None,
         help="Path to a cover image (.jpg or .png)",
     )
+    parser.add_argument(
+        "--art-dir", default=None,
+        help="Directory of page images from generate_art.py (e.g. Book2/art/). "
+             "Images named page_001.png are injected after each '## Page N' heading.",
+    )
 
     args = parser.parse_args()
     build_epub(
@@ -245,6 +325,7 @@ def main():
         author=args.author,
         language=args.language,
         cover=args.cover,
+        art_dir=args.art_dir,
     )
 
 
