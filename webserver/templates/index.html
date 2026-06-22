@@ -3,49 +3,100 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ config.chat_title or "Viewer" }}</title>
+  <title>{{ config.chat_title or "Ignite Academy" }}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f0f13;
-      --surface:   #1a1a24;
-      --border:    #2e2e3e;
-      --accent:    #7c6af7;
-      --accent-dk: #5f50d4;
-      --text:      #e8e8f0;
-      --text-dim:  #8888a8;
-      --user-bg:   #7c6af7;
-      --bot-bg:    #252535;
-      --error-bg:  #3a1a1a;
-      --error:     #f77c7c;
-      --radius:    10px;
-      --header-h:  52px;
+      --orange:     #d4521a;
+      --orange-dk:  #b33d12;
+      --orange-lt:  #fdf0ea;
+      --teal:       #1a8a82;
+      --teal-lt:    #e8f5f4;
+      --ink:        #1a1a2e;
+      --ink-mid:    #4a4a5e;
+      --ink-dim:    #8888a0;
+      --bg:         #f8f5f0;
+      --surface:    #ffffff;
+      --border:     #e0d5c8;
+      --border-lt:  #ede8e0;
+      --radius:     10px;
+      --header-h:   56px;
     }
 
-    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Arial Rounded MT Bold", Verdana, sans-serif;
+    }
 
     /* ── Header ── */
     header {
       height: var(--header-h);
       background: var(--surface);
-      border-bottom: 1px solid var(--border);
+      border-bottom: 2px solid var(--orange);
       display: flex;
       align-items: center;
-      padding: 0 16px;
+      padding: 0 20px;
       gap: 12px;
       flex-shrink: 0;
     }
-    header h1 { font-size: 1rem; font-weight: 600; flex: 1; letter-spacing: 0.02em; }
-    header a.settings-link {
-      display: flex; align-items: center; gap: 6px;
-      color: var(--text-dim); text-decoration: none; font-size: 0.85rem;
-      padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
-      transition: color 0.15s, border-color 0.15s;
-    }
-    header a.settings-link:hover { color: var(--text); border-color: var(--accent); }
 
-    /* ── Main layout ── */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+      flex: 1;
+    }
+    .logo-flame {
+      width: 32px;
+      height: 32px;
+      background: var(--orange);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+    .logo-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+    .logo-text .top {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--orange);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .logo-text .sub {
+      font-size: 0.6rem;
+      color: var(--ink-dim);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    header a.settings-link {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ink-mid);
+      text-decoration: none;
+      font-size: 0.82rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      transition: color 0.15s, border-color 0.15s;
+      background: var(--bg);
+    }
+    header a.settings-link:hover { color: var(--orange); border-color: var(--orange); }
+
+    /* ── Layout ── */
     .layout {
       display: flex;
       height: calc(100vh - var(--header-h));
@@ -58,19 +109,26 @@
       background: #000;
       position: relative;
     }
-    .iframe-panel iframe {
-      width: 100%; height: 100%;
-      border: none; display: block;
-    }
+    .iframe-panel iframe { width: 100%; height: 100%; border: none; display: block; }
+
     .iframe-placeholder {
       position: absolute; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 12px; color: var(--text-dim);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: var(--bg);
     }
-    .iframe-placeholder svg { opacity: 0.3; }
-    .iframe-placeholder p { font-size: 0.9rem; }
-    .iframe-placeholder a { color: var(--accent); text-decoration: none; }
+    .iframe-placeholder .icon-wrap {
+      width: 60px; height: 60px;
+      background: var(--orange-lt);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+    }
+    .iframe-placeholder p { color: var(--ink-dim); font-size: 0.9rem; }
+    .iframe-placeholder a { color: var(--orange); text-decoration: none; font-weight: 600; }
     .iframe-placeholder a:hover { text-decoration: underline; }
 
     /* ── Resize handle ── */
@@ -83,7 +141,8 @@
       position: relative;
       z-index: 10;
     }
-    .resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+    .resize-handle:hover,
+    .resize-handle.dragging { background: var(--orange); }
 
     /* ── Chat panel ── */
     .chat-panel {
@@ -98,23 +157,26 @@
     }
 
     .chat-header {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border-lt);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
     .chat-header .dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: {% if config.webhook_url %}#4ade80{% else %}#888{% endif %};
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: {% if config.webhook_url %}var(--teal){% else %}var(--border){% endif %};
+    }
+    .chat-header .label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-mid);
     }
 
-    /* ── Message list ── */
+    /* ── Messages ── */
     .messages {
       flex: 1;
       overflow-y: auto;
@@ -123,30 +185,45 @@
       flex-direction: column;
       gap: 12px;
       scroll-behavior: smooth;
+      background: var(--bg);
     }
     .messages::-webkit-scrollbar { width: 4px; }
     .messages::-webkit-scrollbar-track { background: transparent; }
     .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
     .msg { display: flex; flex-direction: column; max-width: 85%; gap: 3px; }
-    .msg.user { align-self: flex-end; align-items: flex-end; }
-    .msg.bot  { align-self: flex-start; align-items: flex-start; }
+    .msg.user  { align-self: flex-end;   align-items: flex-end; }
+    .msg.bot   { align-self: flex-start; align-items: flex-start; }
+    .msg.error { align-self: flex-start; align-items: flex-start; }
 
-    .msg .bubble {
-      padding: 10px 13px;
+    .bubble {
+      padding: 10px 14px;
       border-radius: var(--radius);
-      font-size: 0.9rem;
-      line-height: 1.5;
+      font-size: 0.88rem;
+      line-height: 1.55;
       white-space: pre-wrap;
       word-break: break-word;
     }
-    .msg.user .bubble { background: var(--user-bg); color: #fff; border-bottom-right-radius: 3px; }
-    .msg.bot  .bubble { background: var(--bot-bg);  color: var(--text); border-bottom-left-radius: 3px; }
-    .msg.error .bubble { background: var(--error-bg); color: var(--error); }
+    .msg.user  .bubble {
+      background: var(--orange);
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+    .msg.bot   .bubble {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--border-lt);
+      border-bottom-left-radius: 3px;
+    }
+    .msg.error .bubble {
+      background: #fdf0ea;
+      color: var(--orange-dk);
+      border: 1px solid #f0c8b4;
+    }
 
-    .msg .ts {
-      font-size: 0.7rem;
-      color: var(--text-dim);
+    .ts {
+      font-size: 0.68rem;
+      color: var(--ink-dim);
       padding: 0 4px;
     }
 
@@ -155,7 +232,7 @@
       display: inline-block;
       width: 6px; height: 6px;
       border-radius: 50%;
-      background: var(--text-dim);
+      background: var(--ink-dim);
       margin: 0 2px;
       animation: bounce 1.2s infinite ease-in-out;
     }
@@ -163,7 +240,7 @@
     .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
     @keyframes bounce {
       0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-      40%            { transform: scale(1);   opacity: 1; }
+      40%            { transform: scale(1);   opacity: 1;   }
     }
 
     /* ── Input row ── */
@@ -171,7 +248,7 @@
       display: flex;
       gap: 8px;
       padding: 12px;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid var(--border-lt);
       background: var(--surface);
     }
     .chat-input-row textarea {
@@ -179,9 +256,9 @@
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
-      color: var(--text);
+      color: var(--ink);
       font-family: inherit;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       padding: 9px 12px;
       resize: none;
       min-height: 42px;
@@ -190,43 +267,53 @@
       transition: border-color 0.15s;
       overflow-y: auto;
     }
-    .chat-input-row textarea:focus { outline: none; border-color: var(--accent); }
-    .chat-input-row textarea::placeholder { color: var(--text-dim); }
+    .chat-input-row textarea:focus { outline: none; border-color: var(--orange); }
+    .chat-input-row textarea::placeholder { color: var(--ink-dim); }
+
     .chat-input-row button {
-      background: var(--accent);
+      background: var(--orange);
       color: #fff;
       border: none;
       border-radius: 8px;
-      padding: 0 16px;
-      font-size: 0.9rem;
-      font-weight: 600;
+      padding: 0 18px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
       cursor: pointer;
       transition: background 0.15s;
       align-self: flex-end;
       height: 42px;
       flex-shrink: 0;
+      letter-spacing: 0.02em;
     }
-    .chat-input-row button:hover:not(:disabled) { background: var(--accent-dk); }
-    .chat-input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .chat-input-row button:hover:not(:disabled) { background: var(--orange-dk); }
+    .chat-input-row button:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    /* No webhook notice */
+    /* No-webhook notice */
     .no-webhook-notice {
       margin: auto;
       text-align: center;
-      color: var(--text-dim);
-      font-size: 0.85rem;
-      padding: 24px;
+      color: var(--ink-dim);
+      font-size: 0.88rem;
+      padding: 32px 24px;
+      line-height: 1.6;
     }
-    .no-webhook-notice a { color: var(--accent); text-decoration: none; }
+    .no-webhook-notice a { color: var(--orange); text-decoration: none; font-weight: 600; }
     .no-webhook-notice a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>{{ config.chat_title or "Viewer" }}</h1>
+  <a class="logo" href="/">
+    <div class="logo-flame">🔥</div>
+    <div class="logo-text">
+      <span class="top">Ignite Academy</span>
+      <span class="sub">Inspire &amp; Grow New Innovation</span>
+    </div>
+  </a>
   <a class="settings-link" href="/settings">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     Settings
   </a>
 </header>
@@ -239,8 +326,8 @@
       <iframe src="{{ config.iframe_url }}" allowfullscreen></iframe>
     {% else %}
       <div class="iframe-placeholder">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-        <p>No URL set. <a href="/settings">Open settings</a> to configure the iframe.</p>
+        <div class="icon-wrap">🌐</div>
+        <p>No URL configured. <a href="/settings">Open settings</a> to add one.</p>
       </div>
     {% endif %}
   </div>
@@ -252,21 +339,19 @@
   <div class="chat-panel" id="chatPanel">
     <div class="chat-header">
       <span class="dot"></span>
-      {{ config.chat_title or "Chat" }}
+      <span class="label">{{ config.chat_title or "Chat" }}</span>
     </div>
 
     {% if config.webhook_url %}
-      <div class="messages" id="messages">
-        <!-- messages injected by JS -->
-      </div>
+      <div class="messages" id="messages"></div>
       <div class="chat-input-row">
-        <textarea id="chatInput" placeholder="Type a message… (Enter to send)" rows="1"></textarea>
+        <textarea id="chatInput" placeholder="Ask a question… (Enter to send)" rows="1"></textarea>
         <button id="sendBtn">Send</button>
       </div>
     {% else %}
       <div class="no-webhook-notice">
         <p>No webhook configured.</p>
-        <p style="margin-top:8px"><a href="/settings">Add your n8n webhook URL →</a></p>
+        <p style="margin-top:10px"><a href="/settings">Add your n8n webhook URL →</a></p>
       </div>
     {% endif %}
   </div>
@@ -274,24 +359,20 @@
 </div>
 
 <script>
-  // ── Resize handle ─────────────────────────────────────────────────────────
-  const handle     = document.getElementById('resizeHandle');
-  const chatPanel  = document.getElementById('chatPanel');
-  const iframePanel = document.getElementById('iframePanel');
+  // ── Resize ────────────────────────────────────────────────────────────────
+  const handle      = document.getElementById('resizeHandle');
+  const chatPanel   = document.getElementById('chatPanel');
   let dragging = false, startX = 0, startW = 0;
 
   handle.addEventListener('mousedown', e => {
-    dragging = true;
-    startX = e.clientX;
-    startW = chatPanel.offsetWidth;
+    dragging = true; startX = e.clientX; startW = chatPanel.offsetWidth;
     handle.classList.add('dragging');
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
   });
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
-    const delta = startX - e.clientX;
-    const newW = Math.max(260, Math.min(600, startW + delta));
+    const newW = Math.max(260, Math.min(600, startW + (startX - e.clientX)));
     chatPanel.style.width = newW + 'px';
   });
   document.addEventListener('mouseup', () => {
@@ -307,26 +388,20 @@
   const input      = document.getElementById('chatInput');
   const sendBtn    = document.getElementById('sendBtn');
 
-  if (!messagesEl) {
-    // Webhook not configured — nothing to wire up
-  } else {
-
+  if (messagesEl) {
     function timestamp() {
       return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
     function addMessage(role, text) {
-      const wrap = document.createElement('div');
+      const wrap   = document.createElement('div');
       wrap.className = `msg ${role}`;
-
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.textContent = text;
-
       const ts = document.createElement('div');
       ts.className = 'ts';
       ts.textContent = timestamp();
-
       wrap.appendChild(bubble);
       wrap.appendChild(ts);
       messagesEl.appendChild(wrap);
@@ -335,7 +410,7 @@
     }
 
     function addLoading() {
-      const wrap = document.createElement('div');
+      const wrap   = document.createElement('div');
       wrap.className = 'msg bot';
       const bubble = document.createElement('div');
       bubble.className = 'bubble loading-dots';
@@ -349,14 +424,11 @@
     async function sendMessage() {
       const text = input.value.trim();
       if (!text) return;
-
       input.value = '';
       input.style.height = 'auto';
       sendBtn.disabled = true;
-
       addMessage('user', text);
       const loader = addLoading();
-
       try {
         const resp = await fetch('/chat', {
           method: 'POST',
@@ -365,12 +437,7 @@
         });
         const data = await resp.json();
         loader.remove();
-
-        if (data.error) {
-          addMessage('error', '⚠ ' + data.error);
-        } else {
-          addMessage('bot', data.reply);
-        }
+        addMessage(data.error ? 'error' : 'bot', data.error ? '⚠ ' + data.error : data.reply);
       } catch (err) {
         loader.remove();
         addMessage('error', '⚠ Network error: ' + err.message);
@@ -381,15 +448,9 @@
     }
 
     sendBtn.addEventListener('click', sendMessage);
-
     input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
-
-    // Auto-grow textarea
     input.addEventListener('input', () => {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 120) + 'px';
