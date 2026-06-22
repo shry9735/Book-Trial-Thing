@@ -233,6 +233,19 @@
       font-size: 0.85rem;
     }
     .cancel-link:hover { color: var(--orange); }
+
+    /* ── Emoji picker ── */
+    .emoji-row {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;
+    }
+    .emoji-btn {
+      width: 42px; height: 42px; font-size: 20px;
+      background: var(--bg); border: 2px solid var(--border);
+      border-radius: 8px; cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .emoji-btn:hover  { border-color: var(--orange); transform: scale(1.1); }
+    .emoji-btn.selected { border-color: var(--orange); background: var(--orange-lt); }
   </style>
 </head>
 <body>
@@ -268,11 +281,24 @@
 
     <!-- General -->
     <div class="card">
-      <div class="card-title"><span class="dot"></span>General</div>
+      <div class="card-title"><span class="dot"></span>Character</div>
       <div class="field">
-        <label for="chat_title">Chat panel label</label>
+        <label for="chat_title">Character name <span class="opt">shown in chat header and bubble label</span></label>
         <input type="text" id="chat_title" name="chat_title"
-               value="{{ config.chat_title or '' }}" placeholder="Chat" />
+               value="{{ config.chat_title or '' }}" placeholder="Spark" />
+      </div>
+      <div class="field">
+        <label>Character emoji <span class="opt">the bubble icon</span></label>
+        <div class="emoji-row">
+          {% set emojis = ['⚡','🤖','🔥','🧠','🛠️','🔬','💡','🚀','🎓','🧑‍💻'] %}
+          {% for e in emojis %}
+            <button type="button" class="emoji-btn {% if (config.character_emoji or '⚡') == e %}selected{% endif %}"
+                    data-emoji="{{ e }}" onclick="pickEmoji(this)">{{ e }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="character_emoji" id="characterEmoji"
+               value="{{ config.character_emoji or '⚡' }}" />
+        <p class="help">Pick one above, or type any emoji directly into the hidden field via browser dev tools.</p>
       </div>
     </div>
 
@@ -327,5 +353,12 @@
   </form>
 </div>
 
+<script>
+  function pickEmoji(btn) {
+    document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    document.getElementById('characterEmoji').value = btn.dataset.emoji;
+  }
+</script>
 </body>
 </html>

@@ -34,7 +34,8 @@ DEFAULT_CONFIG: dict = {
     "webhook_url": "",
     "auth_header": "",
     "auth_token": "",
-    "chat_title": "Chat",
+    "chat_title": "Spark",
+    "character_emoji": "⚡",
 }
 
 app = Flask(__name__)
@@ -71,8 +72,9 @@ def settings():
         cfg["iframe_url"]  = request.form.get("iframe_url",  "").strip()
         cfg["webhook_url"] = request.form.get("webhook_url", "").strip()
         cfg["auth_header"] = request.form.get("auth_header", "").strip()
-        cfg["auth_token"]  = request.form.get("auth_token",  "").strip()
-        cfg["chat_title"]  = request.form.get("chat_title",  "Chat").strip()
+        cfg["auth_token"]       = request.form.get("auth_token",       "").strip()
+        cfg["chat_title"]       = request.form.get("chat_title",       "Spark").strip()
+        cfg["character_emoji"]  = request.form.get("character_emoji",  "⚡").strip()
         save_config(cfg)
         flash("Settings saved.", "success")
         return redirect(url_for("settings"))
