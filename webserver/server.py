@@ -95,6 +95,8 @@ def chat():
     if not message:
         return jsonify({"error": "Empty message."}), 400
 
+    history = body.get("history") or []
+
     headers = {"Content-Type": "application/json"}
     auth_header = cfg.get("auth_header", "").strip()
     auth_token  = cfg.get("auth_token",  "").strip()
@@ -104,7 +106,7 @@ def chat():
     try:
         resp = http.post(
             webhook_url,
-            json={"message": message},
+            json={"message": message, "history": history},
             headers=headers,
             timeout=60,
         )

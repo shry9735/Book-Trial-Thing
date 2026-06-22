@@ -433,6 +433,8 @@
   const sendBtn    = document.getElementById('sendBtn');
 
   if (messagesEl) {
+    // Conversation history in OpenAI format — sent to the webhook on every turn
+    const history = [];
 
     function ts() {
       return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -476,19 +478,32 @@
       addMessage('user', text);
       const loader = addLoading();
 
+      // Snapshot history BEFORE adding the new user turn so the webhook
+      // receives prior context + the new message separately.
+      const payload = {
+        message: text,
+        history: [...history],
+      };
+
       try {
         const resp = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify(payload),
         });
         const data = await resp.json();
         loader.remove();
-        const role  = data.error ? 'error' : 'bot';
-        const reply = data.error ? '⚠ ' + data.error : data.reply;
-        addMessage(role, reply);
 
-        // Show badge if popup is closed
+        if (data.error) {
+          addMessage('error', '⚠ ' + data.error);
+          // Don't push errored turns into history
+        } else {
+          addMessage('bot', data.reply);
+          // Record the successful exchange in history
+          history.push({ role: 'user',      content: text });
+          history.push({ role: 'assistant', content: data.reply });
+        }
+
         if (!isOpen) badge.classList.add('show');
       } catch (err) {
         loader.remove();
