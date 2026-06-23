@@ -97,6 +97,15 @@ def chat():
 
     history = body.get("history") or []
 
+    # Format history as a plain text block so n8n doesn't have to deal with arrays
+    if history:
+        history_text = "\n".join(
+            f"{'User' if turn['role'] == 'user' else 'Assistant'}: {turn['content']}"
+            for turn in history
+        )
+    else:
+        history_text = ""
+
     headers = {"Content-Type": "application/json"}
     auth_header = cfg.get("auth_header", "").strip()
     auth_token  = cfg.get("auth_token",  "").strip()
@@ -106,7 +115,7 @@ def chat():
     try:
         resp = http.post(
             webhook_url,
-            json={"message": message, "history": history},
+            json={"message": message, "history": history_text},
             headers=headers,
             timeout=60,
         )
