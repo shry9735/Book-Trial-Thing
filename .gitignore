@@ -1,0 +1,25 @@
+# ── Qdrant ──────────────────────────────────────────────────────────────────────
+# Derived data — rebuilt from EPUBs via `python ingest.py`.  Never commit.
+qdrant_storage/
+
+# Ingest manifest tracks which EPUBs have been indexed on this machine.
+# Not committed because the Qdrant index itself isn't committed.
+.ingest_manifest.json
+
+# ── Webserver ────────────────────────────────────────────────────────────────────
+webserver/config.json
+
+# ── Python ───────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# ── OS ───────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
