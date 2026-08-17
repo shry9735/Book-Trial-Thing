@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Lessons — Ignite Academy{% endblock %}
+
+{% block hud_actions %}
+  <a class="btn sm ghost" href="{{ url_for('classroom') }}">← Classroom</a>
+  <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
+{% endblock %}
+
+{% block stage_content %}
+<div class="screen">
+
+  <div class="screen-head">
+    <div class="screen-title">Today's Lessons</div>
+    <span class="pill in_progress">{{ summary.completed }} of {{ summary.total }} done</span>
+  </div>
+
+  <div class="lesson-grid">
+    {% for lesson in lessons %}
+      {% set status = lesson.progress.status %}
+      <a class="panel lesson-card" href="{{ url_for('lesson', lesson_id=lesson.id) }}">
+
+        <div class="lesson-thumb" style="background-image:url('{{ art(lesson.thumb) }}')">
+          <span class="lesson-type">
+            {% if lesson.type == 'video' %}▶ Video
+            {% elif lesson.type == 'game' %}🎮 Game
+            {% else %}📖 Read{% endif %}
+          </span>
+          {% if status in ('completed', 'in_progress') %}
+            <span class="lesson-status {{ status }}">
+              {% if status == 'completed' %}✓{% else %}⋯{% endif %}
+            </span>
+          {% endif %}
+        </div>
+
+        <div class="lesson-body">
+          <div class="lesson-subject">{{ lesson.subject }}</div>
+          <div class="lesson-name">{{ lesson.title }}</div>
+          <div class="lesson-desc">{{ lesson.description }}</div>
+          <div class="lesson-meta">
+            <span>⏱ {{ lesson.duration_min }} min</span>
+            <span class="xp-chip">+{{ lesson.xp }} XP</span>
+          </div>
+        </div>
+
+      </a>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

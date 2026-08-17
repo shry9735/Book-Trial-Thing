@@ -9,6 +9,14 @@ qdrant_storage/
 # ── Webserver ────────────────────────────────────────────────────────────────────
 webserver/config.json
 
+# ── Game ─────────────────────────────────────────────────────────────────────────
+# Runtime state — accounts are re-seeded on first run.
+# data/lessons.json and data/classroom.json are content, and stay committed.
+game/data/users.json
+game/data/groups.json
+game/data/progress.json
+game/data/secret_key
+
 # ── Python ───────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc

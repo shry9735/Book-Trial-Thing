@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Teacher — Ignite Academy{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body class="t-body">
+
+<div class="t-top">
+  <div class="mark">🔥</div>
+  <a class="title" href="{{ url_for('teacher_dashboard') }}">Ignite Academy</a>
+  <div class="who">Signed in as <b>{{ user.name }}</b></div>
+  <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
+</div>
+
+<div class="t-main">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div class="flashes">
+        {% for category, message in msgs %}
+          <div class="flash-msg {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "_comment": "Hotspots are placed in percentages of the 960x600 stage, so they stay put when the classroom art is swapped or the window resizes. Edit freely — the classroom re-renders from this file on every page load. action: 'lessons' | 'url' | 'soon'.",
+
+  "background": "backgrounds/classroom",
+
+  "hotspots": [
+    {
+      "id": "lessons",
+      "label": "Today's Lessons",
+      "icon": "📚",
+      "x": 12, "y": 46, "w": 20, "h": 30,
+      "action": "lessons"
+    },
+    {
+      "id": "workbench",
+      "label": "Workbench",
+      "icon": "🔧",
+      "x": 40, "y": 52, "w": 20, "h": 28,
+      "action": "soon"
+    },
+    {
+      "id": "trophies",
+      "label": "Trophy Shelf",
+      "icon": "🏆",
+      "x": 68, "y": 44, "w": 18, "h": 26,
+      "action": "soon"
+    }
+  ]
+}

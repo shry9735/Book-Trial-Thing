@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Classroom — Ignite Academy{% endblock %}
+
+{% block stage_content %}
+  {# Background comes from data/classroom.json → static/art/.
+     Drop your classroom graphic in and it appears here. #}
+  <div class="scene" style="background-image:url('{{ art(layout.background) }}')">
+
+    {% for spot in layout.hotspots %}
+      <button class="hotspot"
+              style="left:{{ spot.x }}%; top:{{ spot.y }}%; width:{{ spot.w }}%; height:{{ spot.h }}%;"
+              data-action="{{ spot.action }}"
+              data-href="{{ spot.href | default('') }}"
+              data-label="{{ spot.label }}">
+        <span class="hotspot-tag">{{ spot.icon }} {{ spot.label }}</span>
+      </button>
+    {% endfor %}
+
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var LESSONS_URL = "{{ url_for('lessons') }}";
+
+  document.querySelectorAll('.hotspot').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var action = el.dataset.action;
+      if (action === 'lessons') {
+        window.location.href = LESSONS_URL;
+      } else if (action === 'url' && el.dataset.href) {
+        window.location.href = el.dataset.href;
+      } else {
+        showToast(el.dataset.label + ' — coming soon!');
+      }
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Ignite Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body>
+
+<div class="login-stage">
+  <div class="login-box">
+
+    <div class="login-crest">
+      {% if art_exists('ui/logo') %}
+        <img src="{{ art('ui/logo') }}" alt="Ignite Academy" style="max-width:220px;margin-bottom:10px" />
+      {% else %}
+        <div class="mark">🔥</div>
+      {% endif %}
+      <div class="title">Ignite Academy</div>
+      <div class="tagline">Inspire &amp; Grow New Innovation</div>
+    </div>
+
+    {# Tabs restyle the panel; the account's own role decides where you land,
+       so choosing the "wrong" one is harmless. #}
+    <div class="role-tabs">
+      <button type="button" class="role-tab {% if role_tab != 'teacher' %}active{% endif %}"
+              data-role="student" onclick="pickRole('student')">
+        🎒 Student
+      </button>
+      <button type="button" class="role-tab {% if role_tab == 'teacher' %}active{% endif %}"
+              data-role="teacher" onclick="pickRole('teacher')">
+        📋 Teacher / Parent
+      </button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head {% if role_tab == 'teacher' %}teal{% endif %}" id="panelHead">
+        <span id="panelHeadText">
+          {% if role_tab == 'teacher' %}Group &amp; Progress Tools{% else %}Enter the Classroom{% endif %}
+        </span>
+      </div>
+
+      <form class="login-form" method="POST" action="{{ url_for('login') }}">
+        <input type="hidden" name="role_tab" id="roleTab" value="{{ role_tab }}" />
+
+        <p class="login-blurb" id="blurb">
+          {% if role_tab == 'teacher' %}
+            Create groups, add students, and track who has finished what.
+          {% else %}
+            Sign in to pick up your lessons where you left off.
+          {% endif %}
+        </p>
+
+        {% with msgs = get_flashed_messages(with_categories=true) %}
+          {% if msgs %}
+            <div class="flashes">
+              {% for category, message in msgs %}
+                <div class="flash-msg {{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" value="{{ username or '' }}"
+                 autocomplete="username" autofocus required />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password"
+                 autocomplete="current-password" required />
+        </div>
+
+        <button type="submit" class="btn block lg" id="submitBtn">Sign In</button>
+
+        <div class="hint-card">
+          <b>Demo accounts</b><br />
+          Student — <code>student</code> / <code>spark123</code><br />
+          Teacher — <code>teacher</code> / <code>ignite123</code>
+        </div>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  var COPY = {
+    student: { head: 'Enter the Classroom',      blurb: 'Sign in to pick up your lessons where you left off.' },
+    teacher: { head: 'Group & Progress Tools',   blurb: 'Create groups, add students, and track who has finished what.' }
+  };
+
+  function pickRole(role) {
+    document.querySelectorAll('.role-tab').forEach(function (t) {
+      t.classList.toggle('active', t.dataset.role === role);
+    });
+    document.getElementById('roleTab').value = role;
+    document.getElementById('panelHead').classList.toggle('teal', role === 'teacher');
+    document.getElementById('panelHeadText').textContent = COPY[role].head;
+    document.getElementById('blurb').textContent = COPY[role].blurb;
+    document.getElementById('submitBtn').classList.toggle('teal', role === 'teacher');
+  }
+
+  pickRole('{{ role_tab }}' === 'teacher' ? 'teacher' : 'student');
+</script>
+
+</body>
+</html>

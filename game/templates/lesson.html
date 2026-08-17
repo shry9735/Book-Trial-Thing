@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson.title }} — Ignite Academy{% endblock %}
+
+{% block hud_actions %}
+  <a class="btn sm ghost" href="{{ url_for('lessons') }}">← Lessons</a>
+{% endblock %}
+
+{% block stage_content %}
+<div class="screen">
+
+  <div class="screen-head">
+    <div>
+      <div class="lesson-subject">{{ lesson.subject }}</div>
+      <div class="screen-title">{{ lesson.title }}</div>
+    </div>
+    <span class="xp-chip">+{{ lesson.xp }} XP</span>
+  </div>
+
+  {% if lesson.type == 'video' %}
+    <div class="player-frame">
+      <video id="player" controls preload="metadata"
+             {% if art_exists(lesson.thumb) %}poster="{{ art(lesson.thumb) }}"{% endif %}>
+        <source src="{{ media(lesson.source) }}" />
+        Your browser can't play this video.
+      </video>
+    </div>
+
+  {% elif lesson.type == 'game' %}
+    {# Games report results with postMessage — see the listener below. #}
+    <div class="player-frame">
+      <iframe id="player" src="{{ media(lesson.source) }}"
+              allow="autoplay; fullscreen; gamepad"></iframe>
+    </div>
+
+  {% else %}
+    {# Prose from content/ — the same Markdown make_epub.py builds into a chapter. #}
+    <div class="reader" id="reader">
+      {{ body | safe }}
+    </div>
+  {% endif %}
+
+  <div class="player-bar">
+    <a class="btn ghost" href="{{ url_for('lessons') }}">Back to Lessons</a>
+    <div style="flex:1"></div>
+    <span class="pill {{ entry.status | default('not_started') }}" id="statusPill">
+      {{ entry.status | default('not_started') | replace('_', ' ') | title }}
+    </span>
+    <button class="btn" id="completeBtn"
+            {% if entry.status == 'completed' %}disabled{% endif %}>
+      {% if entry.status == 'completed' %}✓ Completed{% else %}Mark Complete{% endif %}
+    </button>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var LESSON_ID   = "{{ lesson.id }}";
+  var LESSON_TYPE = "{{ lesson.type }}";
+  var API_URL     = "{{ url_for('api_progress') }}";
+
+  var completeBtn = document.getElementById('completeBtn');
+  var statusPill  = document.getElementById('statusPill');
+
+  function postProgress(status, score) {
+    return fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ lesson_id: LESSON_ID, status: status, score: score })
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { showToast('⚠ ' + data.error); return; }
+      if (status === 'completed') markDone(score);
+    })
+    .catch(function (err) { showToast('⚠ ' + err.message); });
+  }
+
+  function markDone(score) {
+    completeBtn.disabled    = true;
+    completeBtn.textContent = '✓ Completed';
+    statusPill.textContent  = 'Completed';
+    statusPill.className    = 'pill completed';
+    showToast(score != null ? 'Lesson complete — scored ' + score + '!' : 'Lesson complete!');
+  }
+
+  completeBtn.addEventListener('click', function () { postProgress('completed', null); });
+
+  /* Video: complete automatically when it finishes. */
+  if (LESSON_TYPE === 'video') {
+    var video = document.getElementById('player');
+    video.addEventListener('ended', function () {
+      if (!completeBtn.disabled) postProgress('completed', null);
+    });
+  }
+
+  /* Reading: complete automatically when scrolled to the end. */
+  if (LESSON_TYPE === 'reading') {
+    var reader = document.getElementById('reader');
+    reader.addEventListener('scroll', function () {
+      var atEnd = reader.scrollTop + reader.clientHeight >= reader.scrollHeight - 40;
+      if (atEnd && !completeBtn.disabled) postProgress('completed', null);
+    });
+  }
+
+  /* Games: embedded iframes report in with postMessage.
+       window.parent.postMessage({type: 'lesson:complete', score: 90}, '*');
+       window.parent.postMessage({type: 'lesson:progress', score: 40}, '*'); */
+  window.addEventListener('message', function (e) {
+    var d = e.data || {};
+    if (d.type === 'lesson:complete')      postProgress('completed',   d.score);
+    else if (d.type === 'lesson:progress') postProgress('in_progress', d.score);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "teacher_base.html" %}
+{% block title %}{{ student.name }} — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('teacher_dashboard') }}">Groups</a> /</div>
+    <h1>{{ student.name }}</h1>
+  </div>
+</div>
+
+<div class="stat-row">
+  <div class="panel stat-box">
+    <div class="stat-num">{{ summary.completed }} / {{ summary.total }}</div>
+    <div class="stat-lbl">Lessons Complete</div>
+  </div>
+  <div class="panel stat-box">
+    <div class="stat-num">{{ summary.xp }}</div>
+    <div class="stat-lbl">Total XP</div>
+  </div>
+  <div class="panel stat-box">
+    <div class="stat-num">{{ summary.percent }}%</div>
+    <div class="stat-lbl">Course Progress</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">Lesson Detail</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Lesson</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Score</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>
+            <div style="font-weight:700">{{ row.title }}</div>
+            <div style="font-size:0.72rem;color:var(--ink-dim)">{{ row.subject }}</div>
+          </td>
+          <td style="font-size:0.78rem;color:var(--ink-mid)">
+            {% if row.type == 'video' %}▶ Video
+            {% elif row.type == 'game' %}🎮 Game
+            {% else %}📖 Reading{% endif %}
+          </td>
+          <td>
+            <span class="pill {{ row.progress.status }}">
+              {{ row.progress.status | replace('_', ' ') | title }}
+            </span>
+          </td>
+          <td>{{ row.progress.score if row.progress.score is defined else '—' }}</td>
+          <td style="color:var(--ink-dim);font-size:0.78rem">
+            {{ row.progress.updated[:16] | replace('T', ' ') if row.progress.updated is defined else '—' }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

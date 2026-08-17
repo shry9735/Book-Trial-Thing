@@ -1,0 +1,101 @@
+# Graphics
+
+Every graphic in the game is resolved **by filename from this folder**. There
+is no settings screen for art and no per-user option — you change a graphic by
+putting a file on disk.
+
+## How it works
+
+A template asks for a name without an extension:
+
+```jinja
+{{ art('backgrounds/classroom') }}
+```
+
+The server looks for `static/art/backgrounds/classroom.*` and uses the first
+match in this order:
+
+```
+.webp  .png  .jpg  .jpeg  .gif  .svg
+```
+
+If nothing is there, it draws a placeholder that **prints the exact path you
+need to create**. So you never have to guess a filename — run the game, look at
+the gap, and the gap tells you what to name the file.
+
+Drop the file in and reload. No restart, no config, no cache to clear.
+
+## What goes where
+
+| Path | Used for |
+|---|---|
+| `backgrounds/classroom.*` | The classroom scene the student lands on |
+| `characters/avatar-student.*` | HUD portrait for `student` |
+| `characters/avatar-student2.*` | HUD portrait for `student2` |
+| `characters/avatar-teacher.*` | HUD portrait for `teacher` |
+| `ui/logo.*` | Login crest — replaces the 🔥 mark if present |
+| `lessons/<lesson-id>.*` | Lesson card thumbnail / video poster |
+| `lessons/<name>.mp4` | Video lesson source files |
+| `games/<name>/index.html` | Embedded HTML5 games, one folder each |
+
+Avatar and thumbnail names come from `data/users.json` and `data/lessons.json`
+respectively — change the name there and the lookup follows.
+
+## Sizes
+
+Nothing is enforced, but these fit the layout without cropping:
+
+- **Classroom background** — 960 × 544 (the stage is 960 × 600, minus the 56px HUD)
+- **Avatars** — square, 128 × 128 is plenty
+- **Lesson thumbnails** — 3:2, around 480 × 320
+- **Logo** — transparent PNG, up to 220px wide
+
+## Classroom hotspots
+
+The clickable areas on the classroom are **not** baked into the image. They live
+in `data/classroom.json` as percentages of the stage, so they stay aligned when
+you swap the artwork or resize the window:
+
+```json
+{
+  "id": "lessons",
+  "label": "Today's Lessons",
+  "icon": "📚",
+  "x": 12, "y": 46, "w": 20, "h": 30,
+  "action": "lessons"
+}
+```
+
+`action` is one of:
+
+- `lessons` — go to the lesson list
+- `url` — go to the `href` field on the same hotspot
+- `soon` — show a "coming soon" toast (placeholder for things you'll build later)
+
+Add, remove, or move hotspots by editing that file. The page re-reads it on
+every load.
+
+## Embedded games
+
+A game is any self-contained folder with an `index.html`:
+
+```
+static/art/games/resistor-colors/
+├── index.html
+├── game.js
+└── sprites.png
+```
+
+Point a lesson at it with `"source": "games/resistor-colors/index.html"`.
+
+To report results back to the tracker, post a message from inside the game:
+
+```js
+// Finished — awards XP and marks the lesson complete
+window.parent.postMessage({ type: 'lesson:complete', score: 90 }, '*');
+
+// Partial progress — records a score without completing
+window.parent.postMessage({ type: 'lesson:progress', score: 40 }, '*');
+```
+
+`score` is optional in both. The highest score ever posted is the one kept.

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Ignite Academy{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body>
+
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+
+    {# ── HUD ── #}
+    <div class="hud">
+      <div class="hud-avatar" style="background-image:url('{{ art(user.avatar) }}')"></div>
+      <div>
+        <div class="hud-name">{{ user.name }}</div>
+        <div class="hud-sub">Apprentice Engineer</div>
+      </div>
+
+      <div class="hud-spacer"></div>
+
+      {% if summary is defined %}
+        <div class="hud-stat">
+          <div class="hud-stat-label">Lessons</div>
+          <div class="bar">
+            <div class="bar-fill" style="width:{{ summary.percent }}%"></div>
+            <div class="bar-text">{{ summary.completed }} / {{ summary.total }}</div>
+          </div>
+        </div>
+        <div class="hud-stat">
+          <div class="hud-stat-label">XP</div>
+          <div class="bar">
+            <div class="bar-fill xp" style="width:{{ [summary.xp / 10, 100] | min }}%"></div>
+            <div class="bar-text">{{ summary.xp }} XP</div>
+          </div>
+        </div>
+      {% endif %}
+
+      {% block hud_actions %}
+        <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
+      {% endblock %}
+    </div>
+
+    {% block stage_content %}{% endblock %}
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<script>
+  /* Scale the fixed 960x600 stage to fit the viewport — the Flash trick. */
+  (function () {
+    var stage = document.getElementById('stage');
+    function fit() {
+      var scale = Math.min(window.innerWidth / {{ STAGE_W }},
+                           window.innerHeight / {{ STAGE_H }});
+      stage.style.transform = 'scale(' + scale + ')';
+    }
+    window.addEventListener('resize', fit);
+    fit();
+  })();
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
