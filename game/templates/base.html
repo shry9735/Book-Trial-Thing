@@ -39,6 +39,7 @@
       {% endif %}
 
       {% block hud_actions %}
+        <a class="btn sm ghost" href="{{ url_for('satchel') }}">🎒 Satchel</a>
         <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
       {% endblock %}
     </div>

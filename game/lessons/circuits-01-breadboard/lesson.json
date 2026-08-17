@@ -1,0 +1,43 @@
+{
+  "title": "Meet the Breadboard",
+  "subject": "Circuits",
+  "type": "reading",
+  "content": "01-breadboard.md",
+  "order": 10,
+  "duration_min": 6,
+  "xp": 50,
+  "reward": "badge-breadboard",
+  "description": "Where wires go, and why the holes are connected the way they are.",
+
+  "quiz": [
+    {
+      "id": "q1",
+      "prompt": "How many holes are connected together in one terminal strip row?",
+      "choices": ["Two", "Five", "Ten", "All of them"],
+      "answer": 1,
+      "explain": "Each row connects five holes on one side of the center channel. The other five are a separate group."
+    },
+    {
+      "id": "q2",
+      "prompt": "What is the channel down the middle of the breadboard for?",
+      "choices": [
+        "It's just for decoration",
+        "It keeps a chip's two rows of legs from shorting together",
+        "It's where the power goes in"
+      ],
+      "answer": 1,
+      "explain": "Chips straddle the channel so each leg lands in its own isolated row. Without the gap, every leg would short to the one opposite it."
+    },
+    {
+      "id": "q3",
+      "prompt": "Your LED leg is one row off from where you meant to put it. What happens?",
+      "choices": [
+        "The breadboard shows an error",
+        "It sparks",
+        "Nothing tells you — the circuit just doesn't work"
+      ],
+      "answer": 2,
+      "explain": "This is why the tug test matters. A breadboard never warns you about a wrong connection, so you have to check it yourself."
+    }
+  ]
+}

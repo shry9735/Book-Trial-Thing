@@ -3,7 +3,7 @@
 
 {% block hud_actions %}
   <a class="btn sm ghost" href="{{ url_for('classroom') }}">← Classroom</a>
-  <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
+  <a class="btn sm ghost" href="{{ url_for('satchel') }}">🎒 Satchel</a>
 {% endblock %}
 
 {% block stage_content %}
@@ -22,9 +22,12 @@
         <div class="lesson-thumb" style="background-image:url('{{ art(lesson.thumb) }}')">
           <span class="lesson-type">
             {% if lesson.type == 'video' %}▶ Video
-            {% elif lesson.type == 'game' %}🎮 Game
+            {% elif lesson.type == 'interactive' %}🎮 Play
             {% else %}📖 Read{% endif %}
           </span>
+          {% if lesson.quiz %}
+            <span class="lesson-quiz-tag">{{ lesson.quiz | length }} Q</span>
+          {% endif %}
           {% if status in ('completed', 'in_progress') %}
             <span class="lesson-status {{ status }}">
               {% if status == 'completed' %}✓{% else %}⋯{% endif %}

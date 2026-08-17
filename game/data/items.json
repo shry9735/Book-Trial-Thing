@@ -1,0 +1,37 @@
+{
+  "badge-breadboard": {
+    "name": "Breadboard Badge",
+    "icon": "🔌",
+    "art": "items/badge-breadboard",
+    "blurb": "Learned how a breadboard connects underneath.",
+    "rarity": "common"
+  },
+  "trinket-led": {
+    "name": "First Light",
+    "icon": "💡",
+    "art": "items/trinket-led",
+    "blurb": "Wired an LED that actually lit up.",
+    "rarity": "common"
+  },
+  "trinket-resistor": {
+    "name": "Band Reader",
+    "icon": "🌈",
+    "art": "items/trinket-resistor",
+    "blurb": "Can read resistor colors on sight.",
+    "rarity": "uncommon"
+  },
+  "badge-loop": {
+    "name": "Loop Badge",
+    "icon": "🔁",
+    "art": "items/badge-loop",
+    "blurb": "Made the computer do the boring part.",
+    "rarity": "common"
+  },
+  "trinket-wrench": {
+    "name": "Debugger's Wrench",
+    "icon": "🔧",
+    "art": "items/trinket-wrench",
+    "blurb": "Found the fault before the demo. Barely.",
+    "rarity": "rare"
+  }
+}

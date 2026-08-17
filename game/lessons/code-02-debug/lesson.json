@@ -1,0 +1,35 @@
+{
+  "title": "Debug D.U.D.E.A.D.",
+  "subject": "Code",
+  "type": "interactive",
+  "order": 50,
+  "duration_min": 15,
+  "xp": 125,
+  "reward": "trinket-wrench",
+  "description": "The robot drives in circles. Find out why before the Faire.",
+
+  "quiz": [
+    {
+      "id": "q1",
+      "prompt": "The sensor returns 0 every few readings. What does that usually mean?",
+      "choices": [
+        "The sensor is broken and needs replacing",
+        "A loose connection — an intermittent fault",
+        "The battery is dead"
+      ],
+      "answer": 1,
+      "explain": "A dead sensor returns 0 every time. Intermittent zeros point at a connection that's making contact only sometimes."
+    },
+    {
+      "id": "q2",
+      "prompt": "What should you always do before changing any code?",
+      "choices": [
+        "Replace the part you think is broken",
+        "Look at what's actually happening, with the Serial Monitor",
+        "Restart the Arduino"
+      ],
+      "answer": 1,
+      "explain": "An engineer's first question is never \"what should I change?\" It's \"what is actually happening?\""
+    }
+  ]
+}

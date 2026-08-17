@@ -6,49 +6,96 @@
 {% endblock %}
 
 {% block stage_content %}
-<div class="screen">
+<div class="screen" id="screen">
 
-  <div class="screen-head">
-    <div>
-      <div class="lesson-subject">{{ lesson.subject }}</div>
-      <div class="screen-title">{{ lesson.title }}</div>
+  {# ── Phase 1: the lesson itself ── #}
+  <div id="phaseContent">
+    <div class="screen-head">
+      <div>
+        <div class="lesson-subject">{{ lesson.subject }}</div>
+        <div class="screen-title">{{ lesson.title }}</div>
+      </div>
+      <span class="xp-chip">+{{ lesson.xp }} XP</span>
     </div>
-    <span class="xp-chip">+{{ lesson.xp }} XP</span>
+
+    {% if lesson.type == 'video' %}
+      <div class="player-frame">
+        <video id="player" controls preload="metadata"
+               {% if art_exists(lesson.thumb) %}poster="{{ art(lesson.thumb) }}"{% endif %}>
+          <source src="{{ media(lesson.source) }}" />
+          Your browser can't play this video.
+        </video>
+      </div>
+
+    {% elif lesson.type == 'interactive' %}
+      {# Sandboxed: its own JS context, its own globals, its own CSS.
+         allow-same-origin is required for /kit/ and /art/ to load. #}
+      <div class="player-frame">
+        <iframe id="player"
+                src="{{ url_for('lesson_asset', lesson_id=lesson.id, filename='index.html') }}"
+                sandbox="allow-scripts allow-same-origin"
+                allow="autoplay; fullscreen; gamepad"></iframe>
+      </div>
+
+    {% else %}
+      {# Prose from content/ — the same Markdown make_epub.py builds. #}
+      <div class="reader" id="reader">{{ body | safe }}</div>
+    {% endif %}
+
+    <div class="player-bar">
+      <a class="btn ghost" href="{{ url_for('lessons') }}">Back to Lessons</a>
+      <div style="flex:1"></div>
+      <span class="hint-inline" id="contentHint">
+        {% if lesson.type == 'video' %}Watch to the end to unlock the quiz
+        {% elif lesson.type == 'reading' %}Read to the end to unlock the quiz
+        {% else %}Finish the activity to unlock the quiz{% endif %}
+      </span>
+      <button class="btn" id="toQuizBtn" {% if quiz %}disabled{% endif %}>
+        {% if quiz %}Quiz Locked 🔒{% else %}Mark Complete{% endif %}
+      </button>
+    </div>
   </div>
 
-  {% if lesson.type == 'video' %}
-    <div class="player-frame">
-      <video id="player" controls preload="metadata"
-             {% if art_exists(lesson.thumb) %}poster="{{ art(lesson.thumb) }}"{% endif %}>
-        <source src="{{ media(lesson.source) }}" />
-        Your browser can't play this video.
-      </video>
+  {# ── Phase 2: quiz ── #}
+  {% if quiz %}
+  <div id="phaseQuiz" style="display:none">
+    <div class="screen-head">
+      <div>
+        <div class="lesson-subject">{{ lesson.subject }} · Quiz</div>
+        <div class="screen-title" id="quizHeading">Let's check what stuck</div>
+      </div>
+      <span class="pill in_progress" id="quizCount">1 of {{ quiz | length }}</span>
     </div>
 
-  {% elif lesson.type == 'game' %}
-    {# Games report results with postMessage — see the listener below. #}
-    <div class="player-frame">
-      <iframe id="player" src="{{ media(lesson.source) }}"
-              allow="autoplay; fullscreen; gamepad"></iframe>
+    <div class="quiz-progress"><div id="quizProgressFill" style="width:0%"></div></div>
+
+    <div class="panel quiz-card">
+      <div class="quiz-prompt" id="quizPrompt"></div>
+      <div class="quiz-choices" id="quizChoices"></div>
+      <div class="quiz-feedback" id="quizFeedback"></div>
     </div>
 
-  {% else %}
-    {# Prose from content/ — the same Markdown make_epub.py builds into a chapter. #}
-    <div class="reader" id="reader">
-      {{ body | safe }}
+    <div class="player-bar">
+      <div style="flex:1"></div>
+      <button class="btn" id="quizNextBtn" style="display:none">Next Question →</button>
     </div>
+  </div>
   {% endif %}
 
-  <div class="player-bar">
-    <a class="btn ghost" href="{{ url_for('lessons') }}">Back to Lessons</a>
-    <div style="flex:1"></div>
-    <span class="pill {{ entry.status | default('not_started') }}" id="statusPill">
-      {{ entry.status | default('not_started') | replace('_', ' ') | title }}
-    </span>
-    <button class="btn" id="completeBtn"
-            {% if entry.status == 'completed' %}disabled{% endif %}>
-      {% if entry.status == 'completed' %}✓ Completed{% else %}Mark Complete{% endif %}
-    </button>
+  {# ── Phase 3: reward ── #}
+  <div id="phaseDone" style="display:none">
+    <div class="done-wrap">
+      <div class="done-burst" id="doneBurst">🎉</div>
+      <div class="done-title">Lesson Complete!</div>
+      <div class="done-score" id="doneScore"></div>
+
+      <div class="done-rewards" id="doneRewards"></div>
+
+      <div class="lk-row" style="gap:10px;margin-top:6px">
+        <a class="btn ghost" href="{{ url_for('satchel') }}">Open Satchel</a>
+        <a class="btn" href="{{ url_for('lessons') }}">Next Lesson →</a>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -56,61 +103,177 @@
 
 {% block scripts %}
 <script>
-  var LESSON_ID   = "{{ lesson.id }}";
-  var LESSON_TYPE = "{{ lesson.type }}";
-  var API_URL     = "{{ url_for('api_progress') }}";
+  var LESSON_ID   = {{ lesson.id | tojson }};
+  var LESSON_TYPE = {{ lesson.type | tojson }};
+  var QUIZ        = {{ quiz | tojson }};
+  var API_QUIZ    = "{{ url_for('api_quiz') }}";
+  var API_FINISH  = "{{ url_for('api_quiz_finish') }}";
+  var API_PROG    = "{{ url_for('api_progress') }}";
 
-  var completeBtn = document.getElementById('completeBtn');
-  var statusPill  = document.getElementById('statusPill');
+  var phaseContent = document.getElementById('phaseContent');
+  var phaseQuiz    = document.getElementById('phaseQuiz');
+  var phaseDone    = document.getElementById('phaseDone');
+  var toQuizBtn    = document.getElementById('toQuizBtn');
+  var contentHint  = document.getElementById('contentHint');
 
-  function postProgress(status, score) {
-    return fetch(API_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ lesson_id: LESSON_ID, status: status, score: score })
+  var contentScore = null;
+  var qIndex = 0, qAnswered = false;
+
+  /* ── Unlocking the quiz ─────────────────────────────────────────── */
+
+  function unlock(score) {
+    contentScore = score;
+    toQuizBtn.disabled = false;
+    if (QUIZ.length) {
+      toQuizBtn.textContent = 'Start Quiz →';
+      contentHint.textContent = 'Nice — quiz unlocked';
+      contentHint.classList.add('ready');
+    }
+  }
+
+  toQuizBtn.addEventListener('click', function () {
+    if (QUIZ.length) { startQuiz(); }
+    else {
+      fetch(API_PROG, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lesson_id: LESSON_ID, status: 'completed', score: contentScore })
+      }).then(function () { finishUp({ score: contentScore, rewards: [] }); });
+    }
+  });
+
+  if (LESSON_TYPE === 'video') {
+    document.getElementById('player')
+      .addEventListener('ended', function () { unlock(null); });
+  }
+
+  if (LESSON_TYPE === 'reading') {
+    var reader = document.getElementById('reader');
+    reader.addEventListener('scroll', function () {
+      if (reader.scrollTop + reader.clientHeight >= reader.scrollHeight - 40) unlock(null);
+    });
+    /* Short passages that don't scroll would otherwise never unlock. */
+    if (reader.scrollHeight <= reader.clientHeight + 8) unlock(null);
+  }
+
+  /* Interactive lessons report in through the kit's postMessage bridge. */
+  window.addEventListener('message', function (e) {
+    var d = e.data || {};
+    if (d.type === 'lesson:complete')      unlock(d.score);
+    else if (d.type === 'lesson:toast')    showToast(d.message);
+    else if (d.type === 'lesson:error')    console.warn('[lesson ' + LESSON_ID + ']', d.message, d.source, d.line);
+  });
+
+  /* ── Quiz ───────────────────────────────────────────────────────── */
+
+  function startQuiz() {
+    phaseContent.style.display = 'none';
+    phaseQuiz.style.display = '';
+    qIndex = 0;
+    renderQuestion();
+  }
+
+  function renderQuestion() {
+    qAnswered = false;
+    var q = QUIZ[qIndex];
+
+    document.getElementById('quizCount').textContent = (qIndex + 1) + ' of ' + QUIZ.length;
+    document.getElementById('quizProgressFill').style.width =
+      Math.round((qIndex / QUIZ.length) * 100) + '%';
+    document.getElementById('quizPrompt').textContent = q.prompt;
+    document.getElementById('quizFeedback').innerHTML = '';
+    document.getElementById('quizNextBtn').style.display = 'none';
+
+    var box = document.getElementById('quizChoices');
+    box.innerHTML = '';
+    q.choices.forEach(function (choice, i) {
+      var btn = document.createElement('button');
+      btn.className = 'quiz-choice';
+      btn.innerHTML = '<span class="key">' + 'ABCD'[i] + '</span><span>' + choice + '</span>';
+      btn.addEventListener('click', function () { answer(btn, i); });
+      box.appendChild(btn);
+    });
+  }
+
+  function answer(btn, chosen) {
+    if (qAnswered) return;
+    var q = QUIZ[qIndex];
+
+    /* Marked server-side — the answer key is never sent to the browser. */
+    fetch(API_QUIZ, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lesson_id: LESSON_ID, question_id: q.id, chosen: chosen })
     })
     .then(function (r) { return r.json(); })
     .then(function (data) {
       if (data.error) { showToast('⚠ ' + data.error); return; }
-      if (status === 'completed') markDone(score);
+
+      var fb = document.getElementById('quizFeedback');
+
+      if (data.correct) {
+        qAnswered = true;
+        btn.classList.add('right');
+        Array.prototype.forEach.call(
+          document.querySelectorAll('.quiz-choice'),
+          function (b) { b.disabled = true; }
+        );
+        fb.innerHTML = '<div class="fb ok"><b>Correct!</b> ' + (data.explain || '') + '</div>';
+        var next = document.getElementById('quizNextBtn');
+        next.style.display = '';
+        next.textContent = (qIndex + 1 >= QUIZ.length) ? 'See Results →' : 'Next Question →';
+      } else {
+        /* Wrong answers stay open so they can try again — but every
+           attempt is already recorded for the grown-up view. */
+        btn.classList.add('wrong');
+        btn.disabled = true;
+        fb.innerHTML = '<div class="fb no">Not quite — have another look.</div>';
+      }
     })
     .catch(function (err) { showToast('⚠ ' + err.message); });
   }
 
-  function markDone(score) {
-    completeBtn.disabled    = true;
-    completeBtn.textContent = '✓ Completed';
-    statusPill.textContent  = 'Completed';
-    statusPill.className    = 'pill completed';
-    showToast(score != null ? 'Lesson complete — scored ' + score + '!' : 'Lesson complete!');
-  }
-
-  completeBtn.addEventListener('click', function () { postProgress('completed', null); });
-
-  /* Video: complete automatically when it finishes. */
-  if (LESSON_TYPE === 'video') {
-    var video = document.getElementById('player');
-    video.addEventListener('ended', function () {
-      if (!completeBtn.disabled) postProgress('completed', null);
-    });
-  }
-
-  /* Reading: complete automatically when scrolled to the end. */
-  if (LESSON_TYPE === 'reading') {
-    var reader = document.getElementById('reader');
-    reader.addEventListener('scroll', function () {
-      var atEnd = reader.scrollTop + reader.clientHeight >= reader.scrollHeight - 40;
-      if (atEnd && !completeBtn.disabled) postProgress('completed', null);
-    });
-  }
-
-  /* Games: embedded iframes report in with postMessage.
-       window.parent.postMessage({type: 'lesson:complete', score: 90}, '*');
-       window.parent.postMessage({type: 'lesson:progress', score: 40}, '*'); */
-  window.addEventListener('message', function (e) {
-    var d = e.data || {};
-    if (d.type === 'lesson:complete')      postProgress('completed',   d.score);
-    else if (d.type === 'lesson:progress') postProgress('in_progress', d.score);
+  document.getElementById('quizNextBtn') &&
+  document.getElementById('quizNextBtn').addEventListener('click', function () {
+    qIndex++;
+    if (qIndex >= QUIZ.length) submitQuiz();
+    else renderQuestion();
   });
+
+  function submitQuiz() {
+    fetch(API_FINISH, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lesson_id: LESSON_ID })
+    })
+    .then(function (r) { return r.json(); })
+    .then(finishUp)
+    .catch(function (err) { showToast('⚠ ' + err.message); });
+  }
+
+  /* ── Reward ─────────────────────────────────────────────────────── */
+
+  function finishUp(data) {
+    phaseContent.style.display = 'none';
+    if (phaseQuiz) phaseQuiz.style.display = 'none';
+    phaseDone.style.display = '';
+
+    var score = data.score;
+    document.getElementById('doneScore').innerHTML =
+      (score == null ? '' : '<b>' + score + '%</b> on the quiz &nbsp;·&nbsp; ') +
+      '<span class="xp-chip">+' + (data.xp || 0) + ' XP</span>';
+
+    var box = document.getElementById('doneRewards');
+    box.innerHTML = '';
+    (data.rewards || []).forEach(function (item) {
+      var card = document.createElement('div');
+      card.className = 'reward-card';
+      card.innerHTML =
+        '<div class="reward-icon">' + (item.icon || '🎁') + '</div>' +
+        '<div class="reward-name">' + item.name + '</div>' +
+        '<div class="reward-blurb">' + (item.blurb || '') + '</div>' +
+        '<div class="reward-new">New!</div>';
+      box.appendChild(card);
+    });
+
+    if (score != null && score >= 80) document.getElementById('doneBurst').textContent = '🏆';
+  }
 </script>
 {% endblock %}

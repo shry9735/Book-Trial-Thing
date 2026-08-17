@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Resistor Color Challenge</title>
+
+<!-- Shared look. No shared code — see game/lessons/README.md -->
+<link rel="stylesheet" href="/kit/lesson-kit.css" />
+
+<style>
+  /* This lesson's own styles. The iframe scopes them here; nothing
+     below can leak into another lesson or into the host page. */
+  .band-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px 0 2px;
+  }
+  .body-tan {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: linear-gradient(180deg, #e8d5a8 0%, #d4bc84 100%);
+    border: 2px solid #a89060;
+    border-radius: 9px;
+    padding: 13px 18px;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(0,0,0,0.22);
+  }
+  .lead { width: 26px; height: 4px; background: linear-gradient(180deg,#d8d8d8,#909090); border-radius: 2px; }
+  .band { width: 15px; height: 46px; border-radius: 2px; box-shadow: inset -2px 0 4px rgba(0,0,0,0.3); }
+
+  .swatch-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    background: none; border: none; cursor: pointer; padding: 4px;
+    font-family: inherit;
+  }
+  .swatch {
+    width: 46px; height: 46px; border-radius: 7px;
+    border: 3px solid var(--wood);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.25), 0 3px 7px rgba(0,0,0,0.28);
+    transition: transform 0.12s, box-shadow 0.12s;
+  }
+  .swatch-btn:hover .swatch { transform: translateY(-3px) scale(1.07); }
+  .swatch-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .swatch-btn:disabled .swatch { transform: none; }
+  .swatch-label { font-size: 0.64rem; font-weight: 700; color: var(--ink-mid); }
+
+  .hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px;
+    background: linear-gradient(180deg, rgba(58,36,24,0.95), rgba(40,24,16,0.95));
+    border-bottom: 2px solid var(--gold-dk);
+    color: #fff; font-size: 0.78rem; font-weight: 700;
+  }
+  .hud .gold { color: var(--gold); }
+  .timer-wrap { flex: 1; max-width: 190px; }
+  .timer { height: 9px; background: #1b1119; border: 2px solid var(--gold-dk); border-radius: 5px; overflow: hidden; }
+  .timer > div { height: 100%; background: linear-gradient(180deg,#7ee88a,#34b84a); transition: width 0.25s linear; }
+  .timer > div.low { background: linear-gradient(180deg,#ffb46a,#d4521a); }
+
+  .target { font-size: 2rem; font-weight: 700; color: var(--orange); letter-spacing: 0.02em; }
+  .feedback { min-height: 42px; display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+
+<div class="lk-stage">
+  <div class="hud">
+    <span>Round <span class="gold" id="roundNum">1</span> / 5</span>
+    <span>Score <span class="gold" id="scoreNum">0</span></span>
+    <div class="lk-grow"></div>
+    <div class="timer-wrap">
+      <div class="timer"><div id="timerFill" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <div class="lk-center" id="playfield">
+    <div class="lk-sub">Read the bands</div>
+    <div class="band-strip">
+      <div class="body-tan">
+        <div class="lead"></div>
+        <div class="band" id="band0"></div>
+        <div class="band" id="band1"></div>
+        <div class="band" id="band2"></div>
+        <div class="lead"></div>
+      </div>
+    </div>
+    <div class="target" id="targetValue">— ohms</div>
+    <div class="lk-text" id="prompt">Which color goes in the <b>first</b> band?</div>
+    <div class="lk-wrap" id="swatches"></div>
+    <div class="feedback" id="feedback"></div>
+  </div>
+
+  <div class="lk-center" id="endcard" style="display:none">
+    <img class="lk-sprite lk-float" id="endSprite" width="120" height="120" alt="" />
+    <div class="lk-title" id="endTitle">Nice work!</div>
+    <div class="lk-text" id="endText"></div>
+    <button class="lk-btn lg" id="continueBtn">Continue to Quiz →</button>
+  </div>
+</div>
+
+<script src="/kit/lesson-kit.js"></script>
+<script>
+/* ==========================================================================
+   Everything below is private to this lesson.
+
+   `state`, `COLORS`, `newRound` and the rest are declared on this iframe's
+   own window. Another lesson can declare the same names with completely
+   different meanings and neither will notice. That isolation is why
+   lessons can be written freeform without coordinating naming.
+   ========================================================================== */
+'use strict';
+
+var COLORS = [
+  { name: 'black',  hex: '#1a1a1a', digit: 0 },
+  { name: 'brown',  hex: '#6b3f1f', digit: 1 },
+  { name: 'red',    hex: '#c62828', digit: 2 },
+  { name: 'orange', hex: '#e07b20', digit: 3 },
+  { name: 'yellow', hex: '#f2c230', digit: 4 },
+  { name: 'green',  hex: '#2e8b45', digit: 5 },
+  { name: 'blue',   hex: '#2b5fa8', digit: 6 },
+  { name: 'violet', hex: '#7a4b9e', digit: 7 }
+];
+
+var ROUNDS     = 5;
+var ROUND_TIME = 15000;
+
+var state = {
+  round:    0,
+  score:    0,
+  bandStep: 0,
+  answer:   [],
+  timer:    null,
+  deadline: 0
+};
+
+var el = {
+  round:    Ignite.$('#roundNum'),
+  score:    Ignite.$('#scoreNum'),
+  timerFill:Ignite.$('#timerFill'),
+  bands:    [Ignite.$('#band0'), Ignite.$('#band1'), Ignite.$('#band2')],
+  target:   Ignite.$('#targetValue'),
+  prompt:   Ignite.$('#prompt'),
+  swatches: Ignite.$('#swatches'),
+  feedback: Ignite.$('#feedback'),
+  playfield:Ignite.$('#playfield'),
+  endcard:  Ignite.$('#endcard'),
+  endTitle: Ignite.$('#endTitle'),
+  endText:  Ignite.$('#endText'),
+  endSprite:Ignite.$('#endSprite')
+};
+
+var ORDINAL = ['first', 'second', 'third'];
+
+function ohms(digits) {
+  var value = (digits[0] * 10 + digits[1]) * Math.pow(10, digits[2]);
+  return value >= 1000 ? (value / 1000) + 'k ohms' : value + ' ohms';
+}
+
+function newRound() {
+  state.round++;
+  state.bandStep = 0;
+  state.answer = [
+    1 + Math.floor(Math.random() * 7),   // first digit, never zero
+    Math.floor(Math.random() * 8),
+    Math.floor(Math.random() * 4)
+  ];
+
+  el.round.textContent  = state.round;
+  el.target.textContent = ohms(state.answer);
+  el.bands.forEach(function (b) { b.style.background = 'transparent'; });
+  el.feedback.innerHTML = '';
+
+  renderSwatches();
+  updatePrompt();
+  startTimer();
+}
+
+function updatePrompt() {
+  el.prompt.innerHTML = 'Which color goes in the <b>' +
+    ORDINAL[state.bandStep] + '</b> band?';
+}
+
+function renderSwatches() {
+  el.swatches.innerHTML = '';
+  COLORS.forEach(function (color, index) {
+    var btn = document.createElement('button');
+    btn.className = 'swatch-btn';
+    btn.innerHTML =
+      '<div class="swatch" style="background:' + color.hex + '"></div>' +
+      '<div class="swatch-label">' + color.name + '</div>';
+    btn.addEventListener('click', function () { pick(index); });
+    el.swatches.appendChild(btn);
+  });
+}
+
+function pick(index) {
+  var want = state.answer[state.bandStep];
+
+  if (index === want) {
+    el.bands[state.bandStep].style.background = COLORS[index].hex;
+    state.bandStep++;
+
+    if (state.bandStep >= 3) {
+      stopTimer();
+      var bonus = Math.max(0, Math.round((state.deadline - Date.now()) / 1000));
+      state.score += 10 + bonus;
+      el.score.textContent = state.score;
+      el.feedback.innerHTML =
+        '<div class="lk-correct">Correct! +' + (10 + bonus) + ' (speed bonus ' + bonus + ')</div>';
+      setTimeout(nextOrFinish, 1150);
+    } else {
+      updatePrompt();
+      el.feedback.innerHTML = '<div class="lk-correct">Yes — keep going.</div>';
+    }
+  } else {
+    el.feedback.innerHTML =
+      '<div class="lk-wrong">Not quite. ' + COLORS[index].name +
+      ' means ' + COLORS[index].digit + '.</div>';
+  }
+}
+
+function nextOrFinish() {
+  if (state.round >= ROUNDS) finish();
+  else newRound();
+}
+
+function startTimer() {
+  stopTimer();
+  state.deadline = Date.now() + ROUND_TIME;
+  state.timer = setInterval(function () {
+    var left = Math.max(0, state.deadline - Date.now());
+    var pct  = (left / ROUND_TIME) * 100;
+    el.timerFill.style.width = pct + '%';
+    el.timerFill.classList.toggle('low', pct < 34);
+
+    if (left <= 0) {
+      stopTimer();
+      el.feedback.innerHTML =
+        '<div class="lk-wrong">Out of time — it was ' +
+        state.answer.map(function (d) { return COLORS[d].name; }).join(', ') + '.</div>';
+      setTimeout(nextOrFinish, 1600);
+    }
+  }, 100);
+}
+
+function stopTimer() {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+}
+
+function finish() {
+  var best    = ROUNDS * 25;
+  var percent = Math.min(100, Math.round((state.score / best) * 100));
+
+  el.playfield.style.display = 'none';
+  el.endcard.style.display   = 'flex';
+
+  /* Shared art, resolved by the host — see /art/<name> in app.py.
+     Extension is not hardcoded, so swapping the file updates every
+     lesson that uses this sprite. */
+  el.endSprite.src = Ignite.art('characters/spark-cheer');
+
+  el.endTitle.textContent = percent >= 70 ? 'Great reading!' : 'Good effort!';
+  el.endText.textContent  =
+    'You scored ' + state.score + ' points across ' + ROUNDS + ' resistors.';
+
+  Ignite.progress(percent);
+}
+
+Ignite.$('#continueBtn').addEventListener('click', function () {
+  /* Hand control back. The host runs the quiz and awards XP and trinkets
+     — a lesson never scores itself. */
+  Ignite.complete(Math.min(100, Math.round((state.score / (ROUNDS * 25)) * 100)));
+});
+
+Ignite.onReady(function () {
+  Ignite.ready();
+  newRound();
+});
+</script>
+</body>
+</html>

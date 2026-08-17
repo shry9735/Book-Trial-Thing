@@ -2,10 +2,11 @@
 """
 app.py — Ignite Academy game server.
 
-A Flash-era style browser game for STEM lessons.  Two account roles:
+Two account roles:
 
-    student  → lands in the classroom, clicks hotspots to reach lessons
-    teacher  → group management + student progress tracking
+    student  → classroom → lessons → quiz → trinkets
+    parent   → plain-language progress, no digging required
+    teacher  → same view as parent, plus group management
 
 Usage:
     pip install -r ../requirements.txt
@@ -13,48 +14,65 @@ Usage:
     python app.py --host 0.0.0.0 --port 5000
 
 Default accounts are seeded into data/users.json on first run.
-See README.md for the credentials.
+See README.md for credentials.
 
 ──────────────────────────────────────────────────────
-GRAPHICS
+LESSONS ARE SELF-CONTAINED PACKAGES
 ──────────────────────────────────────────────────────
-All art is resolved from static/art/ by name — there is no UI for it and
-no per-user setting.  To change a graphic, drop a file into the folder:
+Every lesson is one folder under lessons/.  Drop a folder in, it appears
+in the game — nothing to register.
 
-    static/art/backgrounds/classroom.png
+    lessons/circuits-03/
+    ├── lesson.json      manifest: title, xp, quiz, reward
+    ├── index.html       the lesson itself (interactive types)
+    └── anything else    its own js/css/assets, namespaced to this folder
 
-Templates request it as {{ art('backgrounds/classroom') }}.  Any of
-.webp .png .jpg .jpeg .gif .svg works; the first match wins.  If nothing
-is there yet, a labelled placeholder is drawn telling you the exact path
-to create.  See static/art/README.md.
+Interactive lessons render in an IFRAME.  That is deliberate and is the
+whole isolation strategy: each lesson gets its own JavaScript context,
+its own global scope and its own CSS scope, enforced by the browser.  A
+lesson can define `window.player`, throw on load, or capture every key
+event, and no other lesson can observe it.  There is no shared bundle to
+break and no load order to get wrong.
+
+Lessons talk to the host only through postMessage, via the kit — see
+static/kit/lesson-kit.js.
+
+──────────────────────────────────────────────────────
+GRAPHICS ARE SHARED, CODE IS NOT
+──────────────────────────────────────────────────────
+Isolated code would normally mean duplicated art.  It doesn't here,
+because art lives in one namespace any lesson can reach:
+
+    /art/<name>        e.g. <img src="/art/characters/spark">
+
+That route resolves the extension server-side (.webp .png .jpg .gif .svg)
+and falls back to a labelled placeholder.  Lessons never hardcode a file
+path, so re-exporting spark.png as spark.webp updates every lesson at
+once.  Pair it with static/kit/lesson-kit.css for shared fonts, colours,
+buttons and panels — visual consistency without shared JavaScript.
 
 ──────────────────────────────────────────────────────
 BOOK ↔ WEB CROSSOVER
 ──────────────────────────────────────────────────────
-Lessons of type "reading" pull their prose from content/ as Markdown.
-Those same files are valid input to the repo's make_epub.py, so one
-source file serves both surfaces:
+Reading lessons keep their prose in content/ as Markdown, which is valid
+make_epub.py input.  One source file serves the game, the EPUB and the
+RAG index:
 
-    game/content/01-circuits.md
-        → rendered in-game at /lesson/<id>
-        → built into a chapter with:
-          python ../make_epub.py content/ -t "Ignite Academy" -o book.epub
-
-Going the other way, EPUBs in books/ are indexed by ../ingest.py for the
-RAG chat.  Keep prose in content/ and it stays usable by all three.
+    python ../make_epub.py content/ -t "Ignite Academy" -o ignite.epub
 """
 
 import argparse
 import json
+import re
 import secrets
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
     from flask import (
         Flask, abort, flash, jsonify, redirect, render_template,
-        request, session, url_for,
+        request, send_from_directory, session, url_for,
     )
     from werkzeug.security import check_password_hash, generate_password_hash
 except ImportError:
@@ -64,42 +82,33 @@ except ImportError:
 BASE_DIR    = Path(__file__).parent
 DATA_DIR    = BASE_DIR / "data"
 ART_DIR     = BASE_DIR / "static" / "art"
-CONTENT_DIR = BASE_DIR / "content"   # Markdown prose — also make_epub.py input
+LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
+CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
 
 USERS_FILE     = DATA_DIR / "users.json"
 GROUPS_FILE    = DATA_DIR / "groups.json"
 PROGRESS_FILE  = DATA_DIR / "progress.json"
-LESSONS_FILE   = DATA_DIR / "lessons.json"
+ITEMS_FILE     = DATA_DIR / "items.json"
 CLASSROOM_FILE = DATA_DIR / "classroom.json"
 SECRET_FILE    = DATA_DIR / "secret_key"
 
-# Art file extensions, in resolution priority order
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
-# Flash-style fixed stage size.  Everything scales to fit the viewport.
+# Flash-style fixed stage.  Everything scales to fit the viewport.
 STAGE_W = 960
 STAGE_H = 600
 
-# Seed accounts created on first run
+# A student is "quiet" after this many days with no activity
+QUIET_DAYS = 5
+# A question missed this many times counts as a sticking point
+STUCK_TRIES = 2
+
 SEED_USERS = {
-    "student": {
-        "password": "spark123",
-        "role":     "student",
-        "name":     "Alex Rivera",
-        "avatar":   "characters/avatar-student",
-    },
-    "student2": {
-        "password": "spark123",
-        "role":     "student",
-        "name":     "Jamie Chen",
-        "avatar":   "characters/avatar-student2",
-    },
-    "teacher": {
-        "password": "ignite123",
-        "role":     "teacher",
-        "name":     "Ms. Chen",
-        "avatar":   "characters/avatar-teacher",
-    },
+    "student":  {"password": "spark123",  "role": "student", "name": "Alex Rivera",  "avatar": "characters/avatar-student"},
+    "student2": {"password": "spark123",  "role": "student", "name": "Jamie Chen",   "avatar": "characters/avatar-student2"},
+    "teacher":  {"password": "ignite123", "role": "teacher", "name": "Ms. Chen",     "avatar": "characters/avatar-teacher"},
+    "parent":   {"password": "ignite123", "role": "parent",  "name": "Dana Rivera",  "avatar": "characters/avatar-parent",
+                 "children": ["student"]},
 }
 
 app = Flask(__name__)
@@ -108,7 +117,6 @@ app = Flask(__name__)
 # ── JSON store ──────────────────────────────────────────────────────────────────
 
 def read_json(path: Path, default):
-    """Read a JSON file, returning `default` if missing or unparseable."""
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -125,28 +133,91 @@ def write_json(path: Path, data) -> None:
 def load_users()    -> dict: return read_json(USERS_FILE,    {})
 def load_groups()   -> dict: return read_json(GROUPS_FILE,   {})
 def load_progress() -> dict: return read_json(PROGRESS_FILE, {})
-def load_lessons()  -> list: return read_json(LESSONS_FILE,  [])
+def load_items()    -> dict: return read_json(ITEMS_FILE,    {})
 
 
 def load_classroom() -> dict:
     return read_json(CLASSROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
 
 
+# ── Lesson discovery ────────────────────────────────────────────────────────────
+
+def load_lessons() -> list[dict]:
+    """
+    Scan lessons/*/lesson.json.  The folder name is the lesson id, so
+    adding a lesson is dropping a folder in — nothing to register.
+
+    Sorted by the manifest's "order" field, then by id.
+    """
+    found: list[dict] = []
+    if not LESSONS_DIR.is_dir():
+        return found
+
+    for folder in sorted(LESSONS_DIR.iterdir()):
+        manifest = folder / "lesson.json"
+        if not folder.is_dir() or not manifest.is_file():
+            continue
+        data = read_json(manifest, None)
+        if not isinstance(data, dict):
+            print(f"Warning: skipping {folder.name} — unreadable lesson.json", file=sys.stderr)
+            continue
+        data["id"] = folder.name
+        data.setdefault("title",   folder.name)
+        data.setdefault("subject", "General")
+        data.setdefault("type",    "interactive")
+        data.setdefault("xp",      50)
+        data.setdefault("order",   999)
+        data.setdefault("quiz",    [])
+        data.setdefault("thumb",   f"lessons/{folder.name}")
+        found.append(data)
+
+    return sorted(found, key=lambda l: (l["order"], l["id"]))
+
+
+def get_lesson(lesson_id: str) -> dict | None:
+    return next((l for l in load_lessons() if l["id"] == lesson_id), None)
+
+
+@app.route("/kit/<path:filename>")
+def kit_asset(filename: str):
+    """
+    Short, stable URL for the shared lesson kit, so every lesson writes
+    the same two lines regardless of where it lives:
+
+        <link rel="stylesheet" href="/kit/lesson-kit.css">
+        <script src="/kit/lesson-kit.js"></script>
+    """
+    return send_from_directory(BASE_DIR / "static" / "kit", filename)
+
+
+@app.route("/lessons/<lesson_id>/<path:filename>")
+def lesson_asset(lesson_id: str, filename: str):
+    """
+    Serve a lesson package's own files.  Each lesson is sandboxed to its
+    own folder, so one lesson cannot reach into another's assets.
+    """
+    folder = LESSONS_DIR / lesson_id
+    if not (folder / "lesson.json").is_file():
+        abort(404)
+    return send_from_directory(folder, filename)
+
+
 # ── First-run setup ─────────────────────────────────────────────────────────────
 
 def seed_users() -> None:
-    """Create data/users.json with hashed passwords if it doesn't exist."""
     if USERS_FILE.exists():
         return
-    users = {
-        username: {
+    users = {}
+    for username, info in SEED_USERS.items():
+        entry = {
             "password_hash": generate_password_hash(info["password"]),
             "role":          info["role"],
             "name":          info["name"],
             "avatar":        info["avatar"],
         }
-        for username, info in SEED_USERS.items()
-    }
+        if "children" in info:
+            entry["children"] = info["children"]
+        users[username] = entry
     write_json(USERS_FILE, users)
     print(f"  Seeded {len(users)} account(s) → {USERS_FILE.relative_to(BASE_DIR)}")
     for username, info in SEED_USERS.items():
@@ -154,7 +225,6 @@ def seed_users() -> None:
 
 
 def load_secret_key() -> str:
-    """Persist a random secret key so sessions survive restarts."""
     if SECRET_FILE.exists():
         return SECRET_FILE.read_text(encoding="utf-8").strip()
     key = secrets.token_hex(32)
@@ -163,10 +233,9 @@ def load_secret_key() -> str:
     return key
 
 
-# ── Art resolution ──────────────────────────────────────────────────────────────
+# ── Art resolution (one shared namespace for every lesson) ──────────────────────
 
 def find_art(name: str) -> str | None:
-    """Return the static-relative path for an art name, or None if absent."""
     for ext in ART_EXTS:
         if (ART_DIR / f"{name}{ext}").is_file():
             return f"art/{name}{ext}"
@@ -174,10 +243,6 @@ def find_art(name: str) -> str | None:
 
 
 def art(name: str) -> str:
-    """
-    Resolve an art name to a URL.  Falls back to a labelled placeholder
-    that names the exact file path you need to create.
-    """
     found = find_art(name)
     if found:
         return url_for("static", filename=found)
@@ -189,46 +254,9 @@ def art_exists(name: str) -> bool:
 
 
 def media(source: str) -> str:
-    """
-    Resolve a lesson media source.  Absolute URLs pass through untouched;
-    everything else resolves through the art folder.
-    """
     if source.startswith(("http://", "https://", "//", "/")):
         return source
     return art(source)
-
-
-# ── Reading content (shared with make_epub.py) ──────────────────────────────────
-
-def render_content(source: str) -> str:
-    """
-    Render a file from content/ to HTML for the in-game reader.
-
-    The same file is valid make_epub.py input, so prose written once can be
-    served on the web and built into an EPUB chapter without conversion.
-    Markdown is rendered; .html is passed through as-is.
-    """
-    path = CONTENT_DIR / source
-    try:
-        path.resolve().relative_to(CONTENT_DIR.resolve())   # block path escapes
-    except ValueError:
-        return "<p>Invalid content path.</p>"
-
-    if not path.is_file():
-        return (
-            f'<p class="content-missing">No content file yet — create '
-            f'<code>game/content/{source}</code>.</p>'
-        )
-
-    raw = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix.lower() in (".html", ".htm"):
-        return raw
-
-    try:
-        import markdown
-    except ImportError:
-        return f"<pre>{raw}</pre>"
-    return markdown.markdown(raw, extensions=["extra", "tables"])
 
 
 app.jinja_env.globals.update(
@@ -237,12 +265,24 @@ app.jinja_env.globals.update(
 )
 
 
+@app.route("/art/<path:name>")
+def art_url(name: str):
+    """
+    Stable art URL for lesson packages: <img src="/art/characters/spark">
+
+    Resolves the extension server-side, so lessons never hardcode one.
+    Re-exporting a .png as .webp updates every lesson that references it
+    without touching a single lesson's code.
+    """
+    found = find_art(name)
+    if found:
+        return redirect(url_for("static", filename=found))
+    return redirect(url_for("art_placeholder", name=name))
+
+
 @app.route("/art-placeholder/<path:name>")
 def art_placeholder(name: str):
-    """
-    Draw an SVG placeholder naming the missing file, so it is obvious
-    which path to drop a graphic into.
-    """
+    """SVG placeholder naming the exact file path to create."""
     label = f"static/art/{name}.png"
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
   <defs>
@@ -267,10 +307,33 @@ def art_placeholder(name: str):
     return app.response_class(svg, mimetype="image/svg+xml")
 
 
+# ── Reading content (shared with make_epub.py) ──────────────────────────────────
+
+def render_content(source: str) -> str:
+    """Render a content/ file to HTML.  Same file is make_epub.py input."""
+    path = CONTENT_DIR / source
+    try:
+        path.resolve().relative_to(CONTENT_DIR.resolve())
+    except ValueError:
+        return "<p>Invalid content path.</p>"
+
+    if not path.is_file():
+        return (f'<p class="content-missing">No content file yet — create '
+                f'<code>game/content/{source}</code>.</p>')
+
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() in (".html", ".htm"):
+        return raw
+    try:
+        import markdown
+    except ImportError:
+        return f"<pre>{raw}</pre>"
+    return markdown.markdown(raw, extensions=["extra", "tables"])
+
+
 # ── Auth ────────────────────────────────────────────────────────────────────────
 
 def current_user() -> dict | None:
-    """Return the logged-in user dict (with 'username' added), or None."""
     username = session.get("username")
     if not username:
         return None
@@ -281,18 +344,14 @@ def current_user() -> dict | None:
     return {**user, "username": username}
 
 
-def login_required(role: str | None = None):
-    """
-    Decorator enforcing a session, and optionally a specific role.
-    Wrong-role users are bounced to their own home screen rather than
-    shown an error.
-    """
+def login_required(*roles: str):
+    """Require a session, and optionally membership of one of `roles`."""
     def decorator(fn):
         def wrapper(*fargs, **fkwargs):
             user = current_user()
             if not user:
                 return redirect(url_for("login", next=request.path))
-            if role and user["role"] != role:
+            if roles and user["role"] not in roles:
                 return redirect(url_for("home"))
             return fn(*fargs, **fkwargs)
         wrapper.__name__ = fn.__name__
@@ -307,12 +366,11 @@ def inject_user():
 
 @app.route("/")
 def home():
-    """Route to the right home screen for whoever is logged in."""
     user = current_user()
     if not user:
         return redirect(url_for("login"))
-    if user["role"] == "teacher":
-        return redirect(url_for("teacher_dashboard"))
+    if user["role"] in ("teacher", "parent"):
+        return redirect(url_for("grownup_home"))
     return redirect(url_for("classroom"))
 
 
@@ -321,20 +379,15 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        users    = load_users()
-        user     = users.get(username)
+        user     = load_users().get(username)
 
         if not user or not check_password_hash(user["password_hash"], password):
             flash("That username and password don't match.", "error")
-            return render_template(
-                "login.html",
-                role_tab=request.form.get("role_tab", "student"),
-                username=username,
-            )
+            return render_template("login.html",
+                                   role_tab=request.form.get("role_tab", "student"),
+                                   username=username)
 
         session["username"] = username
-        # The account's own role decides the destination — picking the
-        # wrong tab on the login screen is harmless.
         nxt = request.args.get("next")
         if nxt and nxt.startswith("/"):
             return redirect(nxt)
@@ -351,21 +404,27 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ── Progress helpers ────────────────────────────────────────────────────────────
+# ── Progress ────────────────────────────────────────────────────────────────────
+
+def blank_record() -> dict:
+    return {"xp": 0, "items": [], "lessons": {}}
+
 
 def student_progress(username: str) -> dict:
-    """Return {xp, lessons:{id:{status,score,updated}}} for one student."""
-    return load_progress().get(username, {"xp": 0, "lessons": {}})
+    return {**blank_record(), **load_progress().get(username, {})}
 
 
-def set_lesson_status(username: str, lesson_id: str, status: str, score: int | None = None) -> dict:
-    """
-    Record progress for a lesson.  XP is awarded once, on first completion.
-    Returns the updated record for that student.
-    """
+def _save_record(username: str, record: dict) -> None:
     progress = load_progress()
-    record   = progress.setdefault(username, {"xp": 0, "lessons": {}})
-    entry    = record["lessons"].get(lesson_id, {})
+    progress[username] = record
+    write_json(PROGRESS_FILE, progress)
+
+
+def set_lesson_status(username: str, lesson_id: str, status: str,
+                      score: int | None = None) -> dict:
+    """Record lesson status.  XP and the reward item are granted once."""
+    record = student_progress(username)
+    entry  = record["lessons"].get(lesson_id, {})
 
     was_complete = entry.get("status") == "completed"
     entry["status"]  = status
@@ -374,30 +433,184 @@ def set_lesson_status(username: str, lesson_id: str, status: str, score: int | N
         entry["score"] = max(int(score), int(entry.get("score", 0)))
 
     if status == "completed" and not was_complete:
-        lesson = next((l for l in load_lessons() if l["id"] == lesson_id), None)
-        record["xp"] = record.get("xp", 0) + (lesson.get("xp", 0) if lesson else 0)
+        lesson = get_lesson(lesson_id)
+        if lesson:
+            record["xp"] = record.get("xp", 0) + lesson.get("xp", 0)
+            reward = lesson.get("reward")
+            if reward and reward not in record["items"]:
+                record["items"].append(reward)
 
     record["lessons"][lesson_id] = entry
-    write_json(PROGRESS_FILE, progress)
+    _save_record(username, record)
     return record
 
 
+def record_answer(username: str, lesson_id: str, question_id: str,
+                  chosen: int, correct: bool) -> dict:
+    """
+    Store one quiz answer.  Every attempt is kept, because "what did they
+    get wrong, and how many tries did it take" is the question a parent
+    actually wants answered.
+    """
+    record = student_progress(username)
+    entry  = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
+    quiz   = entry.setdefault("quiz", {})
+    q      = quiz.setdefault(question_id, {"tries": 0, "correct": False})
+
+    q["tries"]   = q.get("tries", 0) + 1
+    q["chosen"]  = chosen
+    q["correct"] = bool(correct)
+    if correct and "first_try" not in q:
+        q["first_try"] = q["tries"] == 1
+
+    entry["updated"] = datetime.now().isoformat(timespec="seconds")
+    _save_record(username, record)
+    return record
+
+
+def quiz_score(lesson: dict, entry: dict) -> int | None:
+    """Percent of questions answered correctly on the first try."""
+    questions = lesson.get("quiz", [])
+    if not questions:
+        return None
+    answers = entry.get("quiz", {})
+    if not answers:
+        return None
+    first_try = sum(1 for q in questions if answers.get(q["id"], {}).get("first_try"))
+    return round(first_try / len(questions) * 100)
+
+
 def summarise(username: str) -> dict:
-    """Roll a student's progress up into dashboard-friendly totals."""
-    lessons  = load_lessons()
-    record   = student_progress(username)
-    entries  = record.get("lessons", {})
-    done     = sum(1 for e in entries.values() if e.get("status") == "completed")
-    active   = sum(1 for e in entries.values() if e.get("status") == "in_progress")
-    stamps   = [e["updated"] for e in entries.values() if e.get("updated")]
+    lessons = load_lessons()
+    record  = student_progress(username)
+    entries = record.get("lessons", {})
+    done    = sum(1 for e in entries.values() if e.get("status") == "completed")
+    active  = sum(1 for e in entries.values() if e.get("status") == "in_progress")
+    stamps  = [e["updated"] for e in entries.values() if e.get("updated")]
+
+    scores = [s for s in (quiz_score(l, entries.get(l["id"], {})) for l in lessons)
+              if s is not None]
+
     return {
-        "xp":          record.get("xp", 0),
+        "xp": record.get("xp", 0),
+        # Named "trinkets", not "items": in Jinja, `summary.items` resolves
+        # to the dict's .items() method rather than this key.
+        "trinkets":    record.get("items", []),
         "completed":   done,
         "in_progress": active,
         "total":       len(lessons),
         "percent":     round(done / len(lessons) * 100) if lessons else 0,
         "last_active": max(stamps) if stamps else None,
+        "avg_score":   round(sum(scores) / len(scores)) if scores else None,
     }
+
+
+# ── Plain-language reporting (the grown-up view) ────────────────────────────────
+
+def days_since(stamp: str | None) -> int | None:
+    if not stamp:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(stamp)).days
+    except ValueError:
+        return None
+
+
+def sticking_points(username: str) -> list[dict]:
+    """
+    Questions this student got wrong, newest first, with the topic and the
+    right answer spelled out.  This is what a parent reads instead of
+    interpreting a score.
+    """
+    entries = student_progress(username).get("lessons", {})
+    out: list[dict] = []
+
+    for lesson in load_lessons():
+        answers = entries.get(lesson["id"], {}).get("quiz", {})
+        if not answers:
+            continue
+        for question in lesson.get("quiz", []):
+            a = answers.get(question["id"])
+            if not a or a.get("tries", 0) == 0:
+                continue
+            missed = a.get("tries", 0) > 1 or not a.get("correct")
+            if not missed:
+                continue
+            choices = question.get("choices", [])
+            chosen  = a.get("chosen")
+            out.append({
+                "lesson":       lesson["title"],
+                "lesson_id":    lesson["id"],
+                "subject":      lesson.get("subject", ""),
+                "prompt":       question["prompt"],
+                "their_answer": choices[chosen] if isinstance(chosen, int) and 0 <= chosen < len(choices) else "—",
+                "right_answer": choices[question["answer"]] if choices else "—",
+                "tries":        a.get("tries", 0),
+                "resolved":     bool(a.get("correct")),
+                "explain":      question.get("explain", ""),
+            })
+
+    return sorted(out, key=lambda s: (s["resolved"], -s["tries"]))
+
+
+def headline(username: str) -> dict:
+    """
+    One sentence a parent can read in two seconds, plus a tone for colour.
+    Ordered by what most needs saying.
+    """
+    summary = summarise(username)
+    quiet   = days_since(summary["last_active"])
+    stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+
+    if summary["completed"] == 0 and summary["in_progress"] == 0:
+        return {"tone": "idle", "icon": "🌱",
+                "text": "Hasn't started yet — the first lesson is ready when they are."}
+
+    if quiet is not None and quiet >= QUIET_DAYS:
+        return {"tone": "warn", "icon": "💤",
+                "text": f"No practice in {quiet} days — a nudge would help."}
+
+    if stuck:
+        topic = stuck[0]["subject"] or stuck[0]["lesson"]
+        return {"tone": "warn", "icon": "🤔",
+                "text": f"Stuck on {topic} — {len(stuck)} question{'' if len(stuck) == 1 else 's'} still wrong."}
+
+    if summary["completed"] == summary["total"] and summary["total"]:
+        return {"tone": "good", "icon": "🎉",
+                "text": "Finished every lesson. Time for new material!"}
+
+    if summary["avg_score"] is not None and summary["avg_score"] >= 80:
+        return {"tone": "good", "icon": "⭐",
+                "text": f"Doing great — {summary['completed']} lessons done, {summary['avg_score']}% on quizzes."}
+
+    return {"tone": "ok", "icon": "👍",
+            "text": f"On track — {summary['completed']} of {summary['total']} lessons done."}
+
+
+def recent_activity(username: str, limit: int = 8) -> list[dict]:
+    """Newest-first timeline of what actually happened."""
+    entries = student_progress(username).get("lessons", {})
+    rows = []
+    for lesson in load_lessons():
+        e = entries.get(lesson["id"])
+        if not e or not e.get("updated"):
+            continue
+        rows.append({
+            "when":   e["updated"],
+            "title":  lesson["title"],
+            "status": e.get("status", "in_progress"),
+            "score":  quiz_score(lesson, e),
+        })
+    return sorted(rows, key=lambda r: r["when"], reverse=True)[:limit]
+
+
+def visible_students(user: dict) -> list[str]:
+    """Teachers see every student; parents see only their own children."""
+    students = [u for u, d in load_users().items() if d["role"] == "student"]
+    if user["role"] == "parent":
+        children = user.get("children", [])
+        return [u for u in students if u in children]
+    return students
 
 
 # ── Student screens ─────────────────────────────────────────────────────────────
@@ -405,30 +618,28 @@ def summarise(username: str) -> dict:
 @app.route("/classroom")
 @login_required("student")
 def classroom():
-    user    = current_user()
-    layout  = load_classroom()
-    summary = summarise(user["username"])
-    return render_template("classroom.html", layout=layout, summary=summary)
+    user = current_user()
+    return render_template("classroom.html",
+                           layout=load_classroom(),
+                           summary=summarise(user["username"]))
 
 
 @app.route("/lessons")
 @login_required("student")
 def lessons():
-    user     = current_user()
-    record   = student_progress(user["username"])
-    entries  = record.get("lessons", {})
-    catalog  = [
-        {**lesson, "progress": entries.get(lesson["id"], {"status": "not_started"})}
-        for lesson in load_lessons()
-    ]
-    return render_template("lessons.html", lessons=catalog, summary=summarise(user["username"]))
+    user    = current_user()
+    entries = student_progress(user["username"]).get("lessons", {})
+    catalog = [{**l, "progress": entries.get(l["id"], {"status": "not_started"})}
+               for l in load_lessons()]
+    return render_template("lessons.html", lessons=catalog,
+                           summary=summarise(user["username"]))
 
 
 @app.route("/lesson/<lesson_id>")
 @login_required("student")
 def lesson(lesson_id: str):
     user   = current_user()
-    lesson = next((l for l in load_lessons() if l["id"] == lesson_id), None)
+    lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
 
@@ -436,21 +647,41 @@ def lesson(lesson_id: str):
     if entry.get("status") != "completed":
         set_lesson_status(user["username"], lesson_id, "in_progress")
 
-    body = render_content(lesson["source"]) if lesson["type"] == "reading" else None
-    return render_template("lesson.html", lesson=lesson, entry=entry, body=body)
+    body = render_content(lesson["content"]) if lesson["type"] == "reading" else None
 
+    # Never ship the answer key to the client — questions are stripped and
+    # answers checked server-side in /api/quiz.
+    quiz = [{"id": q["id"], "prompt": q["prompt"], "choices": q.get("choices", [])}
+            for q in lesson.get("quiz", [])]
+
+    return render_template("lesson.html", lesson=lesson, entry=entry,
+                           body=body, quiz=quiz,
+                           summary=summarise(user["username"]))
+
+
+@app.route("/satchel")
+@login_required("student")
+def satchel():
+    user    = current_user()
+    record  = student_progress(user["username"])
+    catalog = load_items()
+    earned  = set(record.get("items", []))
+
+    items = [{**info, "id": iid, "earned": iid in earned}
+             for iid, info in catalog.items()]
+    items.sort(key=lambda i: (not i["earned"], i.get("name", "")))
+
+    return render_template("satchel.html", items=items,
+                           earned_count=len(earned & set(catalog)),
+                           summary=summarise(user["username"]))
+
+
+# ── Student APIs ────────────────────────────────────────────────────────────────
 
 @app.route("/api/progress", methods=["POST"])
 @login_required("student")
 def api_progress():
-    """
-    Called by the lesson player when a video finishes or an embedded game
-    reports a result.  Games post from inside their iframe with:
-
-        window.parent.postMessage(
-            {type: "lesson:complete", score: 90}, "*"
-        )
-    """
+    """Called by the lesson player, and by lessons via the kit's postMessage."""
     user = current_user()
     body = request.get_json(silent=True) or {}
 
@@ -458,7 +689,7 @@ def api_progress():
     status    = body.get("status", "in_progress")
     score     = body.get("score")
 
-    if not lesson_id or not any(l["id"] == lesson_id for l in load_lessons()):
+    if not lesson_id or not get_lesson(lesson_id):
         return jsonify({"error": "Unknown lesson."}), 400
     if status not in ("in_progress", "completed"):
         return jsonify({"error": "Invalid status."}), 400
@@ -467,11 +698,142 @@ def api_progress():
     return jsonify({"ok": True, "summary": summarise(user["username"])})
 
 
-# ── Teacher screens ─────────────────────────────────────────────────────────────
+@app.route("/api/quiz", methods=["POST"])
+@login_required("student")
+def api_quiz():
+    """
+    Check one answer and record the attempt.  The answer key never leaves
+    the server, so it cannot be read out of the page source.
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
 
-@app.route("/teacher")
+    lesson = get_lesson(body.get("lesson_id", ""))
+    if not lesson:
+        return jsonify({"error": "Unknown lesson."}), 400
+
+    question = next((q for q in lesson.get("quiz", []) if q["id"] == body.get("question_id")), None)
+    if not question:
+        return jsonify({"error": "Unknown question."}), 400
+
+    try:
+        chosen = int(body.get("chosen"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "No answer given."}), 400
+
+    correct = chosen == question["answer"]
+    record_answer(user["username"], lesson["id"], question["id"], chosen, correct)
+
+    return jsonify({
+        "correct": correct,
+        "answer":  question["answer"],
+        "explain": question.get("explain", ""),
+    })
+
+
+@app.route("/api/quiz/finish", methods=["POST"])
+@login_required("student")
+def api_quiz_finish():
+    """Score the quiz, complete the lesson, and hand back any reward earned."""
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    lesson = get_lesson(body.get("lesson_id", ""))
+    if not lesson:
+        return jsonify({"error": "Unknown lesson."}), 400
+
+    before = set(student_progress(user["username"]).get("items", []))
+    entry  = student_progress(user["username"])["lessons"].get(lesson["id"], {})
+    score  = quiz_score(lesson, entry)
+
+    set_lesson_status(user["username"], lesson["id"], "completed", score)
+
+    after   = set(student_progress(user["username"]).get("items", []))
+    new_ids = after - before
+    catalog = load_items()
+    rewards = [{**catalog[i], "id": i} for i in new_ids if i in catalog]
+
+    return jsonify({
+        "ok":      True,
+        "score":   score,
+        "xp":      lesson.get("xp", 0),
+        "rewards": rewards,
+        "summary": summarise(user["username"]),
+    })
+
+
+# ── Grown-up screens (parent + teacher) ─────────────────────────────────────────
+
+@app.route("/grownup")
+@login_required("teacher", "parent")
+def grownup_home():
+    """
+    Answers "is my kid doing the work?" without any digging: a headline
+    per student, and anything needing attention pulled to the top.
+    """
+    user     = current_user()
+    users    = load_users()
+    students = visible_students(user)
+
+    cards = []
+    for username in students:
+        summary = summarise(username)
+        stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+        cards.append({
+            "username": username,
+            "name":     users[username]["name"],
+            "avatar":   users[username].get("avatar", ""),
+            "headline": headline(username),
+            "stuck":    len(stuck),
+            "quiet":    days_since(summary["last_active"]),
+            **summary,
+        })
+
+    order = {"warn": 0, "idle": 1, "ok": 2, "good": 3}
+    cards.sort(key=lambda c: (order.get(c["headline"]["tone"], 9), c["name"].lower()))
+    needs_attention = [c for c in cards if c["headline"]["tone"] in ("warn", "idle")]
+
+    return render_template("grownup.html",
+                           cards=cards,
+                           needs_attention=needs_attention,
+                           is_teacher=user["role"] == "teacher",
+                           lesson_count=len(load_lessons()))
+
+
+@app.route("/grownup/student/<username>")
+@login_required("teacher", "parent")
+def student_detail(username: str):
+    user    = current_user()
+    users   = load_users()
+    student = users.get(username)
+
+    if not student or student["role"] != "student":
+        abort(404)
+    if username not in visible_students(user):
+        abort(403)
+
+    entries = student_progress(username).get("lessons", {})
+    rows    = []
+    for lesson in load_lessons():
+        entry = entries.get(lesson["id"], {"status": "not_started"})
+        rows.append({**lesson, "progress": entry, "score": quiz_score(lesson, entry)})
+
+    return render_template("student.html",
+                           student={**student, "username": username},
+                           rows=rows,
+                           summary=summarise(username),
+                           headline=headline(username),
+                           sticking=sticking_points(username),
+                           activity=recent_activity(username),
+                           quiet=days_since(summarise(username)["last_active"]),
+                           is_teacher=user["role"] == "teacher")
+
+
+# ── Groups (teacher only) ───────────────────────────────────────────────────────
+
+@app.route("/groups")
 @login_required("teacher")
-def teacher_dashboard():
+def groups_home():
     groups   = load_groups()
     students = {u: d for u, d in load_users().items() if d["role"] == "student"}
 
@@ -479,43 +841,38 @@ def teacher_dashboard():
     for gid, group in groups.items():
         members = [m for m in group.get("members", []) if m in students]
         stats   = [summarise(m) for m in members]
+        stuck   = sum(len([s for s in sticking_points(m) if not s["resolved"]]) for m in members)
         cards.append({
-            "id":      gid,
-            "name":    group["name"],
-            "members": len(members),
-            "avg":     round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
-            "xp":      sum(s["xp"] for s in stats),
+            "id": gid, "name": group["name"], "members": len(members),
+            "avg": round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
+            "xp":  sum(s["xp"] for s in stats),
+            "stuck": stuck,
         })
 
-    return render_template(
-        "teacher.html",
-        groups=sorted(cards, key=lambda c: c["name"].lower()),
-        student_count=len(students),
-        lesson_count=len(load_lessons()),
-    )
+    return render_template("groups.html",
+                           groups=sorted(cards, key=lambda c: c["name"].lower()),
+                           student_count=len(students),
+                           lesson_count=len(load_lessons()))
 
 
-@app.route("/teacher/group/new", methods=["POST"])
+@app.route("/groups/new", methods=["POST"])
 @login_required("teacher")
 def group_create():
     name = request.form.get("name", "").strip()
     if not name:
         flash("Give the group a name.", "error")
-        return redirect(url_for("teacher_dashboard"))
+        return redirect(url_for("groups_home"))
 
     groups = load_groups()
     gid    = f"g{max((int(k[1:]) for k in groups if k[1:].isdigit()), default=0) + 1}"
-    groups[gid] = {
-        "name":    name,
-        "members": [],
-        "created": datetime.now().isoformat(timespec="seconds"),
-    }
+    groups[gid] = {"name": name, "members": [],
+                   "created": datetime.now().isoformat(timespec="seconds")}
     write_json(GROUPS_FILE, groups)
     flash(f"Created “{name}”.", "success")
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/teacher/group/<gid>")
+@app.route("/groups/<gid>")
 @login_required("teacher")
 def group_detail(gid: str):
     groups = load_groups()
@@ -525,25 +882,28 @@ def group_detail(gid: str):
 
     users    = load_users()
     students = {u: d for u, d in users.items() if d["role"] == "student"}
-    members  = [
-        {"username": u, "name": students[u]["name"], **summarise(u)}
-        for u in group.get("members", []) if u in students
-    ]
-    available = [
-        {"username": u, "name": d["name"]}
-        for u, d in sorted(students.items()) if u not in group.get("members", [])
-    ]
+    members  = []
+    for username in group.get("members", []):
+        if username not in students:
+            continue
+        members.append({
+            "username": username,
+            "name":     students[username]["name"],
+            "headline": headline(username),
+            "stuck":    len([s for s in sticking_points(username) if not s["resolved"]]),
+            **summarise(username),
+        })
 
-    return render_template(
-        "group.html",
-        gid=gid, group=group,
-        members=sorted(members, key=lambda m: m["name"].lower()),
-        available=available,
-        lessons=load_lessons(),
-    )
+    available = [{"username": u, "name": d["name"]}
+                 for u, d in sorted(students.items())
+                 if u not in group.get("members", [])]
+
+    return render_template("group.html", gid=gid, group=group,
+                           members=sorted(members, key=lambda m: m["name"].lower()),
+                           available=available)
 
 
-@app.route("/teacher/group/<gid>/add", methods=["POST"])
+@app.route("/groups/<gid>/add", methods=["POST"])
 @login_required("teacher")
 def group_add_member(gid: str):
     groups = load_groups()
@@ -561,11 +921,10 @@ def group_add_member(gid: str):
         group["members"].append(username)
         write_json(GROUPS_FILE, groups)
         flash(f"Added {users[username]['name']}.", "success")
-
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/teacher/group/<gid>/remove", methods=["POST"])
+@app.route("/groups/<gid>/remove", methods=["POST"])
 @login_required("teacher")
 def group_remove_member(gid: str):
     groups = load_groups()
@@ -578,11 +937,10 @@ def group_remove_member(gid: str):
         group["members"].remove(username)
         write_json(GROUPS_FILE, groups)
         flash("Removed from group.", "success")
-
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/teacher/group/<gid>/delete", methods=["POST"])
+@app.route("/groups/<gid>/delete", methods=["POST"])
 @login_required("teacher")
 def group_delete(gid: str):
     groups = load_groups()
@@ -590,28 +948,7 @@ def group_delete(gid: str):
     if group:
         write_json(GROUPS_FILE, groups)
         flash(f"Deleted “{group['name']}”.", "success")
-    return redirect(url_for("teacher_dashboard"))
-
-
-@app.route("/teacher/student/<username>")
-@login_required("teacher")
-def student_detail(username: str):
-    users   = load_users()
-    student = users.get(username)
-    if not student or student["role"] != "student":
-        abort(404)
-
-    entries = student_progress(username)["lessons"]
-    rows    = [
-        {**lesson, "progress": entries.get(lesson["id"], {"status": "not_started"})}
-        for lesson in load_lessons()
-    ]
-    return render_template(
-        "student.html",
-        student={**student, "username": username},
-        rows=rows,
-        summary=summarise(username),
-    )
+    return redirect(url_for("groups_home"))
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
@@ -631,14 +968,15 @@ def main() -> None:
     seed_users()
     app.secret_key = load_secret_key()
 
-    missing = [
-        name for name in ("backgrounds/classroom",)
-        if not art_exists(name)
-    ]
-    if missing:
-        print("  Art not found yet (placeholders will be shown):")
-        for name in missing:
-            print(f"    static/art/{name}.png")
+    found = load_lessons()
+    print(f"  Lessons discovered: {len(found)}")
+    for lesson in found:
+        quiz_n = len(lesson.get("quiz", []))
+        print(f"    {lesson['id']:16} {lesson['type']:12} {quiz_n} question(s)")
+
+    if not art_exists("backgrounds/classroom"):
+        print("  Classroom art not found — placeholder will be shown:")
+        print("    static/art/backgrounds/classroom.png")
 
     print(f"\n  Serving at  http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)

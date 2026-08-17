@@ -5,36 +5,121 @@
 
 <div class="t-heading">
   <div>
-    <div class="crumb"><a href="{{ url_for('teacher_dashboard') }}">Groups</a> /</div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← All students</a></div>
     <h1>{{ student.name }}</h1>
+  </div>
+</div>
+
+{# Plain-language verdict first. Everything below is the evidence for it. #}
+<div class="verdict tone-{{ headline.tone }}">
+  <span class="verdict-icon">{{ headline.icon }}</span>
+  <div>
+    <div class="verdict-text">{{ headline.text }}</div>
+    <div class="verdict-sub">
+      {% if quiet is none %}
+        Hasn't opened a lesson yet.
+      {% elif quiet == 0 %}
+        Last worked on lessons today.
+      {% elif quiet == 1 %}
+        Last worked on lessons yesterday.
+      {% else %}
+        Last worked on lessons {{ quiet }} days ago.
+      {% endif %}
+    </div>
   </div>
 </div>
 
 <div class="stat-row">
   <div class="panel stat-box">
-    <div class="stat-num">{{ summary.completed }} / {{ summary.total }}</div>
-    <div class="stat-lbl">Lessons Complete</div>
+    <div class="stat-num">{{ summary.completed }} <span class="stat-of">/ {{ summary.total }}</span></div>
+    <div class="stat-lbl">Lessons Finished</div>
   </div>
   <div class="panel stat-box">
-    <div class="stat-num">{{ summary.xp }}</div>
-    <div class="stat-lbl">Total XP</div>
+    <div class="stat-num">
+      {% if summary.avg_score is not none %}{{ summary.avg_score }}%{% else %}—{% endif %}
+    </div>
+    <div class="stat-lbl">Quiz Average</div>
   </div>
   <div class="panel stat-box">
-    <div class="stat-num">{{ summary.percent }}%</div>
-    <div class="stat-lbl">Course Progress</div>
+    <div class="stat-num">{{ summary.trinkets | length }}</div>
+    <div class="stat-lbl">Trinkets Earned</div>
   </div>
 </div>
 
+{# The question a parent actually has: what are they getting wrong? #}
+{% set unresolved = sticking | rejectattr('resolved') | list %}
+{% set resolved   = sticking | selectattr('resolved') | list %}
+
+{% if unresolved %}
+  <div class="panel" style="margin-bottom:18px">
+    <div class="panel-head">🤔 Still Getting These Wrong</div>
+    <div class="miss-list">
+      {% for miss in unresolved %}
+        <div class="miss">
+          <div class="miss-q">{{ miss.prompt }}</div>
+          <div class="miss-answers">
+            <span class="miss-theirs">They chose: {{ miss.their_answer }}</span>
+            <span class="miss-right">Correct: {{ miss.right_answer }}</span>
+          </div>
+          {% if miss.explain %}
+            <div class="miss-why">{{ miss.explain }}</div>
+          {% endif %}
+          <div class="miss-meta">
+            {{ miss.lesson }} · tried {{ miss.tries }} time{{ '' if miss.tries == 1 else 's' }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% if resolved %}
+  <div class="panel" style="margin-bottom:18px">
+    <div class="panel-head teal">💪 Worked Through These</div>
+    <div class="miss-list">
+      {% for miss in resolved %}
+        <div class="miss solved">
+          <div class="miss-q">{{ miss.prompt }}</div>
+          <div class="miss-meta">
+            {{ miss.lesson }} · got it after {{ miss.tries }} tr{{ 'y' if miss.tries == 1 else 'ies' }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% if activity %}
+  <div class="panel" style="margin-bottom:18px">
+    <div class="panel-head">📅 Recent Activity</div>
+    <div class="timeline">
+      {% for row in activity %}
+        <div class="tl-row">
+          <div class="tl-dot {{ row.status }}"></div>
+          <div class="tl-body">
+            <div class="tl-title">{{ row.title }}</div>
+            <div class="tl-meta">
+              {{ 'Finished' if row.status == 'completed' else 'Started' }}
+              {% if row.score is not none %} · scored {{ row.score }}%{% endif %}
+            </div>
+          </div>
+          <div class="tl-when">{{ row.when[:10] }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
 <div class="panel">
-  <div class="panel-head">Lesson Detail</div>
+  <div class="panel-head">All Lessons</div>
   <table class="data">
     <thead>
       <tr>
         <th>Lesson</th>
         <th>Type</th>
         <th>Status</th>
-        <th>Score</th>
-        <th>Updated</th>
+        <th>Quiz</th>
+        <th>Last Worked On</th>
       </tr>
     </thead>
     <tbody>
@@ -46,7 +131,7 @@
           </td>
           <td style="font-size:0.78rem;color:var(--ink-mid)">
             {% if row.type == 'video' %}▶ Video
-            {% elif row.type == 'game' %}🎮 Game
+            {% elif row.type == 'interactive' %}🎮 Activity
             {% else %}📖 Reading{% endif %}
           </td>
           <td>
@@ -54,7 +139,11 @@
               {{ row.progress.status | replace('_', ' ') | title }}
             </span>
           </td>
-          <td>{{ row.progress.score if row.progress.score is defined else '—' }}</td>
+          <td>
+            {% if row.score is not none %}
+              <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--orange)' }}">{{ row.score }}%</b>
+            {% else %}—{% endif %}
+          </td>
           <td style="color:var(--ink-dim);font-size:0.78rem">
             {{ row.progress.updated[:16] | replace('T', ' ') if row.progress.updated is defined else '—' }}
           </td>

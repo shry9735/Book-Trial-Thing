@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Satchel — Ignite Academy{% endblock %}
+
+{% block hud_actions %}
+  <a class="btn sm ghost" href="{{ url_for('classroom') }}">← Classroom</a>
+  <a class="btn sm ghost" href="{{ url_for('logout') }}">Log out</a>
+{% endblock %}
+
+{% block stage_content %}
+<div class="screen">
+
+  <div class="screen-head">
+    <div class="screen-title">🎒 Your Satchel</div>
+    <span class="pill {{ 'completed' if earned_count == items | length else 'in_progress' }}">
+      {{ earned_count }} of {{ items | length }} found
+    </span>
+  </div>
+
+  <div class="satchel-grid">
+    {% for item in items %}
+      <div class="panel item-card {{ 'earned' if item.earned else 'locked' }}"
+           title="{{ item.blurb if item.earned else 'Not found yet' }}">
+        <div class="item-art">
+          {% if item.earned %}
+            {% if art_exists(item.art) %}
+              <img src="{{ art(item.art) }}" alt="{{ item.name }}" />
+            {% else %}
+              <span class="item-emoji">{{ item.icon }}</span>
+            {% endif %}
+          {% else %}
+            <span class="item-emoji locked">?</span>
+          {% endif %}
+        </div>
+        <div class="item-name">{{ item.name if item.earned else '???' }}</div>
+        <div class="item-blurb">
+          {{ item.blurb if item.earned else 'Complete a lesson to find this.' }}
+        </div>
+        {% if item.earned and item.rarity %}
+          <div class="item-rarity {{ item.rarity }}">{{ item.rarity }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if not items %}
+    <div class="panel empty">
+      <div class="big">🎒</div>
+      Nothing here yet — finish a lesson to earn your first trinket.
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

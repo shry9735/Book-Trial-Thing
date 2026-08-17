@@ -1,0 +1,43 @@
+{
+  "title": "Your First Loop",
+  "subject": "Code",
+  "type": "reading",
+  "content": "02-loops.md",
+  "order": 40,
+  "duration_min": 7,
+  "xp": 50,
+  "reward": "badge-loop",
+  "description": "Make the computer do the boring part for you.",
+
+  "quiz": [
+    {
+      "id": "q1",
+      "prompt": "How many times does this run?  for (int i = 0; i < 5; i++)",
+      "choices": ["Four times", "Five times", "Six times"],
+      "answer": 1,
+      "explain": "i takes the values 0, 1, 2, 3, 4 — that's five passes. It stops the moment i reaches 5."
+    },
+    {
+      "id": "q2",
+      "prompt": "What are the three things every loop needs?",
+      "choices": [
+        "A name, a type, and a value",
+        "Where to start, when to stop, and how to move",
+        "A sensor, a motor, and a delay"
+      ],
+      "answer": 1,
+      "explain": "Miss any one and the loop either never starts, never stops, or never gets anywhere."
+    },
+    {
+      "id": "q3",
+      "prompt": "A while loop checks the sensor, but you forgot to re-read it inside the loop. What happens?",
+      "choices": [
+        "It runs once and stops",
+        "It never ends — the condition can never change",
+        "The Arduino restarts"
+      ],
+      "answer": 1,
+      "explain": "That's an infinite loop. Before writing one, always ask: what inside this loop will eventually make the condition false?"
+    }
+  ]
+}

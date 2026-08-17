@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Debug D.U.D.E.A.D.</title>
+
+<link rel="stylesheet" href="/kit/lesson-kit.css" />
+
+<style>
+  .monitor {
+    width: 100%; max-width: 420px; height: 138px;
+    background: #0d1117; border: 2px solid var(--wood); border-radius: 6px;
+    padding: 10px 13px; overflow-y: auto;
+    font-family: Consolas, Menlo, monospace; font-size: 0.8rem;
+    color: #6ee7a0; text-align: left;
+    box-shadow: inset 0 2px 14px rgba(0,0,0,0.75);
+  }
+  .monitor .bad { color: #ff7b6b; font-weight: bold; }
+  .monitor .dim { color: #4a5568; }
+
+  .lcd {
+    background: #1c3a24; border: 3px solid #2a2a2a; border-radius: 4px;
+    padding: 9px 14px; font-family: Consolas, Menlo, monospace;
+    font-size: 0.86rem; color: #7dff9b; letter-spacing: 0.06em;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.65);
+    min-width: 240px; text-align: center;
+  }
+
+  .choice {
+    display: block; width: 100%; max-width: 430px;
+    text-align: left; font-family: inherit; font-size: 0.85rem; line-height: 1.45;
+    background: linear-gradient(180deg,#fff,var(--paper));
+    border: 2px solid var(--border); border-radius: 7px;
+    padding: 11px 15px; cursor: pointer;
+    transition: border-color 0.14s, transform 0.1s, box-shadow 0.14s;
+  }
+  .choice:hover:not(:disabled) {
+    border-color: var(--orange); transform: translateX(4px);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.14);
+  }
+  .choice:disabled { opacity: 0.45; cursor: not-allowed; }
+  .choice.right { border-color: var(--good); background: #eaf6ec; }
+  .choice.wrong { border-color: var(--bad);  background: var(--orange-lt); }
+</style>
+</head>
+<body>
+
+<div class="lk-stage">
+  <div class="lk-center" id="playfield">
+    <div class="lk-sub" id="stepLabel">Step 1 of 3</div>
+    <div class="lcd" id="lcd">LEFT MOTOR? LEFT MOTOR?</div>
+    <div class="monitor" id="monitor"></div>
+    <div class="lk-text" id="prompt" style="font-weight:700;color:var(--ink)"></div>
+    <div class="lk-col" id="choices" style="align-items:center"></div>
+    <div id="feedback" style="min-height:40px"></div>
+  </div>
+
+  <div class="lk-center" id="endcard" style="display:none">
+    <img class="lk-sprite lk-float" id="endSprite" width="120" height="120" alt="" />
+    <div class="lk-title">Fixed it!</div>
+    <div class="lk-text" id="endText"></div>
+    <button class="lk-btn lg" id="continueBtn">Continue to Quiz →</button>
+  </div>
+</div>
+
+<script src="/kit/lesson-kit.js"></script>
+<script>
+/* ==========================================================================
+   NOTE — this lesson deliberately reuses the same top-level names as
+   circuits-03-resistor: `state`, `el`, `newRound`, `finish`, `ROUNDS`.
+   They mean entirely different things here.
+
+   Both lessons work, and neither can see the other, because each runs in
+   its own iframe with its own window object. Nothing is namespaced, no
+   build step coordinates them, and no load order matters. Write lessons
+   freeform and this stays true.
+   ========================================================================== */
+'use strict';
+
+var ROUNDS = 3;   // steps here, not rounds — same name, different meaning
+
+var STEPS = [
+  {
+    lcd: 'LEFT MOTOR? LEFT MOTOR?',
+    log: [
+      ['Sensor: 142', ''], ['Sensor: 0', 'bad'], ['Sensor: 138', ''],
+      ['Sensor: 0', 'bad'], ['Sensor: 0', 'bad'], ['Sensor: 141', '']
+    ],
+    prompt: 'The sensor keeps dropping to 0. What do you check first?',
+    choices: [
+      { text: 'Swap in a brand new sensor — this one must be dead.', ok: false,
+        why: 'A dead sensor reads 0 every time. These readings come back, so something is intermittent.' },
+      { text: 'Re-seat the sensor wiring. Intermittent zeros look like a loose connection.', ok: true,
+        why: 'Right. Intermittent means a connection that makes contact only sometimes.' },
+      { text: 'Rewrite the pathfinding code to ignore zeros.', ok: false,
+        why: 'That hides the symptom and leaves the fault in place. Find the cause first.' }
+    ]
+  },
+  {
+    lcd: 'SENSOR OK. STILL DRIFTING.',
+    log: [
+      ['Sensor: 139', ''], ['Sensor: 141', ''], ['Sensor: 140', ''],
+      ['MotorL: 180  MotorR: 255', 'bad'], ['-- drifting left --', 'dim']
+    ],
+    prompt: 'Sensor is steady now, but it still curves. What does the log point at?',
+    choices: [
+      { text: 'The two motors are being driven at different speeds.', ok: true,
+        why: 'Exactly — 180 against 255. One wheel turns slower, so it arcs.' },
+      { text: 'The sensor is still lying.', ok: false,
+        why: 'Three steady readings in a row say the sensor is fine now.' },
+      { text: 'The battery is flat.', ok: false,
+        why: 'A flat battery would slow both motors, not just one.' }
+    ]
+  },
+  {
+    lcd: 'MOTORS MATCHED. READY?',
+    log: [
+      ['MotorL: 255  MotorR: 255', ''], ['Sensor: 140', ''],
+      ['-- driving straight --', 'dim'], ['SYSTEMS NOMINAL.', '']
+    ],
+    prompt: 'It drives straight on the bench. What do you do before the demo?',
+    choices: [
+      { text: 'Call it done — it works.', ok: false,
+        why: 'The bench is not the gym. Carpet and polished floor behave very differently.' },
+      { text: 'Test it on the actual gym floor first.', ok: true,
+        why: 'Yes. Always test in the conditions you will actually run in.' },
+      { text: 'Turn the speed up so it looks impressive.', ok: false,
+        why: 'Changing something you have not tested, minutes before a demo, is how demos fail.' }
+    ]
+  }
+];
+
+var state = { step: 0, mistakes: 0, locked: false };
+
+var el = {
+  label:    Ignite.$('#stepLabel'),
+  lcd:      Ignite.$('#lcd'),
+  monitor:  Ignite.$('#monitor'),
+  prompt:   Ignite.$('#prompt'),
+  choices:  Ignite.$('#choices'),
+  feedback: Ignite.$('#feedback'),
+  playfield:Ignite.$('#playfield'),
+  endcard:  Ignite.$('#endcard'),
+  endText:  Ignite.$('#endText'),
+  endSprite:Ignite.$('#endSprite')
+};
+
+function newRound() {
+  var step = STEPS[state.step];
+  state.locked = false;
+
+  el.label.textContent  = 'Step ' + (state.step + 1) + ' of ' + ROUNDS;
+  el.lcd.textContent    = step.lcd;
+  el.prompt.textContent = step.prompt;
+  el.feedback.innerHTML = '';
+
+  el.monitor.innerHTML = '';
+  step.log.forEach(function (line, i) {
+    setTimeout(function () {
+      var div = document.createElement('div');
+      div.className = line[1];
+      div.textContent = line[0];
+      el.monitor.appendChild(div);
+      el.monitor.scrollTop = el.monitor.scrollHeight;
+    }, i * 160);
+  });
+
+  el.choices.innerHTML = '';
+  step.choices.forEach(function (choice) {
+    var btn = document.createElement('button');
+    btn.className = 'choice';
+    btn.textContent = choice.text;
+    btn.addEventListener('click', function () { answer(btn, choice); });
+    el.choices.appendChild(btn);
+  });
+}
+
+function answer(btn, choice) {
+  if (state.locked) return;
+
+  if (choice.ok) {
+    state.locked = true;
+    btn.classList.add('right');
+    Ignite.$$('.choice').forEach(function (b) { b.disabled = true; });
+    el.feedback.innerHTML = '<div class="lk-correct">' + choice.why + '</div>';
+    setTimeout(function () {
+      state.step++;
+      if (state.step >= ROUNDS) finish();
+      else newRound();
+    }, 1700);
+  } else {
+    state.mistakes++;
+    btn.classList.add('wrong');
+    btn.disabled = true;
+    el.feedback.innerHTML = '<div class="lk-wrong">' + choice.why + '</div>';
+  }
+}
+
+function finish() {
+  var score = Math.max(0, 100 - state.mistakes * 15);
+
+  el.playfield.style.display = 'none';
+  el.endcard.style.display   = 'flex';
+
+  /* Same shared sprite the resistor lesson uses. One file, both lessons,
+     no duplication — resolved through /art/ so neither hardcodes a path. */
+  el.endSprite.src = Ignite.art('characters/spark-cheer');
+
+  el.endText.textContent = state.mistakes === 0
+    ? 'Three for three, no wrong turns. D.U.D.E.A.D. is ready.'
+    : 'Fixed it in ' + (ROUNDS + state.mistakes) + ' tries. That is how debugging really goes.';
+
+  Ignite.progress(score);
+  el.endcard.dataset.score = score;
+}
+
+Ignite.$('#continueBtn').addEventListener('click', function () {
+  Ignite.complete(Number(el.endcard.dataset.score || 0));
+});
+
+Ignite.onReady(function () {
+  Ignite.ready();
+  newRound();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+{% extends "teacher_base.html" %}
+{% block title %}Progress — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <h1>{% if is_teacher %}Your Students{% else %}Your Family{% endif %}</h1>
+  {% if is_teacher %}
+    <a class="btn sm ghost" href="{{ url_for('groups_home') }}">Manage Groups</a>
+  {% endif %}
+</div>
+
+{# The whole point of this page: if something needs doing, it's at the top
+   in plain words. If nothing does, that's stated too — so a quick look is
+   genuinely enough. #}
+{% if needs_attention %}
+  <div class="attention">
+    <div class="attention-head">
+      <span class="attention-icon">👀</span>
+      <div>
+        <div class="attention-title">Worth a look</div>
+        <div class="attention-sub">
+          {{ needs_attention | length }}
+          {{ 'person' if needs_attention | length == 1 else 'people' }} could use a nudge
+        </div>
+      </div>
+    </div>
+    <div class="attention-list">
+      {% for card in needs_attention %}
+        <a class="attention-row" href="{{ url_for('student_detail', username=card.username) }}">
+          <span class="attention-row-icon">{{ card.headline.icon }}</span>
+          <span class="attention-row-name">{{ card.name }}</span>
+          <span class="attention-row-text">{{ card.headline.text }}</span>
+          <span class="attention-row-go">→</span>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{% elif cards %}
+  <div class="all-clear">
+    <span class="all-clear-icon">✅</span>
+    <div>
+      <b>Everyone's on track.</b>
+      No one is stuck or falling behind right now.
+    </div>
+  </div>
+{% endif %}
+
+{% if cards %}
+  <div class="kid-grid">
+    {% for card in cards %}
+      <a class="panel kid-card tone-{{ card.headline.tone }}"
+         href="{{ url_for('student_detail', username=card.username) }}">
+
+        <div class="kid-top">
+          <div class="kid-avatar" style="background-image:url('{{ art(card.avatar) }}')"></div>
+          <div class="kid-id">
+            <div class="kid-name">{{ card.name }}</div>
+            <div class="kid-headline">
+              <span>{{ card.headline.icon }}</span> {{ card.headline.text }}
+            </div>
+          </div>
+        </div>
+
+        <div class="kid-stats">
+          <div class="kid-stat">
+            <div class="kid-stat-num">{{ card.completed }}<span>/{{ card.total }}</span></div>
+            <div class="kid-stat-lbl">Lessons done</div>
+          </div>
+          <div class="kid-stat">
+            <div class="kid-stat-num">
+              {% if card.avg_score is not none %}{{ card.avg_score }}%{% else %}—{% endif %}
+            </div>
+            <div class="kid-stat-lbl">Quiz average</div>
+          </div>
+          <div class="kid-stat">
+            <div class="kid-stat-num {% if card.stuck %}bad{% endif %}">{{ card.stuck }}</div>
+            <div class="kid-stat-lbl">Still stuck on</div>
+          </div>
+        </div>
+
+        <div class="kid-bar"><div style="width:{{ card.percent }}%"></div></div>
+
+        <div class="kid-foot">
+          <span>🎒 {{ card.trinkets | length }} trinket{{ '' if card.trinkets | length == 1 else 's' }}</span>
+          <span class="kid-foot-sep">·</span>
+          <span>
+            {% if card.quiet is none %}Not started
+            {% elif card.quiet == 0 %}Active today
+            {% elif card.quiet == 1 %}Active yesterday
+            {% else %}{{ card.quiet }} days ago{% endif %}
+          </span>
+        </div>
+
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="panel empty">
+    <div class="big">🎒</div>
+    {% if is_teacher %}
+      No student accounts yet.
+    {% else %}
+      No children linked to your account yet.<br />
+      Ask a teacher to link them, or add usernames to
+      <code>children</code> in <code>data/users.json</code>.
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

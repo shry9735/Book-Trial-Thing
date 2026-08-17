@@ -4,7 +4,10 @@
 {% block content %}
 
 <div class="t-heading">
-  <h1>Groups</h1>
+  <div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← All students</a></div>
+    <h1>Groups</h1>
+  </div>
 </div>
 
 <div class="stat-row">
@@ -41,7 +44,7 @@
           <div class="group-stats">
             <div><b>{{ group.members }}</b> students</div>
             <div><b>{{ group.avg }}%</b> avg done</div>
-            <div><b>{{ group.xp }}</b> total XP</div>
+            <div><b class="{{ 'bad' if group.stuck else '' }}">{{ group.stuck }}</b> stuck on</div>
           </div>
         </div>
       </a>
@@ -51,7 +54,7 @@
   <div class="panel empty">
     <div class="big">👥</div>
     No groups yet.<br />
-    Create one above, then add students to start tracking progress.
+    Create one above to organise students into classes.
   </div>
 {% endif %}
 
