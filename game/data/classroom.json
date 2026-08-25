@@ -10,7 +10,8 @@
       "icon": "📚",
       "x": 2, "y": 43, "w": 11, "h": 15,
       "action": "lessons",
-      "highlight": true
+      "highlight": true,
+      "image": "ui/laptop"
     },
     {
       "id": "workbench",

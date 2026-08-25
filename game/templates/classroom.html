@@ -7,11 +7,12 @@
   <div class="scene" style="background-image:url('{{ art(layout.background) }}')">
 
     {% for spot in layout.hotspots %}
-      <button class="hotspot{{ ' hotspot-glow' if spot.highlight else '' }}"
+      <button class="hotspot{{ ' hotspot-img-mode' if spot.image else '' }}{{ ' hotspot-glow' if spot.highlight and not spot.image else '' }}"
               style="left:{{ spot.x }}%; top:{{ spot.y }}%; width:{{ spot.w }}%; height:{{ spot.h }}%;"
               data-action="{{ spot.action }}"
               data-href="{{ spot.href | default('') }}"
               data-label="{{ spot.label }}">
+        {% if spot.image %}<img class="hotspot-img" src="{{ art(spot.image) }}" alt="">{% endif %}
         <span class="hotspot-tag{{ ' always' if spot.highlight else '' }}">{{ spot.icon }} {{ spot.label }}</span>
       </button>
     {% endfor %}
