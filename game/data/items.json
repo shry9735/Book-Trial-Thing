@@ -47,5 +47,12 @@
     "art": "items/badge-resistor-code",
     "blurb": "Can decode a resistor's stripes on sight.",
     "rarity": "common"
+  },
+  "trinket-clipboard": {
+    "name": "The Judge's Clipboard",
+    "icon": "📋",
+    "art": "items/trinket-clipboard",
+    "blurb": "Got a prototype through judging day and knew exactly why it did what it did.",
+    "rarity": "rare"
   }
 }

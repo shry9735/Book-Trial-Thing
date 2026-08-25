@@ -1,0 +1,102 @@
+{
+  "title": "The Day of the Science Fair",
+  "subject": "Code",
+  "type": "interactive",
+  "order": 60,
+  "duration_min": 20,
+  "reward": "trinket-clipboard",
+  "description": "Judging is in forty-eight minutes and the prototype just died. Every choice you make changes how this ends.",
+
+  "examples": [
+    {
+      "id": "p1",
+      "prompt": "A sensor reads 0, then 138, then 0, then 0, then 141. What does that pattern suggest?",
+      "choices": [
+        "The sensor is dead and needs replacing",
+        "A connection is making contact only some of the time",
+        "The batteries are flat"
+      ],
+      "answer": 1,
+      "explain": "A dead sensor reads 0 every single time. Readings that come back are a sensor that works — so the fault is between the sensor and the board."
+    },
+    {
+      "id": "p2",
+      "prompt": "Your robot drives perfectly straight on the classroom carpet. Should you expect the same on the polished gym floor?",
+      "choices": [
+        "Yes — straight is straight",
+        "No — the wheels grip differently, so it may drift"
+      ],
+      "answer": 1,
+      "explain": "Different surfaces mean different grip. A calibration tuned on carpet is a calibration for carpet. Test where it will actually run."
+    },
+    {
+      "id": "p3",
+      "prompt": "Your board resets whenever the motors strain against something. What kind of problem is that usually?",
+      "choices": [
+        "A bug in the code",
+        "A power problem — the voltage dips below what the board needs",
+        "A broken motor"
+      ],
+      "answer": 1,
+      "explain": "Straining motors pull extra current. If the supply can't deliver it, voltage sags and the board reboots. Nothing is wrong with the code at all."
+    }
+  ],
+
+  "quiz": [
+    {
+      "id": "t1",
+      "prompt": "Before changing anything, what should an engineer do first?",
+      "choices": [
+        "Replace the part that seems most likely to be broken",
+        "Find out what is actually happening, using real data",
+        "Reflash the code to start from a clean slate"
+      ],
+      "answer": 1,
+      "explain": "Changing things before you understand the problem is guessing. The Serial Monitor shows you what is really going on — look before you touch."
+    },
+    {
+      "id": "t2",
+      "prompt": "A connection works when you test it on the bench but fails once the robot is driving. Why?",
+      "choices": [
+        "Driving uses different code",
+        "Vibration works friction-held connections loose",
+        "The sensor gets tired"
+      ],
+      "answer": 1,
+      "explain": "Breadboard connections are held by friction alone. A robot rolling across a floor shakes constantly, and that shaking is exactly what a friction fit cannot survive."
+    },
+    {
+      "id": "t3",
+      "prompt": "Why does testing on the surface you'll actually demo on matter?",
+      "choices": [
+        "It doesn't — a robot drives the same everywhere",
+        "Different surfaces grip differently, so the robot moves differently",
+        "The judges expect to see you practise"
+      ],
+      "answer": 1,
+      "explain": "\"Works in the lab\" and \"works in the field\" are two different claims. Only one of them is the one being judged."
+    },
+    {
+      "id": "t4",
+      "prompt": "Your board resets every time the motors work hard. What is the real cause?",
+      "choices": [
+        "The motors are drawing more current than the supply can give",
+        "There is an infinite loop in the code",
+        "The LCD is using too much memory"
+      ],
+      "answer": 0,
+      "explain": "This is a power budget problem, not a code problem. Add up what every part needs, then check your supply can actually deliver it."
+    },
+    {
+      "id": "t5",
+      "prompt": "You are out of time and something still isn't fixed. What is the honest thing to do?",
+      "choices": [
+        "Say nothing and hope the judges don't notice",
+        "Know what the limitation is, and be able to explain it",
+        "Make a fast change you have not tested"
+      ],
+      "answer": 1,
+      "explain": "Judges have seen plenty of things break. An engineer who knows exactly why theirs broke is showing the most valuable skill there is."
+    }
+  ]
+}

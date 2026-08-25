@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>The Day of the Science Fair</title>
+
+<!-- Shared look, no shared code — see game/lessons/README.md -->
+<link rel="stylesheet" href="/kit/lesson-kit.css" />
+
+<style>
+  /* This lesson's own styles. The iframe scopes them here; none of this
+     can reach another lesson or the host page. */
+
+  .sf-stage {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    background: #14101c center/cover no-repeat;
+  }
+  .sf-stage::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(20,16,28,0.55) 0%, rgba(20,16,28,0.78) 55%, rgba(20,16,28,0.94) 100%);
+  }
+  .sf-layer { position: relative; z-index: 2; display: flex; flex-direction: column; height: 100%; }
+
+  /* ── Status bar ── */
+  .sf-hud {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, rgba(58,36,24,0.96), rgba(34,22,14,0.96));
+    border-bottom: 2px solid var(--gold-dk);
+    flex-shrink: 0;
+  }
+  .sf-clock {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 1.05rem; font-weight: bold; color: var(--gold);
+    text-shadow: 0 0 12px rgba(240,168,48,0.5);
+    letter-spacing: 0.05em;
+  }
+  .sf-clock.low { color: #ff8f6b; text-shadow: 0 0 12px rgba(255,110,80,0.55); }
+  .sf-left { font-size: 0.7rem; color: #d8ccc0; }
+  .sf-act {
+    margin-left: auto;
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--gold);
+    border: 1px solid var(--gold-dk); border-radius: 11px; padding: 3px 10px;
+  }
+  .sf-notebook { display: flex; gap: 5px; }
+  .sf-chip {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.16);
+  }
+  .sf-chip.good { background: rgba(52,184,74,0.28); border-color: #34b84a; }
+  .sf-chip.risk { background: rgba(212,82,26,0.3);  border-color: var(--orange); }
+
+  /* ── Scene ── */
+  .sf-scene {
+    flex: 1; display: flex; align-items: flex-end;
+    padding: 12px 18px 0; gap: 14px; min-height: 0;
+  }
+  .sf-portrait {
+    width: 168px; flex-shrink: 0;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .sf-portrait img {
+    max-width: 100%; max-height: 236px;
+    filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6));
+    animation: sf-in 0.32s ease backwards;
+  }
+  @keyframes sf-in { from { opacity: 0; transform: translateY(12px); } }
+
+  .sf-mid { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 9px; min-width: 0; }
+
+  /* D.U.D.E.A.D.'s screen */
+  .sf-lcd {
+    align-self: flex-start;
+    background: #1c3a24; border: 3px solid #2a2a2a; border-radius: 4px;
+    padding: 7px 15px;
+    font-family: Consolas, Menlo, monospace; font-size: 0.82rem;
+    color: #7dff9b; letter-spacing: 0.07em;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.7), 0 0 20px rgba(60,255,130,0.14);
+    animation: sf-in 0.3s ease backwards;
+  }
+
+  /* Serial output */
+  .sf-serial {
+    align-self: flex-start; max-width: 260px;
+    background: #0d1117; border: 2px solid var(--wood); border-radius: 5px;
+    padding: 8px 12px;
+    font-family: Consolas, Menlo, monospace; font-size: 0.74rem;
+    color: #6ee7a0; text-align: left; line-height: 1.55;
+    box-shadow: inset 0 2px 12px rgba(0,0,0,0.8);
+  }
+  .sf-serial .zero { color: #ff7b6b; font-weight: bold; }
+
+  /* ── Text box ── */
+  .sf-box {
+    background: linear-gradient(180deg, rgba(255,253,248,0.98), rgba(246,240,231,0.98));
+    border: 2px solid var(--wood); border-top-width: 3px;
+    border-radius: 9px 9px 0 0;
+    padding: 15px 20px 16px;
+    margin: 10px 14px 0;
+    box-shadow: 0 -5px 22px rgba(0,0,0,0.42);
+    flex-shrink: 0; max-height: 62%; overflow-y: auto;
+  }
+  .sf-box::-webkit-scrollbar { width: 7px; }
+  .sf-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .sf-p { font-size: 0.88rem; line-height: 1.62; margin-bottom: 9px; color: var(--ink); }
+  .sf-p:last-child { margin-bottom: 0; }
+
+  .sf-say {
+    border-left: 4px solid var(--orange);
+    background: var(--orange-lt);
+    border-radius: 0 6px 6px 0;
+    padding: 9px 13px; margin: 10px 0;
+  }
+  .sf-say .who {
+    font-size: 0.64rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--orange-dk); margin-bottom: 3px;
+  }
+  .sf-say .line { font-size: 0.88rem; line-height: 1.55; font-style: italic; }
+  .sf-say.text-msg { border-left-color: var(--teal); background: var(--teal-lt); }
+  .sf-say.text-msg .who { color: var(--teal-dk); }
+
+  /* Engineering Note */
+  .sf-note {
+    border: 2px solid var(--teal); border-radius: 7px;
+    background: var(--teal-lt);
+    padding: 11px 14px; margin: 11px 0 2px;
+  }
+  .sf-note .topic {
+    font-size: 0.63rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--teal-dk); margin-bottom: 5px;
+  }
+  .sf-note .body { font-size: 0.8rem; line-height: 1.6; color: var(--ink); }
+
+  /* ── Choices ── */
+  .sf-choices { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .sf-choice {
+    display: flex; align-items: flex-start; gap: 10px;
+    width: 100%; text-align: left; font-family: inherit;
+    font-size: 0.85rem; line-height: 1.45; color: var(--ink);
+    background: linear-gradient(180deg, #fff, var(--paper));
+    border: 2px solid var(--border); border-radius: 7px;
+    padding: 10px 13px; cursor: pointer;
+    transition: border-color 0.14s, transform 0.1s, box-shadow 0.14s;
+  }
+  .sf-choice:hover {
+    border-color: var(--orange); transform: translateX(4px);
+    box-shadow: 0 3px 11px rgba(0,0,0,0.16);
+  }
+  .sf-choice .arrow { color: var(--orange); font-weight: 700; flex-shrink: 0; }
+  .sf-choice .cost {
+    margin-left: auto; flex-shrink: 0;
+    font-size: 0.68rem; font-weight: 700; color: var(--ink-dim);
+    background: var(--border-lt); border: 1px solid var(--border);
+    border-radius: 10px; padding: 2px 8px; white-space: nowrap;
+  }
+
+  .sf-choice.over { border-style: dashed; }
+  .sf-choice .cost.over {
+    background: var(--orange-lt); border-color: #f0c8b4; color: var(--orange-dk);
+  }
+
+  .sf-next { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+  /* Time jump readout */
+  .sf-tick {
+    position: absolute; top: 44px; right: 18px; z-index: 5;
+    font-family: Consolas, Menlo, monospace; font-size: 0.95rem; font-weight: bold;
+    color: #ff8f6b; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    opacity: 0; pointer-events: none;
+  }
+  .sf-tick.go { animation: sf-tick 1.5s ease forwards; }
+  @keyframes sf-tick {
+    0%   { opacity: 0; transform: translateY(0); }
+    18%  { opacity: 1; transform: translateY(6px); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(22px); }
+  }
+
+  /* ── Ending ── */
+  .sf-end-title {
+    font-size: 1.5rem; font-weight: 700; color: var(--orange);
+    margin-bottom: 4px;
+  }
+  .sf-scoreline {
+    display: flex; gap: 7px; flex-wrap: wrap; margin: 11px 0 2px;
+  }
+  .sf-tag {
+    font-size: 0.7rem; font-weight: 700;
+    padding: 4px 11px; border-radius: 12px; border: 1px solid;
+  }
+  .sf-tag.good { background: #eaf6ec;          color: #1a7a35;          border-color: #b0ddb8; }
+  .sf-tag.risk { background: var(--orange-lt); color: var(--orange-dk); border-color: #f0c8b4; }
+</style>
+</head>
+<body>
+
+<div class="sf-stage" id="stage">
+  <div class="sf-layer">
+
+    <div class="sf-hud">
+      <span class="sf-clock" id="clock">9:12</span>
+      <span class="sf-left" id="left">48 min to judging</span>
+      <div class="sf-notebook" id="notebook"></div>
+      <span class="sf-act" id="act">Act 1</span>
+    </div>
+
+    <div class="sf-scene">
+      <div class="sf-portrait" id="portrait"></div>
+      <div class="sf-mid" id="mid"></div>
+    </div>
+
+    <div class="sf-box" id="box"></div>
+
+  </div>
+  <div class="sf-tick" id="tick"></div>
+</div>
+
+<script src="/kit/lesson-kit.js"></script>
+<script src="story.js"></script>
+<script>
+/* ==========================================================================
+   Story engine.
+
+   Top-level names here (`state`, `el`, `show`, `finish`) are the same ones
+   the other interactive lessons use for entirely different things. That is
+   deliberate and it is safe: this lesson has its own window.
+   ========================================================================== */
+'use strict';
+
+var START_MIN = 552;   // 9:12, in minutes past midnight
+var JUDGE_MIN = 600;   // 10:00
+
+var state = {
+  node:   'start',
+  now:    START_MIN,
+  seeds:  {},        // planted, may or may not come due
+  fired:  [],        // seeds that actually went wrong in Act 3
+  caught: [],        // seeds the checklist rescued
+  checked: false
+};
+
+var el = {
+  stage:    Ignite.$('#stage'),
+  clock:    Ignite.$('#clock'),
+  left:     Ignite.$('#left'),
+  notebook: Ignite.$('#notebook'),
+  act:      Ignite.$('#act'),
+  portrait: Ignite.$('#portrait'),
+  mid:      Ignite.$('#mid'),
+  box:      Ignite.$('#box'),
+  tick:     Ignite.$('#tick')
+};
+
+var ACT_OF = {
+  start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
+  power_sym: 2, d4: 2, d5: 2,
+  d6: 3
+};
+
+/* ── HUD ─────────────────────────────────────────────────────────────── */
+
+function clockText(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  return h + ':' + (m < 10 ? '0' + m : m);
+}
+
+function drawHud() {
+  var left = JUDGE_MIN - state.now;
+  el.clock.textContent = clockText(state.now);
+  el.clock.classList.toggle('low', left <= 12);
+  el.left.textContent = left > 0
+    ? left + ' min to judging'
+    : 'They’re calling your table';
+
+  /* One chip per decision made, so the run so far is always visible. */
+  el.notebook.innerHTML = '';
+  ['loose', 'power', 'calib'].forEach(function (key) {
+    if (!(key in state.seeds)) return;
+    var risky = state.seeds[key];
+    var chip = document.createElement('span');
+    chip.className = 'sf-chip ' + (risky ? 'risk' : 'good');
+    chip.textContent = risky ? '!' : '✓';
+    chip.title = {
+      loose: risky ? 'Sensor leads left untaped'  : 'Sensor leads taped down',
+      power: risky ? 'Still running on USB power' : 'Battery pack wired in',
+      calib: risky ? 'Calibrated on the carpet'   : 'Calibrated on the gym floor'
+    }[key];
+    el.notebook.appendChild(chip);
+  });
+}
+
+function spendTime(mins) {
+  if (!mins) return;
+  state.now += mins;
+  el.tick.textContent = '+' + mins + ' min';
+  el.tick.classList.remove('go');
+  void el.tick.offsetWidth;          // restart the animation
+  el.tick.classList.add('go');
+}
+
+/* ── Rendering ───────────────────────────────────────────────────────── */
+
+function paragraphs(list) {
+  return (list || []).map(function (p) {
+    return '<div class="sf-p">' + p + '</div>';
+  }).join('');
+}
+
+function sayBlock(who, line) {
+  if (!who) return '';
+  var isText = who === 'Ms. Chen';
+  return '<div class="sf-say' + (isText ? ' text-msg' : '') + '">' +
+           '<div class="who">' + who + (isText ? ' · text' : '') + '</div>' +
+           '<div class="line">' + line + '</div>' +
+         '</div>';
+}
+
+function noteBlock(note) {
+  if (!note) return '';
+  return '<div class="sf-note">' +
+           '<div class="topic">⚙ Engineering Note — ' + note.topic + '</div>' +
+           '<div class="body">' + note.body + '</div>' +
+         '</div>';
+}
+
+function setScene(node) {
+  if (node.art) {
+    el.portrait.innerHTML =
+      '<img class="lk-sprite" src="' + Ignite.art(node.art) + '" alt="" />';
+  }
+
+  var mid = '';
+  if (node.lcd) mid += '<div class="sf-lcd">' + node.lcd + '</div>';
+  if (node.serial) {
+    mid += '<div class="sf-serial">' + node.serial.map(function (line) {
+      return line.indexOf(': 0') > -1
+        ? '<div class="zero">' + line + '</div>'
+        : '<div>' + line + '</div>';
+    }).join('') + '</div>';
+  }
+  if (mid) el.mid.innerHTML = mid;
+}
+
+function show(id) {
+  var node = STORY[id];
+  if (!node) { finish(); return; }
+
+  state.node = id;
+  el.act.textContent = 'Act ' + (ACT_OF[id] || 3);
+  setScene(node);
+  drawHud();
+
+  var html = paragraphs(node.text) +
+             sayBlock(node.who, node.say) +
+             paragraphs(node.text2) +
+             noteBlock(node.note);
+
+  if (node.choices) {
+    html += '<div class="sf-choices" id="choices"></div>';
+  } else {
+    html += '<div class="sf-next"><button class="lk-btn" id="nextBtn">Continue →</button></div>';
+  }
+
+  el.box.innerHTML = html;
+  el.box.scrollTop = 0;
+
+  if (node.choices) {
+    var box = Ignite.$('#choices');
+    var left = JUDGE_MIN - state.now;
+    node.choices.forEach(function (choice) {
+      var over = (choice.cost || 0) > left;
+      var btn = document.createElement('button');
+      btn.className = 'sf-choice' + (over ? ' over' : '');
+      btn.innerHTML =
+        '<span class="arrow">▸</span><span>' + choice.text + '</span>' +
+        '<span class="cost' + (over ? ' over' : '') + '">' +
+          (choice.cost ? choice.cost + ' min' : 'no time') +
+        '</span>';
+      /* Time you already spent shows up here as an option you can still
+         take, but not for free. Nothing is locked — the cost is just
+         honest about what it now means. */
+      if (over) btn.title = 'This runs past your judging slot.';
+      btn.addEventListener('click', function () { choose(choice); });
+      box.appendChild(btn);
+    });
+  } else {
+    Ignite.$('#nextBtn').addEventListener('click', function () {
+      if (node.next) show(node.next);
+      else judging();
+    });
+  }
+}
+
+function choose(choice) {
+  spendTime(choice.cost || 0);
+
+  /* Record every decision, risky or not, so the notebook shows the whole
+     run rather than only the mistakes. */
+  if (choice.seed) state.seeds[choice.seed] = true;
+  else {
+    var opposite = { d3: 'loose', d4: 'power', d5: 'calib' }[state.node];
+    if (opposite) state.seeds[opposite] = false;
+  }
+
+  if (choice.check) state.checked = true;
+
+  drawHud();
+  if (choice.to === 'judging') judging();
+  else show(choice.to);
+}
+
+/* ── Act 3: the seeds come due ───────────────────────────────────────── */
+
+function judging() {
+  /* The checklist is a visual inspection — it finds the wire you can see,
+     and cannot find a power budget or the wrong calibration surface. */
+  var due = ['loose', 'power', 'calib'].filter(function (k) { return state.seeds[k]; });
+
+  if (state.checked && state.seeds.loose) {
+    state.caught.push('loose');
+    due = due.filter(function (k) { return k !== 'loose'; });
+  }
+  state.fired = due;
+
+  var queue = due.slice();
+  el.act.textContent = 'Judging';
+
+  function step() {
+    if (!queue.length) { finish(); return; }
+    var key  = queue.shift();
+    var cons = CONSEQUENCES[key];
+
+    setScene({ lcd: cons.lcd });
+    el.box.innerHTML =
+      paragraphs(cons.text) +
+      '<div class="sf-next"><button class="lk-btn" id="nextBtn">Continue →</button></div>';
+    el.box.scrollTop = 0;
+    Ignite.$('#nextBtn').addEventListener('click', step);
+  }
+
+  /* Opening beat of the judging run, plus anything the checklist saved. */
+  var intro = [
+    'The judge sets her clipboard down at the end of your table and asks you to run it.',
+    'Spark puts D.U.D.E.A.D. on the start line. You press the button.'
+  ];
+  var rescued = state.caught.map(function (k) { return CONSEQUENCES[k].caught; });
+
+  setScene({ art: 'characters/dude-ad', lcd: state.checked ? 'READY. LET’S GO.' : 'SYSTEMS NOMINAL.' });
+  el.box.innerHTML =
+    (rescued.length ? paragraphs(rescued) : '') +
+    paragraphs(intro) +
+    '<div class="sf-next"><button class="lk-btn" id="nextBtn">Continue →</button></div>';
+  el.box.scrollTop = 0;
+  Ignite.$('#nextBtn').addEventListener('click', step);
+}
+
+/* ── Ending ──────────────────────────────────────────────────────────── */
+
+function finish() {
+  var n   = state.fired.length;
+  var key = n === 0 ? (state.caught.length ? 'recovered' : 'clean')
+          : n === 1 ? 'recovered'
+          : n === 2 ? 'rough'
+          : 'hard';
+  var end = ENDINGS[key];
+
+  /* The host awards the trinket and records the score — a lesson never
+     scores itself, it reports what happened. */
+  var lateBy = Math.max(0, state.now - JUDGE_MIN);
+  var score   = Math.max(20, 100 - n * 22 - Math.min(15, lateBy * 2));
+
+  el.act.textContent = 'Ending';
+  setScene({ art: 'characters/dude-ad', lcd: end.lcd });
+  drawHud();
+
+  var tags = ['loose', 'power', 'calib'].map(function (k) {
+    var label = { loose: 'Loose connection', power: 'Power supply', calib: 'Calibration' }[k];
+    if (state.fired.indexOf(k) > -1) return '<span class="sf-tag risk">' + label + ' — failed</span>';
+    if (state.caught.indexOf(k) > -1) return '<span class="sf-tag good">' + label + ' — caught on the checklist</span>';
+    if (state.seeds[k] === false)     return '<span class="sf-tag good">' + label + ' — handled</span>';
+    return '';
+  }).filter(Boolean).join('');
+
+  var late = state.now - JUDGE_MIN;
+  var lateLine = late > 0
+    ? ['The judge had been waiting ' + late + ' minute' + (late === 1 ? '' : 's') +
+       ' by the time you got to the line. She does not say anything about it, which is somehow worse.']
+    : [];
+
+  el.box.innerHTML =
+    '<div class="sf-end-title">' + end.title + '</div>' +
+    paragraphs(lateLine) +
+    paragraphs(end.text) +
+    sayBlock(end.who, end.say) +
+    paragraphs(end.text2) +
+    '<div class="sf-scoreline">' + tags + '</div>' +
+    '<div class="sf-p" style="margin-top:11px;color:var(--ink-dim);font-size:0.8rem">' +
+      'Finished at ' + clockText(state.now) + (lateBy ? ' — ' + lateBy + ' min late. ' : '. ') +
+      (n === 0 ? 'Nothing came due in front of the judge.'
+               : n + ' problem' + (n === 1 ? '' : 's') + ' came due in front of the judge.') +
+      ' Different choices genuinely end this differently — it is worth another run.' +
+    '</div>' +
+    '<div class="sf-next" style="gap:9px">' +
+      '<button class="lk-btn ghost" id="againBtn">Try Again</button>' +
+      '<button class="lk-btn" id="doneBtn">Continue →</button>' +
+    '</div>';
+  el.box.scrollTop = 0;
+
+  Ignite.$('#againBtn').addEventListener('click', function () {
+    state = { node: 'start', now: START_MIN, seeds: {}, fired: [], caught: [], checked: false };
+    el.portrait.innerHTML = '';
+    el.mid.innerHTML = '';
+    show('start');
+  });
+
+  Ignite.$('#doneBtn').addEventListener('click', function () {
+    Ignite.complete(score);
+  });
+}
+
+/* ── Boot ────────────────────────────────────────────────────────────── */
+
+Ignite.onReady(function () {
+  el.stage.style.backgroundImage = 'url(' + Ignite.art('backgrounds/classroom') + ')';
+  Ignite.preload(['characters/spark', 'characters/dude-ad', 'ui/laptop'], function () {
+    Ignite.ready();
+    show('start');
+  });
+});
+</script>
+</body>
+</html>
