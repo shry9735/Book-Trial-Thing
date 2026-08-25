@@ -33,6 +33,10 @@ All art is drop-in from `static/art/`. There is no settings UI for it. Missing
 graphics render as a placeholder naming the exact file path to create, so you
 can run the game first and let the gaps tell you what to draw.
 
+Got a whole pack of files ready at once? Drop the folder into
+`static/art/inbox/` and run `python import_assets.py` — it sorts everything
+into place by name and reports anything it couldn't match.
+
 **Full details: [`static/art/README.md`](static/art/README.md)**
 
 The classroom background goes at `static/art/backgrounds/classroom.png`, and its
@@ -46,7 +50,7 @@ there is no catalog to update.
 
 ```
 lessons/circuits-03-resistor/
-├── lesson.json     manifest: title, xp, quiz, reward
+├── lesson.json     manifest: title, quiz, reward
 ├── index.html      the lesson (interactive types)
 └── ...             its own js/css/assets
 ```
@@ -100,8 +104,8 @@ recorded.
 ## Trinkets
 
 `data/items.json` is the catalog. A lesson names one in its `reward` field and
-it is granted once, on first completion, alongside XP. Students see them in the
-Satchel, with unearned ones silhouetted.
+it is granted once, on first completion. Students see them in the Backpack,
+with unearned ones silhouetted.
 
 ## The grown-up view
 

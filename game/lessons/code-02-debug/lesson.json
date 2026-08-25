@@ -4,7 +4,6 @@
   "type": "interactive",
   "order": 50,
   "duration_min": 15,
-  "xp": 125,
   "reward": "trinket-wrench",
   "description": "The robot drives in circles. Find out why before the Faire.",
 

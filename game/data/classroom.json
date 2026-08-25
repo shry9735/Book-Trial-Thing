@@ -8,8 +8,9 @@
       "id": "lessons",
       "label": "Today's Lessons",
       "icon": "📚",
-      "x": 12, "y": 46, "w": 20, "h": 30,
-      "action": "lessons"
+      "x": 2, "y": 43, "w": 11, "h": 15,
+      "action": "lessons",
+      "highlight": true
     },
     {
       "id": "workbench",

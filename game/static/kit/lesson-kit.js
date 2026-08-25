@@ -19,7 +19,7 @@
        Ignite.art('characters/spark'); // shared art URL
 
    Ignite.complete() hands control back to the host, which runs the quiz
-   and awards XP and trinkets. A lesson never scores itself.
+   and awards trinkets. A lesson never scores itself.
    ========================================================================== */
 
 (function (global) {

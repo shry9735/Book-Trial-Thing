@@ -269,7 +269,7 @@ function finish() {
 }
 
 Ignite.$('#continueBtn').addEventListener('click', function () {
-  /* Hand control back. The host runs the quiz and awards XP and trinkets
+  /* Hand control back. The host runs the quiz and awards trinkets
      — a lesson never scores itself. */
   Ignite.complete(Math.min(100, Math.round((state.score / (ROUNDS * 25)) * 100)));
 });

@@ -15,7 +15,6 @@
         <div class="lesson-subject">{{ lesson.subject }}</div>
         <div class="screen-title">{{ lesson.title }}</div>
       </div>
-      <span class="xp-chip">+{{ lesson.xp }} XP</span>
     </div>
 
     {% if lesson.type == 'video' %}
@@ -70,6 +69,7 @@
     <div class="quiz-progress"><div id="quizProgressFill" style="width:0%"></div></div>
 
     <div class="panel quiz-card">
+      <div class="quiz-diagram" id="quizDiagram" style="display:none"></div>
       <div class="quiz-prompt" id="quizPrompt"></div>
       <div class="quiz-choices" id="quizChoices"></div>
       <div class="quiz-feedback" id="quizFeedback"></div>
@@ -92,7 +92,7 @@
       <div class="done-rewards" id="doneRewards"></div>
 
       <div class="lk-row" style="gap:10px;margin-top:6px">
-        <a class="btn ghost" href="{{ url_for('satchel') }}">Open Satchel</a>
+        <a class="btn ghost" href="{{ url_for('satchel') }}">Open Backpack</a>
         <a class="btn" href="{{ url_for('lessons') }}">Next Lesson →</a>
       </div>
     </div>
@@ -155,20 +155,29 @@
     if (reader.scrollHeight <= reader.clientHeight + 8) unlock(null);
   }
 
-  /* Interactive lessons report in through the kit's postMessage bridge. */
+  /* Interactive lessons report in through the kit's postMessage bridge.
+     That "done" click already happened inside the lesson, so move straight
+     on instead of making the student find a second button below the
+     iframe to press. */
   window.addEventListener('message', function (e) {
     var d = e.data || {};
-    if (d.type === 'lesson:complete')      unlock(d.score);
+    if (d.type === 'lesson:complete') {
+      unlock(d.score);
+      toQuizBtn.click();
+    }
     else if (d.type === 'lesson:toast')    showToast(d.message);
     else if (d.type === 'lesson:error')    console.warn('[lesson ' + LESSON_ID + ']', d.message, d.source, d.line);
   });
 
   /* ── Quiz ───────────────────────────────────────────────────────── */
 
+  var quizStartedAt = null;   // logged for the grown-up view only — never shown here
+
   function startQuiz() {
     phaseContent.style.display = 'none';
     phaseQuiz.style.display = '';
     qIndex = 0;
+    quizStartedAt = Date.now();
     renderQuestion();
   }
 
@@ -182,6 +191,12 @@
     document.getElementById('quizPrompt').textContent = q.prompt;
     document.getElementById('quizFeedback').innerHTML = '';
     document.getElementById('quizNextBtn').style.display = 'none';
+
+    /* An optional per-question reference diagram — authored, trusted SVG
+       from the lesson's own manifest, not user input. */
+    var diagram = document.getElementById('quizDiagram');
+    diagram.innerHTML = q.diagram || '';
+    diagram.style.display = q.diagram ? '' : 'none';
 
     var box = document.getElementById('quizChoices');
     box.innerHTML = '';
@@ -239,9 +254,10 @@
   });
 
   function submitQuiz() {
+    var elapsed = quizStartedAt ? Math.round((Date.now() - quizStartedAt) / 1000) : null;
     fetch(API_FINISH, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lesson_id: LESSON_ID })
+      body: JSON.stringify({ lesson_id: LESSON_ID, quiz_seconds: elapsed })
     })
     .then(function (r) { return r.json(); })
     .then(finishUp)
@@ -257,8 +273,7 @@
 
     var score = data.score;
     document.getElementById('doneScore').innerHTML =
-      (score == null ? '' : '<b>' + score + '%</b> on the quiz &nbsp;·&nbsp; ') +
-      '<span class="xp-chip">+' + (data.xp || 0) + ' XP</span>';
+      score == null ? '' : '<b>' + score + '%</b> on the quiz';
 
     var box = document.getElementById('doneRewards');
     box.innerHTML = '';

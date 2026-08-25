@@ -33,5 +33,19 @@
     "art": "items/trinket-wrench",
     "blurb": "Found the fault before the demo. Barely.",
     "rarity": "rare"
+  },
+  "badge-ohm": {
+    "name": "Ohm's Law Badge",
+    "icon": "⚡",
+    "art": "items/badge-ohm",
+    "blurb": "Cracked Ohm's Law: V = I × R.",
+    "rarity": "common"
+  },
+  "badge-resistor-code": {
+    "name": "Color Code Badge",
+    "icon": "🎨",
+    "art": "items/badge-resistor-code",
+    "blurb": "Can decode a resistor's stripes on sight.",
+    "rarity": "common"
   }
 }

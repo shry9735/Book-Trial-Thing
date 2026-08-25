@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Voltage & Ohm's Law</title>
+
+<!-- Shared look. No shared code — see game/lessons/README.md -->
+<link rel="stylesheet" href="/kit/lesson-kit.css" />
+
+<style>
+  /* This lesson's own styles. Scoped to this iframe — see the README's
+     note on isolation. */
+  html, body { height: 100%; }
+
+  .spark-stage {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 20px 12px;
+    gap: 10px;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(240,168,48,0.12) 0%, transparent 55%),
+      var(--paper);
+  }
+
+  .frame-row {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    min-height: 0;
+  }
+
+  .spark-wrap {
+    flex: 0 0 190px;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .spark-img {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .content-col {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .visual-box {
+    flex: 0 0 auto;
+    min-height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .visual-box:empty { min-height: 0; }
+
+  .bubble {
+    position: relative;
+    background: var(--surface);
+    border: 2px solid var(--wood);
+    border-radius: 14px;
+    padding: 14px 20px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+  .bubble::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    bottom: 22px;
+    border-width: 10px 14px 10px 0;
+    border-style: solid;
+    border-color: transparent var(--wood) transparent transparent;
+  }
+  .bubble::after {
+    content: "";
+    position: absolute;
+    left: -10px;
+    bottom: 24px;
+    border-width: 8px 11px 8px 0;
+    border-style: solid;
+    border-color: transparent var(--surface) transparent transparent;
+  }
+  .bubble-name {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--teal-dk);
+    margin-bottom: 4px;
+  }
+  .bubble-text {
+    font-size: 1rem;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .bubble-text b { color: var(--orange-dk); }
+  .bubble-text .eq {
+    display: inline-block;
+    background: var(--orange-lt);
+    border: 1px solid #f0c8b4;
+    border-radius: 6px;
+    padding: 1px 8px;
+    font-weight: 800;
+    color: var(--orange-dk);
+  }
+
+  @keyframes frame-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .frame-in { animation: frame-in 0.22s ease-out; }
+
+  .controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .dots {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: none;
+    background: var(--border);
+    cursor: pointer;
+    padding: 0;
+  }
+  .dot.on { background: var(--gold); }
+  .dot.done { background: var(--teal); }
+
+  .lk-btn.auto.active {
+    background: linear-gradient(180deg, #37a89f 0%, var(--teal) 45%, var(--teal-dk) 100%);
+  }
+
+  /* ── Flow / pipe diagram ── */
+  .flow-pipe-wall { fill: none; stroke: var(--ink-mid); stroke-width: 4; stroke-linejoin: round; }
+  .flow-dot { fill: var(--gold); }
+
+  /* ── Ohm's triangle ── */
+  .tri-line { stroke: var(--wood); }
+  .tri-letter { font-family: var(--font); font-weight: 800; text-anchor: middle; }
+
+  /* ── Circuit schematic ── */
+  .circ-wire { fill: none; stroke: var(--ink-mid); stroke-width: 3; }
+  .circ-label { font-family: var(--font); font-weight: 700; text-anchor: middle; }
+  .circ-value { font-family: var(--font); font-weight: 800; text-anchor: middle; }
+
+  /* ── Practice examples: Spark confirms or explains each one, but the
+       attempt is logged separately from the graded quiz — see the note
+       above /api/example in app.py. ── */
+  .bubble-choices {
+    display: none;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .ex-choice {
+    text-align: left;
+    font-family: inherit;
+    font-size: 0.88rem;
+    background: linear-gradient(180deg, #fff, var(--paper));
+    border: 2px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 13px;
+    cursor: pointer;
+    transition: border-color 0.14s, transform 0.1s;
+  }
+  .ex-choice:hover:not(:disabled) { border-color: var(--teal); transform: translateX(3px); }
+  .ex-choice.right { border-color: var(--good); background: #eaf6ec; }
+  .ex-choice.wrong { border-color: var(--bad); background: var(--orange-lt); }
+  .ex-feedback { margin-top: 8px; }
+  .ex-feedback:empty { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="spark-stage">
+
+  <div class="frame-row">
+    <div class="spark-wrap">
+      <img class="spark-img lk-sprite lk-float" id="sparkImg" alt="Spark" />
+    </div>
+
+    <div class="content-col">
+      <div class="visual-box" id="visualBox"></div>
+      <div class="bubble" id="bubble">
+        <div class="bubble-name" id="bubbleName">⚡ Spark</div>
+        <div class="bubble-text" id="bubbleText"></div>
+        <div class="bubble-choices" id="bubbleChoices"></div>
+        <div class="ex-feedback" id="exFeedback"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="lk-btn ghost sm" id="backBtn">◀ Back</button>
+    <div class="dots" id="dots"></div>
+    <button class="lk-btn ghost sm auto" id="autoBtn">▶ Auto</button>
+    <div style="flex:1"></div>
+    <button class="lk-btn sm" id="nextBtn">Next ▶</button>
+  </div>
+
+</div>
+
+<script src="/kit/lesson-kit.js"></script>
+<script>
+'use strict';
+
+/* ── Tiny SVG helpers — one lesson's own visuals, nothing shared ────── */
+
+function flowSVG(narrow, speed) {
+  var wall = narrow
+    ? 'M10,25 L120,25 L150,40 L170,40 L200,25 L310,25 ' +
+      'L310,75 L200,75 L170,60 L150,60 L120,75 L10,75 Z'
+    : 'M10,25 L310,25 L310,75 L10,75 Z';
+  var dots = [0, 1, 2, 3].map(function (i) {
+    var begin = (-i * speed / 4).toFixed(2);
+    return '<circle class="flow-dot" r="7" cy="50">' +
+      '<animate attributeName="cx" values="20;300;20" keyTimes="0;0.5;1" ' +
+      'dur="' + speed + 's" begin="' + begin + 's" repeatCount="indefinite"/>' +
+      '</circle>';
+  }).join('');
+  return '<svg viewBox="0 0 320 100" width="260" height="82">' +
+    '<path class="flow-pipe-wall" d="' + wall + '"/>' + dots + '</svg>';
+}
+
+/* Letter cell centers, for dropping the "cover" disc exactly over one. */
+var TRI_CENTER = { V: [110, 66], I: [72, 138], R: [150, 138] };
+
+function triangleSVG(highlight) {
+  function fill(letter) {
+    /* The two NOT covered light up a beat after the cover lands — that's
+       the "these two are what you know" half of the mnemonic. */
+    if (!highlight || letter === highlight) return 'var(--ink)';
+    return '<animate attributeName="fill" begin="0.55s" dur="0.3s" fill="freeze" ' +
+      'values="var(--ink);var(--orange-dk)"/>';
+  }
+  function letter(id, x, y) {
+    var f = fill(id);
+    var isAnim = f.charAt(0) === '<';
+    return '<text class="tri-letter" x="' + x + '" y="' + y + '" font-size="30" ' +
+      'fill="' + (isAnim ? 'var(--ink)' : f) + '">' + id + (isAnim ? f : '') + '</text>';
+  }
+
+  var cover = '';
+  if (highlight && TRI_CENTER[highlight]) {
+    var c  = TRI_CENTER[highlight];
+    var x  = c[0], y = c[1];
+    /* Drop in from above with a little overshoot, like a finger landing
+       on the letter you're covering up — then it stays put. */
+    cover =
+      '<g>' +
+        '<animateTransform attributeName="transform" type="translate" ' +
+          'values="' + x + ',' + (y - 90) + '; ' + x + ',' + (y + 8) + '; ' +
+                   x + ',' + (y - 5) + '; ' + x + ',' + y + '" ' +
+          'keyTimes="0;0.55;0.8;1" dur="0.5s" calcMode="spline" ' +
+          'keySplines="0.3 0 0.7 1;0.3 0 0.7 1;0.3 0 0.7 1" fill="freeze"/>' +
+        '<circle r="25" fill="var(--gold)" stroke="var(--gold-dk)" stroke-width="3"/>' +
+        '<text text-anchor="middle" dy="0.32em" font-size="22" font-weight="800" fill="var(--wood)">?</text>' +
+      '</g>';
+  }
+
+  return '<svg viewBox="0 0 220 180" width="150" height="123">' +
+    '<polygon class="tri-line" points="110,10 10,170 210,170" fill="none" stroke-width="4"/>' +
+    '<line class="tri-line" x1="47.5" y1="110" x2="172.5" y2="110" stroke-width="3"/>' +
+    '<line class="tri-line" x1="110" y1="110" x2="110" y2="170" stroke-width="3"/>' +
+    letter('V', 110, 80) + letter('I', 72, 150) + letter('R', 150, 150) +
+    cover +
+    '</svg>';
+}
+
+function circuitSVG(v, i, r, solve) {
+  function color(letter) { return letter === solve ? 'var(--gold-dk)' : 'var(--ink)'; }
+  return '<svg viewBox="0 0 300 160" width="230" height="122">' +
+    /* top wire + current arrow */
+    '<path class="circ-wire" d="M60,20 H240"/>' +
+    '<path class="circ-wire" d="M155,20 L145,14 M155,20 L145,26" stroke-width="3"/>' +
+    '<text class="circ-label" x="150" y="12" font-size="13" fill="' + color('I') + '">I</text>' +
+    /* right wire + resistor zigzag */
+    '<path class="circ-wire" d="M240,20 V55 L232,62 L248,69 L232,76 L248,83 L232,90 L248,97 L240,104 V140"/>' +
+    '<text class="circ-label" x="272" y="80" font-size="13" fill="' + color('R') + '">R</text>' +
+    '<text class="circ-value" x="272" y="97" font-size="13" fill="' + color('R') + '">' + r + '</text>' +
+    /* bottom wire */
+    '<path class="circ-wire" d="M240,140 H60"/>' +
+    /* left wire + battery symbol */
+    '<path class="circ-wire" d="M60,140 V95"/>' +
+    '<path class="circ-wire" d="M45,95 H75" stroke-width="5"/>' +
+    '<path class="circ-wire" d="M52,85 H68" stroke-width="2"/>' +
+    '<path class="circ-wire" d="M45,75 H75" stroke-width="5"/>' +
+    '<path class="circ-wire" d="M60,75 V20"/>' +
+    '<text class="circ-label" x="28" y="88" font-size="13" fill="' + color('V') + '">V</text>' +
+    '<text class="circ-value" x="28" y="105" font-size="13" fill="' + color('V') + '">' + v + '</text>' +
+    /* current value, near the arrow */
+    '<text class="circ-value" x="150" y="35" font-size="13" fill="' + color('I') + '">' + i + '</text>' +
+    '</svg>';
+}
+
+/* ── The lesson: Spark walks through it, frame by frame ─────────────── */
+
+var FRAMES = [
+  { text: 'Hey! I’m Spark. ⚡ Everything electronic in this room runs on electricity — so let’s find out what it actually <b>is</b>.' },
+
+  { text: 'Electricity is just <b>electrons</b> — tiny charged particles — moving through a wire.',
+    visual: function () { return flowSVG(false, 1.6); } },
+
+  { text: 'Think of a wire like a pipe, and electrons like water inside it. A flow of electrons through a wire is <b>electric current</b>.',
+    visual: function () { return flowSVG(false, 1.6); } },
+
+  { text: 'So what does it actually <b>do</b>? It lights up LEDs, spins motors, powers sensors — and carries the signals your whole project runs on.' },
+
+  { text: 'To predict any circuit, you only need three ideas: <b>Voltage</b>, <b>Current</b>, and <b>Resistance</b>. Let’s meet them one at a time.',
+    visual: function () { return triangleSVG(''); } },
+
+  { text: '<b>Voltage (V)</b> is the <b>push</b> — the electrical pressure that makes electrons want to move. Measured in <b>volts</b>.',
+    visual: function () { return flowSVG(false, 1.2); } },
+
+  { text: '<b>Current (I)</b> is the <b>flow</b> — how many electrons actually move past a point every second. Measured in <b>amps (A)</b>.',
+    visual: function () { return flowSVG(false, 1.2); } },
+
+  { text: '<b>Resistance (R)</b> is anything that pushes back on that flow — like a narrower pipe. Measured in <b>ohms (Ω)</b>.',
+    visual: function () { return flowSVG(true, 3.2); } },
+
+  { text: 'Here’s the magic part — these three are locked together by one simple rule. It’s called <b>Ohm’s Law</b>.',
+    visual: function () { return triangleSVG(''); } },
+
+  { text: 'Ohm’s Law: <span class="eq">V = I × R</span>. Voltage equals current times resistance.',
+    visual: function () { return triangleSVG('V'); } },
+
+  { text: 'Cover up whichever one you’re solving for, and the triangle does the algebra: <span class="eq">I = V ÷ R</span>, or <span class="eq">R = V ÷ I</span>.',
+    visual: function () { return triangleSVG('I'); } },
+
+  { text: 'Let’s use it for real. My 9-volt battery pushes through a 300-ohm resistor. How much current flows?',
+    visual: function () { return circuitSVG('9V', '?', '300Ω', 'I'); } },
+
+  { text: '<span class="eq">I = V ÷ R = 9 ÷ 300 = 0.03 A</span> — that’s 30 milliamps. Just right for an LED.',
+    visual: function () { return circuitSVG('9V', '0.03A', '300Ω', 'I'); } },
+
+  { text: '<b>THAT’S</b> exactly why the LED lesson needed a resistor — add resistance, and Ohm’s Law guarantees the current drops to a safe level.',
+    visual: function () { return circuitSVG('9V', '0.03A', '300Ω', ''); } },
+
+  { text: 'One more direction: I need <b>0.02 A</b> through a <b>500Ω</b> resistor. What voltage do I need?',
+    visual: function () { return circuitSVG('?', '0.02A', '500Ω', 'V'); } },
+
+  { text: '<span class="eq">V = I × R = 0.02 × 500 = 10 V</span>. Same rule — just solved for a different letter.',
+    visual: function () { return circuitSVG('10V', '0.02A', '500Ω', 'V'); } },
+
+  { text: 'And that’s the whole idea: three quantities, one rule — <span class="eq">V = I × R</span> — and you can always find whichever one you’re missing.',
+    visual: function () { return triangleSVG(''); } },
+
+  { text: 'Let’s see if that stuck — try a few on your own.' },
+
+  { text: 'Ready to prove it? Let’s hit the quiz!' }
+];
+
+var LESSON_ID = 'circuits-04-voltage';
+
+var idx = 0;
+var seen = [true];
+var answered = {};   // exampleId -> { chosen, correct, answerIndex, explain }, once answered
+var autoOn = false;
+var autoTimer = null;
+var AUTO_MS = 5200;
+
+var el = {
+  spark:    Ignite.$('#sparkImg'),
+  visual:   Ignite.$('#visualBox'),
+  bubble:   Ignite.$('#bubble'),
+  name:     Ignite.$('#bubbleName'),
+  text:     Ignite.$('#bubbleText'),
+  choices:  Ignite.$('#bubbleChoices'),
+  feedback: Ignite.$('#exFeedback'),
+  dots:     Ignite.$('#dots'),
+  back:     Ignite.$('#backBtn'),
+  next:     Ignite.$('#nextBtn'),
+  auto:     Ignite.$('#autoBtn')
+};
+
+function pulse(node) {
+  node.classList.remove('frame-in');
+  void node.offsetWidth;
+  node.classList.add('frame-in');
+}
+
+function renderDots() {
+  el.dots.innerHTML = '';
+  FRAMES.forEach(function (f, i) {
+    var b = document.createElement('button');
+    b.className = 'dot' + (i === idx ? ' on' : (seen[i] ? ' done' : ''));
+    b.setAttribute('aria-label', 'Frame ' + (i + 1));
+    b.addEventListener('click', function () { go(i); });
+    el.dots.appendChild(b);
+  });
+}
+
+function renderChoices(frame) {
+  el.choices.innerHTML = '';
+  el.feedback.innerHTML = '';
+  el.choices.style.display = frame.isPractice ? 'flex' : 'none';
+  if (!frame.isPractice) return;
+
+  var result = answered[frame.exampleId];
+  frame.choices.forEach(function (choice, i) {
+    var btn = document.createElement('button');
+    var cls = 'ex-choice';
+    if (result && result.correct !== null) {
+      if (i === result.chosen)                        cls += result.correct ? ' right' : ' wrong';
+      else if (i === result.answerIndex && !result.correct) cls += ' right';
+    }
+    btn.className = cls;
+    btn.textContent = choice;
+    btn.addEventListener('click', function () { pickExample(frame, i); });
+    el.choices.appendChild(btn);
+  });
+
+  if (result && result.correct !== null) {
+    el.feedback.innerHTML = result.correct
+      ? '<div class="lk-correct">Yep — that’s it! ' + result.explain + '</div>'
+      : '<div class="lk-wrong">Not quite. ' + result.explain + '</div>';
+  }
+}
+
+function pickExample(frame, i) {
+  /* Spark confirms or explains right here — logged separately from the
+     graded quiz for the grown-up view, see practice_examples() in app.py. */
+  fetch('/api/example', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lesson_id: LESSON_ID, example_id: frame.exampleId, chosen: i })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      answered[frame.exampleId] = {
+        chosen: i, correct: !!data.correct,
+        answerIndex: data.answer, explain: data.explain || ''
+      };
+    })
+    .catch(function () {
+      /* Couldn't reach the server — still let them move on, just silently. */
+      answered[frame.exampleId] = { chosen: i, correct: null, answerIndex: null, explain: '' };
+    })
+    .then(function () {
+      renderChoices(frame);
+      el.next.disabled = false;
+    });
+}
+
+function render() {
+  var frame = FRAMES[idx];
+  seen[idx] = true;
+
+  el.name.textContent = frame.isPractice ? '🧪 Quick Check' : '⚡ Spark';
+  el.text.innerHTML = frame.isPractice ? frame.prompt : frame.text;
+  el.visual.innerHTML = frame.visual ? frame.visual() : '';
+  renderChoices(frame);
+  pulse(el.bubble);
+  pulse(el.visual);
+  renderDots();
+
+  el.back.disabled = idx === 0;
+  var last = idx === FRAMES.length - 1;
+  el.next.textContent = last ? 'Take the Quiz →' : 'Next ▶';
+  el.next.disabled = !!(frame.isPractice && answered[frame.exampleId] === undefined);
+
+  Ignite.progress(Math.round(((idx + 1) / FRAMES.length) * 100));
+}
+
+function go(i) {
+  idx = Math.max(0, Math.min(FRAMES.length - 1, i));
+  render();
+  if (autoOn) scheduleAuto();
+}
+
+function scheduleAuto() {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(function () {
+    var frame = FRAMES[idx];
+    /* Auto-play stops rather than skipping past a practice question the
+       student hasn't actually tried yet. */
+    if (frame.isPractice && answered[frame.exampleId] === undefined) { setAuto(false); return; }
+    if (idx < FRAMES.length - 1) go(idx + 1);
+    else setAuto(false);
+  }, AUTO_MS);
+}
+
+function setAuto(on) {
+  autoOn = on;
+  el.auto.textContent = on ? '■ Stop' : '▶ Auto';
+  el.auto.classList.toggle('active', on);
+  clearTimeout(autoTimer);
+  if (on) scheduleAuto();
+}
+
+el.back.addEventListener('click', function () { go(idx - 1); });
+
+el.next.addEventListener('click', function () {
+  if (idx < FRAMES.length - 1) go(idx + 1);
+  else Ignite.complete(null);
+});
+
+el.auto.addEventListener('click', function () { setAuto(!autoOn); });
+
+Ignite.onReady(function () {
+  Ignite.ready();
+  el.spark.src = Ignite.art('characters/spark');
+
+  /* Practice-question prompts and choices, answer key stripped server
+     side. Spliced in right before the closing frame. Fails open — if
+     this can't be reached, the lesson still runs, just without them. */
+  fetch('/api/examples/' + LESSON_ID)
+    .then(function (r) { return r.json(); })
+    .then(function (examples) {
+      var practice = examples.map(function (ex) {
+        return { isPractice: true, exampleId: ex.id, prompt: ex.prompt, choices: ex.choices };
+      });
+      FRAMES.splice.apply(FRAMES, [FRAMES.length - 1, 0].concat(practice));
+    })
+    .catch(function () {})
+    .then(render);
+});
+</script>
+</body>
+</html>

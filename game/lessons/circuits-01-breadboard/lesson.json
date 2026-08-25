@@ -5,7 +5,6 @@
   "content": "01-breadboard.md",
   "order": 10,
   "duration_min": 6,
-  "xp": 50,
   "reward": "badge-breadboard",
   "description": "Where wires go, and why the holes are connected the way they are.",
 

@@ -89,6 +89,24 @@
   </div>
 {% endif %}
 
+{% if practice %}
+  <div class="panel" style="margin-bottom:18px">
+    <div class="panel-head teal">🧪 Practice Examples <span style="font-weight:400;opacity:0.85">— not shown to {{ student.name.split(' ')[0] }}</span></div>
+    <div class="miss-list">
+      {% for p in practice %}
+        <div class="miss {{ 'solved' if p.correct else '' }}">
+          <div class="miss-q">{{ p.prompt }}</div>
+          <div class="miss-answers">
+            <span class="miss-theirs">Answered: {{ p.their_answer }}</span>
+            {% if not p.correct %}<span class="miss-right">Correct: {{ p.right_answer }}</span>{% endif %}
+          </div>
+          <div class="miss-meta">{{ p.lesson }} · {{ 'correct' if p.correct else 'missed' }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
 {% if activity %}
   <div class="panel" style="margin-bottom:18px">
     <div class="panel-head">📅 Recent Activity</div>
@@ -112,45 +130,67 @@
 
 <div class="panel">
   <div class="panel-head">All Lessons</div>
-  <table class="data">
-    <thead>
-      <tr>
-        <th>Lesson</th>
-        <th>Type</th>
-        <th>Status</th>
-        <th>Quiz</th>
-        <th>Last Worked On</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
+  <div style="font-size:0.78rem;color:var(--ink-dim);padding:0 16px 10px">
+    {% if custom_assignment %}
+      Only the checked lessons show up on {{ student.name }}'s menu.
+    {% else %}
+      Everything is available by default — uncheck any to hide them from {{ student.name }}'s menu.
+    {% endif %}
+  </div>
+  <form method="POST" action="{{ url_for('student_assign', username=student.username) }}">
+    <table class="data">
+      <thead>
         <tr>
-          <td>
-            <div style="font-weight:700">{{ row.title }}</div>
-            <div style="font-size:0.72rem;color:var(--ink-dim)">{{ row.subject }}</div>
-          </td>
-          <td style="font-size:0.78rem;color:var(--ink-mid)">
-            {% if row.type == 'video' %}▶ Video
-            {% elif row.type == 'interactive' %}🎮 Activity
-            {% else %}📖 Reading{% endif %}
-          </td>
-          <td>
-            <span class="pill {{ row.progress.status }}">
-              {{ row.progress.status | replace('_', ' ') | title }}
-            </span>
-          </td>
-          <td>
-            {% if row.score is not none %}
-              <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--orange)' }}">{{ row.score }}%</b>
-            {% else %}—{% endif %}
-          </td>
-          <td style="color:var(--ink-dim);font-size:0.78rem">
-            {{ row.progress.updated[:16] | replace('T', ' ') if row.progress.updated is defined else '—' }}
-          </td>
+          <th>On menu</th>
+          <th>Lesson</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Quiz</th>
+          <th>Quiz Time</th>
+          <th>Last Worked On</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <input type="checkbox" name="lesson_id" value="{{ row.id }}" {{ 'checked' if row.assigned }}>
+            </td>
+            <td>
+              <div style="font-weight:700">{{ row.title }}</div>
+              <div style="font-size:0.72rem;color:var(--ink-dim)">{{ row.subject }}</div>
+            </td>
+            <td style="font-size:0.78rem;color:var(--ink-mid)">
+              {% if row.type == 'video' %}▶ Video
+              {% elif row.type == 'interactive' %}🎮 Activity
+              {% else %}📖 Reading{% endif %}
+            </td>
+            <td>
+              <span class="pill {{ row.progress.status }}">
+                {{ row.progress.status | replace('_', ' ') | title }}
+              </span>
+            </td>
+            <td>
+              {% if row.score is not none %}
+                <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--orange)' }}">{{ row.score }}%</b>
+              {% else %}—{% endif %}
+            </td>
+            <td style="color:var(--ink-dim);font-size:0.78rem">
+              {% if row.progress.quiz_seconds is defined %}
+                {{ (row.progress.quiz_seconds // 60) }}m {{ '%02d' | format(row.progress.quiz_seconds % 60) }}s
+              {% else %}—{% endif %}
+            </td>
+            <td style="color:var(--ink-dim);font-size:0.78rem">
+              {{ row.progress.updated[:16] | replace('T', ' ') if row.progress.updated is defined else '—' }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="padding:12px 16px">
+      <button class="btn" type="submit">Save lesson menu</button>
+    </div>
+  </form>
 </div>
 
 {% endblock %}

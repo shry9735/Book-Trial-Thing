@@ -25,6 +25,25 @@ the gap, and the gap tells you what to name the file.
 
 Drop the file in and reload. No restart, no config, no cache to clear.
 
+## Importing a whole asset pack at once
+
+Got a folder of files ready to go, rather than one at a time? Drop the
+whole thing into `static/art/inbox/` — any layout — and run:
+
+```bash
+python import_assets.py
+```
+
+It sorts each file into place by matching its filename against what the
+game is looking for (`classroom`, `avatar-student`, `logo`, a lesson id,
+...), or by mirroring it straight across if it's already sitting under a
+`backgrounds/` `characters/` `ui/` `lessons/` `games/` folder inside the
+pack. Anything it can't place is left in the inbox and printed out, so
+you can rename it and run the script again — nothing is ever guessed or
+silently dropped.
+
+To import from somewhere other than the inbox: `python import_assets.py path/to/folder`.
+
 ## What goes where
 
 | Path | Used for |
@@ -33,6 +52,7 @@ Drop the file in and reload. No restart, no config, no cache to clear.
 | `characters/avatar-student.*` | HUD portrait for `student` |
 | `characters/avatar-student2.*` | HUD portrait for `student2` |
 | `characters/avatar-teacher.*` | HUD portrait for `teacher` |
+| `characters/dude-ad.*` | DUDE_Ad, the classroom mascot |
 | `ui/logo.*` | Login crest — replaces the 🔥 mark if present |
 | `lessons/<lesson-id>.*` | Lesson card thumbnail / video poster |
 | `lessons/<name>.mp4` | Video lesson source files |
@@ -91,7 +111,7 @@ Point a lesson at it with `"source": "games/resistor-colors/index.html"`.
 To report results back to the tracker, post a message from inside the game:
 
 ```js
-// Finished — awards XP and marks the lesson complete
+// Finished — marks the lesson complete and grants any reward
 window.parent.postMessage({ type: 'lesson:complete', score: 90 }, '*');
 
 // Partial progress — records a score without completing

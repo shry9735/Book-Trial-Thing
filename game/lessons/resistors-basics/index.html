@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Reading Resistors</title>
+
+<!-- Shared look. No shared code — see game/lessons/README.md -->
+<link rel="stylesheet" href="/kit/lesson-kit.css" />
+
+<style>
+  /* This lesson's own styles. Scoped to this iframe — see the README's
+     note on isolation. Same skeleton as circuits-04-voltage; only the
+     diagram helpers and FRAMES content differ. */
+  html, body { height: 100%; }
+
+  .spark-stage {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 20px 12px;
+    gap: 10px;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(240,168,48,0.12) 0%, transparent 55%),
+      var(--paper);
+  }
+
+  .frame-row {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    min-height: 0;
+  }
+
+  .spark-wrap {
+    flex: 0 0 190px;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .spark-img {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .content-col {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .visual-box {
+    flex: 0 0 auto;
+    min-height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .visual-box:empty { min-height: 0; }
+
+  .bubble {
+    position: relative;
+    background: var(--surface);
+    border: 2px solid var(--wood);
+    border-radius: 14px;
+    padding: 14px 20px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+  .bubble::before {
+    content: "";
+    position: absolute;
+    left: -14px;
+    bottom: 22px;
+    border-width: 10px 14px 10px 0;
+    border-style: solid;
+    border-color: transparent var(--wood) transparent transparent;
+  }
+  .bubble::after {
+    content: "";
+    position: absolute;
+    left: -10px;
+    bottom: 24px;
+    border-width: 8px 11px 8px 0;
+    border-style: solid;
+    border-color: transparent var(--surface) transparent transparent;
+  }
+  .bubble-name {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--teal-dk);
+    margin-bottom: 4px;
+  }
+  .bubble-text {
+    font-size: 1rem;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .bubble-text b { color: var(--orange-dk); }
+  .bubble-text .eq {
+    display: inline-block;
+    background: var(--orange-lt);
+    border: 1px solid #f0c8b4;
+    border-radius: 6px;
+    padding: 1px 8px;
+    font-weight: 800;
+    color: var(--orange-dk);
+  }
+
+  @keyframes frame-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .frame-in { animation: frame-in 0.22s ease-out; }
+
+  .controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .dots {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: none;
+    background: var(--border);
+    cursor: pointer;
+    padding: 0;
+  }
+  .dot.on { background: var(--gold); }
+  .dot.done { background: var(--teal); }
+
+  .lk-btn.auto.active {
+    background: linear-gradient(180deg, #37a89f 0%, var(--teal) 45%, var(--teal-dk) 100%);
+  }
+
+  /* ── Resistor + color chart diagrams ── */
+  .res-label { font-family: var(--font); font-weight: 700; text-anchor: middle; fill: var(--ink); }
+  .res-value { font-family: var(--font); font-weight: 800; text-anchor: middle; fill: var(--orange-dk); }
+  .chip-label { font-family: var(--font); font-weight: 800; text-anchor: middle; fill: var(--ink); }
+
+  /* ── Practice examples: Spark confirms or explains each one, but the
+       attempt is logged separately from the graded quiz — see the note
+       above /api/example in app.py. ── */
+  .bubble-choices {
+    display: none;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .ex-choice {
+    text-align: left;
+    font-family: inherit;
+    font-size: 0.88rem;
+    background: linear-gradient(180deg, #fff, var(--paper));
+    border: 2px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 13px;
+    cursor: pointer;
+    transition: border-color 0.14s, transform 0.1s;
+  }
+  .ex-choice:hover:not(:disabled) { border-color: var(--teal); transform: translateX(3px); }
+  .ex-choice.right { border-color: var(--good); background: #eaf6ec; }
+  .ex-choice.wrong { border-color: var(--bad); background: var(--orange-lt); }
+  .ex-feedback { margin-top: 8px; }
+  .ex-feedback:empty { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="spark-stage">
+
+  <div class="frame-row">
+    <div class="spark-wrap">
+      <img class="spark-img lk-sprite lk-float" id="sparkImg" alt="Spark" />
+    </div>
+
+    <div class="content-col">
+      <div class="visual-box" id="visualBox"></div>
+      <div class="bubble" id="bubble">
+        <div class="bubble-name" id="bubbleName">⚡ Spark</div>
+        <div class="bubble-text" id="bubbleText"></div>
+        <div class="bubble-choices" id="bubbleChoices"></div>
+        <div class="ex-feedback" id="exFeedback"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="lk-btn ghost sm" id="backBtn">◀ Back</button>
+    <div class="dots" id="dots"></div>
+    <button class="lk-btn ghost sm auto" id="autoBtn">▶ Auto</button>
+    <div style="flex:1"></div>
+    <button class="lk-btn sm" id="nextBtn">Next ▶</button>
+  </div>
+
+</div>
+
+<script src="/kit/lesson-kit.js"></script>
+<script>
+'use strict';
+
+/* ── Tiny SVG helpers — one lesson's own visuals, nothing shared ────── */
+
+var HEX = {
+  black: '#1a1a1a', brown: '#6b3f1f', red: '#c62828', orange: '#e07b20',
+  yellow: '#f2c230', green: '#2e8b45', blue: '#2b5fa8', violet: '#7a4b9e'
+};
+var DIGIT = { black:0, brown:1, red:2, orange:3, yellow:4, green:5, blue:6, violet:7 };
+var ORDER = ['black','brown','red','orange','yellow','green','blue','violet'];
+
+/* A resistor body with up to 3 color bands. `bands` holds color names,
+   or null for an unfilled placeholder band. Optional `labels` prints a
+   caption under each band position (used the first time we introduce
+   what each band means) — spaced wider than the real bands so three
+   words never collide. */
+function resistorSVG(bands, labels) {
+  var xs = labels ? [70, 120, 170] : [96, 120, 144];
+  var svg = '<svg viewBox="0 0 240 150" width="150" height="94">' +
+    '<line x1="0" y1="60" x2="42" y2="60" stroke="#9a9a9a" stroke-width="5"/>' +
+    '<line x1="198" y1="60" x2="240" y2="60" stroke="#9a9a9a" stroke-width="5"/>' +
+    '<rect x="42" y="28" width="156" height="64" rx="20" fill="#e0c68f" stroke="#a8845a" stroke-width="3"/>';
+  xs.forEach(function (x, i) {
+    var band = bands[i];
+    var fill = band ? HEX[band] : '#ffffff';
+    var stroke = band ? 'rgba(0,0,0,0.2)' : '#c8b090';
+    svg += '<rect x="' + x + '" y="28" width="14" height="64" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>';
+  });
+  if (labels) {
+    labels.forEach(function (label, i) {
+      if (!label) return;
+      svg += '<line x1="' + (xs[i] + 7) + '" y1="94" x2="' + (xs[i] + 7) + '" y2="104" stroke="var(--ink-mid)" stroke-width="1.5"/>';
+      svg += '<text class="res-label" x="' + (xs[i] + 7) + '" y="118" font-size="11">' + label + '</text>';
+    });
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+/* Once the code's been introduced, keep the chart on screen alongside
+   whatever resistor is on screen — so reading one never means working
+   from memory alone. `resistorHtml` may be empty (chart by itself). */
+function withChart(resistorHtml) {
+  return '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">' +
+    (resistorHtml || '') + colorChartSVG() + '</div>';
+}
+
+/* All 8 colors this game uses, each with its digit — the reference chart. */
+function colorChartSVG() {
+  var w = 38, gap = 4, startX = 4;
+  var svg = '<svg viewBox="0 0 336 70" width="220" height="46">';
+  ORDER.forEach(function (name, i) {
+    var x = startX + i * (w + gap);
+    svg += '<rect x="' + x + '" y="0" width="' + w + '" height="' + w + '" rx="6" fill="' + HEX[name] + '" stroke="var(--wood)" stroke-width="2"/>';
+    svg += '<text class="chip-label" x="' + (x + w / 2) + '" y="' + (w + 24) + '" font-size="16">' + DIGIT[name] + '</text>';
+  });
+  svg += '</svg>';
+  return svg;
+}
+
+/* ── The lesson: Spark walks through it, frame by frame ─────────────── */
+
+var FRAMES = [
+  { text: 'Hey, me again! ⚡ Last time we cracked Ohm’s Law. Now let’s meet the <b>resistor</b> up close.' },
+
+  { text: 'A resistor’s whole job is to <b>resist</b> current — that’s literally the R in <span class="eq">V = I × R</span>.',
+    visual: function () { return resistorSVG([null, null, null]); } },
+
+  { text: 'Remember why the LED lesson needed one? Too much current burns things out. A resistor keeps <b>I</b> safely low.',
+    visual: function () { return resistorSVG([null, null, null]); } },
+
+  { text: 'So what does one actually look like? A tiny cylinder... wearing a few painted <b>color bands</b>.',
+    visual: function () { return resistorSVG([null, null, null]); } },
+
+  { text: 'Why bands instead of just printing the number? A resistor is only a few millimetres wide, and bands stay readable no matter which way it lands.',
+    visual: function () { return resistorSVG([null, null, null]); } },
+
+  { text: 'Most resistors have <b>3 bands</b> that matter. The first two are digits. The third tells you how many zeros to add.',
+    visual: function () { return resistorSVG([null, null, null], ['digit', 'digit', '× zeros']); } },
+
+  { text: 'Here’s the code — the color each digit wears, 0 through 7.',
+    visual: function () { return withChart(''); } },
+
+  { text: 'Let’s read one for real: <b>brown, black, red</b>. Brown is 1, black is 0 — so the digits are 10.',
+    visual: function () { return withChart(resistorSVG(['brown', 'black', 'red'])); } },
+
+  { text: '...and red means <b>add two zeros</b>: <span class="eq">1,000 Ω</span>. That’s 1 kilohm, or 1k for short.',
+    visual: function () { return withChart(resistorSVG(['brown', 'black', 'red'])); } },
+
+  { text: 'One more: <b>orange, orange, red</b>. Orange is 3, so the digits are 33 — then two more zeros.',
+    visual: function () { return withChart(resistorSVG(['orange', 'orange', 'red'])); } },
+
+  { text: '<span class="eq">3,300 Ω</span> — 3.3k. Same trick every time: two digits, then that many zeros.',
+    visual: function () { return withChart(resistorSVG(['orange', 'orange', 'red'])); } },
+
+  { text: 'And that’s the whole code: 2 digits from the color chart, then the 3rd band says how many zeros to add.',
+    visual: function () { return withChart(''); } },
+
+  { text: 'Let’s see if that stuck — try a few on your own.',
+    visual: function () { return withChart(''); } },
+
+  { text: 'Ready to prove it? Then it’s Resistor Color Challenge time!' }
+];
+
+var LESSON_ID = 'resistors-basics';
+
+var idx = 0;
+var seen = [true];
+var answered = {};   // exampleId -> { chosen, correct, answerIndex, explain }, once answered
+var autoOn = false;
+var autoTimer = null;
+var AUTO_MS = 5200;
+
+var el = {
+  spark:    Ignite.$('#sparkImg'),
+  visual:   Ignite.$('#visualBox'),
+  bubble:   Ignite.$('#bubble'),
+  name:     Ignite.$('#bubbleName'),
+  text:     Ignite.$('#bubbleText'),
+  choices:  Ignite.$('#bubbleChoices'),
+  feedback: Ignite.$('#exFeedback'),
+  dots:     Ignite.$('#dots'),
+  back:     Ignite.$('#backBtn'),
+  next:     Ignite.$('#nextBtn'),
+  auto:     Ignite.$('#autoBtn')
+};
+
+function pulse(node) {
+  node.classList.remove('frame-in');
+  void node.offsetWidth;
+  node.classList.add('frame-in');
+}
+
+function renderDots() {
+  el.dots.innerHTML = '';
+  FRAMES.forEach(function (f, i) {
+    var b = document.createElement('button');
+    b.className = 'dot' + (i === idx ? ' on' : (seen[i] ? ' done' : ''));
+    b.setAttribute('aria-label', 'Frame ' + (i + 1));
+    b.addEventListener('click', function () { go(i); });
+    el.dots.appendChild(b);
+  });
+}
+
+function renderChoices(frame) {
+  el.choices.innerHTML = '';
+  el.feedback.innerHTML = '';
+  el.choices.style.display = frame.isPractice ? 'flex' : 'none';
+  if (!frame.isPractice) return;
+
+  var result = answered[frame.exampleId];
+  frame.choices.forEach(function (choice, i) {
+    var btn = document.createElement('button');
+    var cls = 'ex-choice';
+    if (result && result.correct !== null) {
+      if (i === result.chosen)                        cls += result.correct ? ' right' : ' wrong';
+      else if (i === result.answerIndex && !result.correct) cls += ' right';
+    }
+    btn.className = cls;
+    btn.textContent = choice;
+    btn.addEventListener('click', function () { pickExample(frame, i); });
+    el.choices.appendChild(btn);
+  });
+
+  if (result && result.correct !== null) {
+    el.feedback.innerHTML = result.correct
+      ? '<div class="lk-correct">Yep — that’s it! ' + result.explain + '</div>'
+      : '<div class="lk-wrong">Not quite. ' + result.explain + '</div>';
+  }
+}
+
+function pickExample(frame, i) {
+  /* Spark confirms or explains right here — logged separately from the
+     graded quiz for the grown-up view, see practice_examples() in app.py. */
+  fetch('/api/example', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lesson_id: LESSON_ID, example_id: frame.exampleId, chosen: i })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      answered[frame.exampleId] = {
+        chosen: i, correct: !!data.correct,
+        answerIndex: data.answer, explain: data.explain || ''
+      };
+    })
+    .catch(function () {
+      /* Couldn't reach the server — still let them move on, just silently. */
+      answered[frame.exampleId] = { chosen: i, correct: null, answerIndex: null, explain: '' };
+    })
+    .then(function () {
+      renderChoices(frame);
+      el.next.disabled = false;
+    });
+}
+
+function render() {
+  var frame = FRAMES[idx];
+  seen[idx] = true;
+
+  el.name.textContent = frame.isPractice ? '🧪 Quick Check' : '⚡ Spark';
+  el.text.innerHTML = frame.isPractice ? frame.prompt : frame.text;
+  el.visual.innerHTML = frame.visual ? frame.visual() : '';
+  renderChoices(frame);
+  pulse(el.bubble);
+  pulse(el.visual);
+  renderDots();
+
+  el.back.disabled = idx === 0;
+  var last = idx === FRAMES.length - 1;
+  el.next.textContent = last ? 'Take the Quiz →' : 'Next ▶';
+  el.next.disabled = !!(frame.isPractice && answered[frame.exampleId] === undefined);
+
+  Ignite.progress(Math.round(((idx + 1) / FRAMES.length) * 100));
+}
+
+function go(i) {
+  idx = Math.max(0, Math.min(FRAMES.length - 1, i));
+  render();
+  if (autoOn) scheduleAuto();
+}
+
+function scheduleAuto() {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(function () {
+    var frame = FRAMES[idx];
+    /* Auto-play stops rather than skipping past a practice question the
+       student hasn't actually tried yet. */
+    if (frame.isPractice && answered[frame.exampleId] === undefined) { setAuto(false); return; }
+    if (idx < FRAMES.length - 1) go(idx + 1);
+    else setAuto(false);
+  }, AUTO_MS);
+}
+
+function setAuto(on) {
+  autoOn = on;
+  el.auto.textContent = on ? '■ Stop' : '▶ Auto';
+  el.auto.classList.toggle('active', on);
+  clearTimeout(autoTimer);
+  if (on) scheduleAuto();
+}
+
+el.back.addEventListener('click', function () { go(idx - 1); });
+
+el.next.addEventListener('click', function () {
+  if (idx < FRAMES.length - 1) go(idx + 1);
+  else Ignite.complete(null);
+});
+
+el.auto.addEventListener('click', function () { setAuto(!autoOn); });
+
+Ignite.onReady(function () {
+  Ignite.ready();
+  el.spark.src = Ignite.art('characters/spark');
+
+  /* Practice-question prompts and choices, answer key stripped server
+     side. Spliced in right before the closing frame. Fails open — if
+     this can't be reached, the lesson still runs, just without them. */
+  fetch('/api/examples/' + LESSON_ID)
+    .then(function (r) { return r.json(); })
+    .then(function (examples) {
+      var practice = examples.map(function (ex) {
+        return {
+          isPractice: true, exampleId: ex.id, prompt: ex.prompt, choices: ex.choices,
+          visual: function () { return withChart(''); }
+        };
+      });
+      FRAMES.splice.apply(FRAMES, [FRAMES.length - 1, 0].concat(practice));
+    })
+    .catch(function () {})
+    .then(render);
+});
+</script>
+</body>
+</html>

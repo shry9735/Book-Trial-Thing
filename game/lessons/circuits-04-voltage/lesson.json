@@ -1,0 +1,130 @@
+{
+  "title": "Voltage & Ohm's Law",
+  "subject": "Basic Electricity",
+  "type": "interactive",
+  "order": 15,
+  "duration_min": 8,
+  "reward": "badge-ohm",
+  "description": "Spark explains what electricity actually is, and the one formula that ties voltage, current, and resistance together.",
+  "examples": [
+    {
+      "id": "p1",
+      "prompt": "A 6V battery pushes current through a 200Ω resistor. How much current flows?",
+      "choices": [
+        "0.03 A",
+        "30 A",
+        "1200 A"
+      ],
+      "answer": 0,
+      "explain": "I = V ÷ R = 6 ÷ 200 = 0.03 A."
+    },
+    {
+      "id": "p2",
+      "prompt": "3 A flows through a 10Ω resistor. What's the voltage across it?",
+      "choices": [
+        "3.33 V",
+        "30 V",
+        "13 V"
+      ],
+      "answer": 1,
+      "explain": "V = I × R = 3 × 10 = 30 V."
+    },
+    {
+      "id": "p3",
+      "prompt": "A resistor has 5V across it and 0.5A flowing through it. What's its resistance?",
+      "choices": [
+        "2.5 Ω",
+        "10 Ω",
+        "0.1 Ω"
+      ],
+      "answer": 1,
+      "explain": "R = V ÷ I = 5 ÷ 0.5 = 10 Ω."
+    }
+  ],
+  "quiz": [
+    {
+      "id": "t1",
+      "prompt": "On the Ohm's Law triangle, you cover V to find it. What do the two letters left uncovered tell you to do?",
+      "choices": [
+        "Multiply I and R",
+        "Divide I by R",
+        "Add I and R"
+      ],
+      "answer": 0,
+      "explain": "Covering V leaves I and R side by side — side by side means multiply: V = I × R.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "t2",
+      "prompt": "On the triangle, you cover I to find it. What's left uncovered, and what does it tell you?",
+      "choices": [
+        "I and R, so multiply them",
+        "V over R, so divide V by R",
+        "V over I, so divide V by I"
+      ],
+      "answer": 1,
+      "explain": "Covering I leaves V stacked over R — stacked means divide: I = V ÷ R.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "m1",
+      "prompt": "A 12V battery pushes current through a 4Ω resistor. Cover I on the triangle — how much current flows?",
+      "choices": [
+        "3 A",
+        "8 A",
+        "48 A"
+      ],
+      "answer": 0,
+      "explain": "Covering I leaves V over R: I = 12 ÷ 4 = 3 A.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "m2",
+      "prompt": "2 A flows through a 6Ω resistor. Cover V on the triangle — what's the voltage?",
+      "choices": [
+        "3 V",
+        "8 V",
+        "12 V"
+      ],
+      "answer": 2,
+      "explain": "Covering V leaves I and R side by side: V = 2 × 6 = 12 V.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "m3",
+      "prompt": "A resistor has 20V across it with 4 A flowing through it. Cover R on the triangle — what's the resistance?",
+      "choices": [
+        "5 Ω",
+        "16 Ω",
+        "80 Ω"
+      ],
+      "answer": 0,
+      "explain": "Covering R leaves V over I: R = 20 ÷ 4 = 5 Ω.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "m4",
+      "prompt": "A 10V battery pushes current through a 2Ω resistor. Cover I on the triangle — how much current flows?",
+      "choices": [
+        "2 A",
+        "5 A",
+        "20 A"
+      ],
+      "answer": 1,
+      "explain": "Covering I leaves V over R: I = 10 ÷ 2 = 5 A.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    },
+    {
+      "id": "m5",
+      "prompt": "0.5 A flows through a 20Ω resistor. Cover V on the triangle — what's the voltage?",
+      "choices": [
+        "0.025 V",
+        "10 V",
+        "40 V"
+      ],
+      "answer": 1,
+      "explain": "Covering V leaves I and R side by side: V = 0.5 × 20 = 10 V.",
+      "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    }
+  ]
+}

@@ -75,7 +75,6 @@ as every other lesson, with none of their JavaScript.
   "type": "interactive",
   "order": 30,
   "duration_min": 10,
-  "xp": 100,
   "reward": "trinket-resistor",
   "description": "Read the color bands before the timer runs out.",
   "quiz": [ ... ]
@@ -86,7 +85,6 @@ as every other lesson, with none of their JavaScript.
 |---|---|
 | `type` | `interactive` (your `index.html`), `video`, or `reading` |
 | `order` | Sort position in the lesson list |
-| `xp` | Awarded once, on first completion |
 | `reward` | An id from `data/items.json` — the trinket earned |
 | `quiz` | Required. See below. |
 
@@ -139,13 +137,13 @@ Ignite.preload([...], cb);       // warm the cache first
 ```
 
 `Ignite.complete()` hands control back. The host then runs the quiz,
-records the score, and grants XP and the trinket. **A lesson never scores
+records the score, and grants the trinket. **A lesson never scores
 itself** — it reports what happened and the host decides what it's worth.
 
 ## Checklist
 
 - [ ] Folder name is the lesson id, lowercase with hyphens
-- [ ] `lesson.json` has `title`, `subject`, `type`, `xp`, `quiz`
+- [ ] `lesson.json` has `title`, `subject`, `type`, `quiz`
 - [ ] Every quiz question has an `explain`
 - [ ] `reward` matches an id in `data/items.json`
 - [ ] Art goes through `Ignite.art()`, never a hardcoded path

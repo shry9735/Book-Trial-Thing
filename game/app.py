@@ -23,7 +23,7 @@ Every lesson is one folder under lessons/.  Drop a folder in, it appears
 in the game — nothing to register.
 
     lessons/circuits-03/
-    ├── lesson.json      manifest: title, xp, quiz, reward
+    ├── lesson.json      manifest: title, quiz, reward
     ├── index.html       the lesson itself (interactive types)
     └── anything else    its own js/css/assets, namespaced to this folder
 
@@ -63,6 +63,7 @@ RAG index:
 
 import argparse
 import json
+import random
 import re
 import secrets
 import sys
@@ -85,12 +86,13 @@ ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
 
-USERS_FILE     = DATA_DIR / "users.json"
-GROUPS_FILE    = DATA_DIR / "groups.json"
-PROGRESS_FILE  = DATA_DIR / "progress.json"
-ITEMS_FILE     = DATA_DIR / "items.json"
-CLASSROOM_FILE = DATA_DIR / "classroom.json"
-SECRET_FILE    = DATA_DIR / "secret_key"
+USERS_FILE       = DATA_DIR / "users.json"
+GROUPS_FILE      = DATA_DIR / "groups.json"
+PROGRESS_FILE    = DATA_DIR / "progress.json"
+ITEMS_FILE       = DATA_DIR / "items.json"
+CLASSROOM_FILE   = DATA_DIR / "classroom.json"
+ASSIGNMENTS_FILE = DATA_DIR / "assignments.json"
+SECRET_FILE      = DATA_DIR / "secret_key"
 
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
@@ -130,10 +132,23 @@ def write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def load_users()    -> dict: return read_json(USERS_FILE,    {})
-def load_groups()   -> dict: return read_json(GROUPS_FILE,   {})
-def load_progress() -> dict: return read_json(PROGRESS_FILE, {})
-def load_items()    -> dict: return read_json(ITEMS_FILE,    {})
+def load_users()      -> dict: return read_json(USERS_FILE,      {})
+def load_groups()     -> dict: return read_json(GROUPS_FILE,     {})
+def load_progress()   -> dict: return read_json(PROGRESS_FILE,   {})
+def load_items()      -> dict: return read_json(ITEMS_FILE,      {})
+def load_assignments() -> dict: return read_json(ASSIGNMENTS_FILE, {})
+
+
+def assigned_lessons(username: str, catalog: list[dict]) -> list[dict]:
+    """
+    A teacher or parent can narrow a student's lesson menu (see
+    /grownup/student/<username>/assign). No entry for a student means
+    nothing has been restricted yet, so everything is available.
+    """
+    assigned = load_assignments().get(username)
+    if assigned is None:
+        return catalog
+    return [l for l in catalog if l["id"] in assigned]
 
 
 def load_classroom() -> dict:
@@ -165,9 +180,9 @@ def load_lessons() -> list[dict]:
         data.setdefault("title",   folder.name)
         data.setdefault("subject", "General")
         data.setdefault("type",    "interactive")
-        data.setdefault("xp",      50)
         data.setdefault("order",   999)
         data.setdefault("quiz",    [])
+        data.setdefault("examples", [])
         data.setdefault("thumb",   f"lessons/{folder.name}")
         found.append(data)
 
@@ -407,7 +422,7 @@ def logout():
 # ── Progress ────────────────────────────────────────────────────────────────────
 
 def blank_record() -> dict:
-    return {"xp": 0, "items": [], "lessons": {}}
+    return {"items": [], "lessons": {}}
 
 
 def student_progress(username: str) -> dict:
@@ -421,8 +436,13 @@ def _save_record(username: str, record: dict) -> None:
 
 
 def set_lesson_status(username: str, lesson_id: str, status: str,
-                      score: int | None = None) -> dict:
-    """Record lesson status.  XP and the reward item are granted once."""
+                      score: int | None = None,
+                      quiz_seconds: int | None = None) -> dict:
+    """
+    Record lesson status. The reward item is granted once. quiz_seconds is
+    logged for the grown-up view only — it is never sent back to the quiz
+    itself, so the student never sees a timer or knows it's being kept.
+    """
     record = student_progress(username)
     entry  = record["lessons"].get(lesson_id, {})
 
@@ -431,11 +451,12 @@ def set_lesson_status(username: str, lesson_id: str, status: str,
     entry["updated"] = datetime.now().isoformat(timespec="seconds")
     if score is not None:
         entry["score"] = max(int(score), int(entry.get("score", 0)))
+    if quiz_seconds is not None:
+        entry["quiz_seconds"] = quiz_seconds
 
     if status == "completed" and not was_complete:
         lesson = get_lesson(lesson_id)
         if lesson:
-            record["xp"] = record.get("xp", 0) + lesson.get("xp", 0)
             reward = lesson.get("reward")
             if reward and reward not in record["items"]:
                 record["items"].append(reward)
@@ -468,6 +489,27 @@ def record_answer(username: str, lesson_id: str, question_id: str,
     return record
 
 
+def record_example(username: str, lesson_id: str, example_id: str,
+                    chosen: int, correct: bool) -> None:
+    """
+    Store one practice-example attempt. Unlike record_answer(), this is
+    never graded back to the student — see /api/example. It exists purely
+    so a teacher or parent can see how practice is actually going.
+    """
+    record = student_progress(username)
+    entry    = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
+    examples = entry.setdefault("examples", {})
+
+    examples[example_id] = {
+        "chosen":  chosen,
+        "correct": bool(correct),
+        "tries":   examples.get(example_id, {}).get("tries", 0) + 1,
+        "updated": datetime.now().isoformat(timespec="seconds"),
+    }
+    entry["updated"] = examples[example_id]["updated"]
+    _save_record(username, record)
+
+
 def quiz_score(lesson: dict, entry: dict) -> int | None:
     """Percent of questions answered correctly on the first try."""
     questions = lesson.get("quiz", [])
@@ -492,7 +534,6 @@ def summarise(username: str) -> dict:
               if s is not None]
 
     return {
-        "xp": record.get("xp", 0),
         # Named "trinkets", not "items": in Jinja, `summary.items` resolves
         # to the dict's .items() method rather than this key.
         "trinkets":    record.get("items", []),
@@ -551,6 +592,37 @@ def sticking_points(username: str) -> list[dict]:
             })
 
     return sorted(out, key=lambda s: (s["resolved"], -s["tries"]))
+
+
+def practice_examples(username: str) -> list[dict]:
+    """
+    Every practice example a student has answered, right or wrong. These
+    are never graded back to the student — see /api/example — so this
+    grown-up view is the only place the right answer ever surfaces.
+    """
+    entries = student_progress(username).get("lessons", {})
+    out: list[dict] = []
+
+    for lesson in load_lessons():
+        answers = entries.get(lesson["id"], {}).get("examples", {})
+        if not answers:
+            continue
+        for example in lesson.get("examples", []):
+            a = answers.get(example["id"])
+            if not a:
+                continue
+            choices = example.get("choices", [])
+            chosen  = a.get("chosen")
+            out.append({
+                "lesson":       lesson["title"],
+                "prompt":       example["prompt"],
+                "their_answer": choices[chosen] if isinstance(chosen, int) and 0 <= chosen < len(choices) else "—",
+                "right_answer": choices[example["answer"]] if choices else "—",
+                "correct":      bool(a.get("correct")),
+                "updated":      a.get("updated", ""),
+            })
+
+    return sorted(out, key=lambda r: r["updated"], reverse=True)
 
 
 def headline(username: str) -> dict:
@@ -615,13 +687,31 @@ def visible_students(user: dict) -> list[str]:
 
 # ── Student screens ─────────────────────────────────────────────────────────────
 
+# DUDE_Ad's classroom greeting — robot Mr. T, but a few words tops.
+DUDE_LINES = [
+    "Let's build somethin'!",
+    "I pity the bug!",
+    "Quit jibber-jabbin'!",
+    "Circuits, fool!",
+    "Time to spark up!",
+    "No shortcuts, fool!",
+    "Let's get buzzin'!",
+    "I got the power!",
+    "Suit up, spark up!",
+    "Chains on, brain on!",
+    "Ready to roll, kid!",
+    "Volts up, let's go!",
+]
+
+
 @app.route("/classroom")
 @login_required("student")
 def classroom():
     user = current_user()
     return render_template("classroom.html",
                            layout=load_classroom(),
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["username"]),
+                           dude_line=random.choice(DUDE_LINES))
 
 
 @app.route("/lessons")
@@ -630,8 +720,17 @@ def lessons():
     user    = current_user()
     entries = student_progress(user["username"]).get("lessons", {})
     catalog = [{**l, "progress": entries.get(l["id"], {"status": "not_started"})}
-               for l in load_lessons()]
-    return render_template("lessons.html", lessons=catalog,
+               for l in assigned_lessons(user["username"], load_lessons())]
+
+    # Grouped by subject, in the order each subject first appears in the
+    # (already order-sorted) catalog — so a lesson's own "order" in its
+    # manifest decides both its place in its category and which category
+    # shows up first. No separate category config to keep in sync.
+    categories: dict[str, list] = {}
+    for lesson in catalog:
+        categories.setdefault(lesson.get("subject", "General"), []).append(lesson)
+
+    return render_template("lessons.html", categories=categories,
                            summary=summarise(user["username"]))
 
 
@@ -642,6 +741,9 @@ def lesson(lesson_id: str):
     lesson = get_lesson(lesson_id)
     if not lesson:
         abort(404)
+    assigned = load_assignments().get(user["username"])
+    if assigned is not None and lesson_id not in assigned:
+        abort(403)
 
     entry = student_progress(user["username"])["lessons"].get(lesson_id, {})
     if entry.get("status") != "completed":
@@ -651,7 +753,8 @@ def lesson(lesson_id: str):
 
     # Never ship the answer key to the client — questions are stripped and
     # answers checked server-side in /api/quiz.
-    quiz = [{"id": q["id"], "prompt": q["prompt"], "choices": q.get("choices", [])}
+    quiz = [{"id": q["id"], "prompt": q["prompt"], "choices": q.get("choices", []),
+              "diagram": q.get("diagram")}
             for q in lesson.get("quiz", [])]
 
     return render_template("lesson.html", lesson=lesson, entry=entry,
@@ -731,6 +834,57 @@ def api_quiz():
     })
 
 
+@app.route("/api/examples/<lesson_id>")
+@login_required("student")
+def api_examples(lesson_id: str):
+    """
+    Prompts and choices for a lesson's practice examples, answer key
+    stripped — the same treatment the quiz gets. A lesson's own iframe
+    fetches this to render its practice questions.
+    """
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        abort(404)
+    stripped = [{"id": e["id"], "prompt": e["prompt"], "choices": e.get("choices", [])}
+                for e in lesson.get("examples", [])]
+    return jsonify(stripped)
+
+
+@app.route("/api/example", methods=["POST"])
+@login_required("student")
+def api_example():
+    """
+    Record one practice-example answer and hand back the same
+    correct/explain shape /api/quiz gives — Spark uses it to confirm or
+    explain right there in the lesson. Recorded separately from the
+    graded quiz, for the grown-up view only — see practice_examples().
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    lesson = get_lesson(body.get("lesson_id", ""))
+    if not lesson:
+        return jsonify({"error": "Unknown lesson."}), 400
+
+    example = next((e for e in lesson.get("examples", []) if e["id"] == body.get("example_id")), None)
+    if not example:
+        return jsonify({"error": "Unknown example."}), 400
+
+    try:
+        chosen = int(body.get("chosen"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "No answer given."}), 400
+
+    correct = chosen == example["answer"]
+    record_example(user["username"], lesson["id"], example["id"], chosen, correct)
+
+    return jsonify({
+        "correct": correct,
+        "answer":  example["answer"],
+        "explain": example.get("explain", ""),
+    })
+
+
 @app.route("/api/quiz/finish", methods=["POST"])
 @login_required("student")
 def api_quiz_finish():
@@ -746,7 +900,12 @@ def api_quiz_finish():
     entry  = student_progress(user["username"])["lessons"].get(lesson["id"], {})
     score  = quiz_score(lesson, entry)
 
-    set_lesson_status(user["username"], lesson["id"], "completed", score)
+    try:
+        quiz_seconds = max(0, min(int(body.get("quiz_seconds")), 4 * 3600))
+    except (TypeError, ValueError):
+        quiz_seconds = None
+
+    set_lesson_status(user["username"], lesson["id"], "completed", score, quiz_seconds)
 
     after   = set(student_progress(user["username"]).get("items", []))
     new_ids = after - before
@@ -756,7 +915,6 @@ def api_quiz_finish():
     return jsonify({
         "ok":      True,
         "score":   score,
-        "xp":      lesson.get("xp", 0),
         "rewards": rewards,
         "summary": summarise(user["username"]),
     })
@@ -812,11 +970,17 @@ def student_detail(username: str):
     if username not in visible_students(user):
         abort(403)
 
-    entries = student_progress(username).get("lessons", {})
-    rows    = []
+    entries      = student_progress(username).get("lessons", {})
+    assigned_ids = load_assignments().get(username)
+    rows         = []
     for lesson in load_lessons():
         entry = entries.get(lesson["id"], {"status": "not_started"})
-        rows.append({**lesson, "progress": entry, "score": quiz_score(lesson, entry)})
+        rows.append({
+            **lesson,
+            "progress": entry,
+            "score":    quiz_score(lesson, entry),
+            "assigned": assigned_ids is None or lesson["id"] in assigned_ids,
+        })
 
     return render_template("student.html",
                            student={**student, "username": username},
@@ -824,9 +988,39 @@ def student_detail(username: str):
                            summary=summarise(username),
                            headline=headline(username),
                            sticking=sticking_points(username),
+                           practice=practice_examples(username),
                            activity=recent_activity(username),
                            quiet=days_since(summarise(username)["last_active"]),
-                           is_teacher=user["role"] == "teacher")
+                           is_teacher=user["role"] == "teacher",
+                           custom_assignment=assigned_ids is not None)
+
+
+@app.route("/grownup/student/<username>/assign", methods=["POST"])
+@login_required("teacher", "parent")
+def student_assign(username: str):
+    """Narrow (or re-widen) which lessons show up on one student's menu."""
+    user    = current_user()
+    student = load_users().get(username)
+
+    if not student or student["role"] != "student":
+        abort(404)
+    if username not in visible_students(user):
+        abort(403)
+
+    valid_ids = {l["id"] for l in load_lessons()}
+    checked   = [i for i in request.form.getlist("lesson_id") if i in valid_ids]
+
+    assignments = load_assignments()
+    if len(checked) == len(valid_ids):
+        # Everything is checked — that's the unrestricted default, so drop
+        # the entry rather than storing a list that just says "all of them".
+        assignments.pop(username, None)
+    else:
+        assignments[username] = checked
+    write_json(ASSIGNMENTS_FILE, assignments)
+
+    flash(f"Updated {student['name']}'s lesson menu.", "success")
+    return redirect(url_for("student_detail", username=username))
 
 
 # ── Groups (teacher only) ───────────────────────────────────────────────────────
@@ -845,7 +1039,6 @@ def groups_home():
         cards.append({
             "id": gid, "name": group["name"], "members": len(members),
             "avg": round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
-            "xp":  sum(s["xp"] for s in stats),
             "stuck": stuck,
         })
 

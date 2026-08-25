@@ -7,14 +7,19 @@
   <div class="scene" style="background-image:url('{{ art(layout.background) }}')">
 
     {% for spot in layout.hotspots %}
-      <button class="hotspot"
+      <button class="hotspot{{ ' hotspot-glow' if spot.highlight else '' }}"
               style="left:{{ spot.x }}%; top:{{ spot.y }}%; width:{{ spot.w }}%; height:{{ spot.h }}%;"
               data-action="{{ spot.action }}"
               data-href="{{ spot.href | default('') }}"
               data-label="{{ spot.label }}">
-        <span class="hotspot-tag">{{ spot.icon }} {{ spot.label }}</span>
+        <span class="hotspot-tag{{ ' always' if spot.highlight else '' }}">{{ spot.icon }} {{ spot.label }}</span>
       </button>
     {% endfor %}
+
+    <div class="mascot" style="left:50%; top:6%; width:34%;">
+      <div class="mascot-bubble">{{ dude_line }}</div>
+      <img class="mascot-img" src="{{ art('characters/dude-ad') }}" alt="DUDE_Ad">
+    </div>
 
   </div>
 {% endblock %}

@@ -15,7 +15,13 @@ webserver/config.json
 game/data/users.json
 game/data/groups.json
 game/data/progress.json
+game/data/assignments.json
 game/data/secret_key
+
+# Drop zone for python game/import_assets.py — sorted files move out of here,
+# so anything left behind is unsorted and shouldn't be committed by accident.
+game/static/art/inbox/*
+!game/static/art/inbox/.gitkeep
 
 # ── Python ───────────────────────────────────────────────────────────────────────
 __pycache__/

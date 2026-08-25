@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Satchel — Ignite Academy{% endblock %}
+{% block title %}Backpack — Ignite Academy{% endblock %}
 
 {% block hud_actions %}
   <a class="btn sm ghost" href="{{ url_for('classroom') }}">← Classroom</a>
@@ -10,7 +10,7 @@
 <div class="screen">
 
   <div class="screen-head">
-    <div class="screen-title">🎒 Your Satchel</div>
+    <div class="screen-title">🎒 Your Backpack</div>
     <span class="pill {{ 'completed' if earned_count == items | length else 'in_progress' }}">
       {{ earned_count }} of {{ items | length }} found
     </span>

@@ -5,7 +5,6 @@
   "source": "lessons/circuits-02.mp4",
   "order": 20,
   "duration_min": 9,
-  "xp": 75,
   "reward": "trinket-led",
   "description": "Follow along and wire your first working circuit.",
 

@@ -1,10 +1,9 @@
 {
   "title": "Resistor Color Challenge",
-  "subject": "Circuits",
+  "subject": "Basic Electricity",
   "type": "interactive",
   "order": 30,
   "duration_min": 10,
-  "xp": 100,
   "reward": "trinket-resistor",
   "description": "Read the color bands before the timer runs out.",
 
