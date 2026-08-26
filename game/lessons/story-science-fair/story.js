@@ -13,6 +13,11 @@
        Bitsy is right about code, wrong when she assumes hardware is fine.
        Ms. Chen texts questions, never answers outright.
        Mr. Torres is calm, practical, dryly funny after a crisis.
+     · D.U.D.E.A.D. is the throughline voice of reason. Same brash,
+       tough-love hype-robot voice as the classroom mascot ("fool", "kid",
+       no patience for excuses) — but he's the one who cuts straight
+       through the Spark/Bitsy back-and-forth with the actual read on
+       what's wrong. He speaks aloud at a few key beats, not only via LCD.
      · D.U.D.E.A.D.'s LCD: ALL CAPS, ~24 characters maximum.
      · Engineering Notes: 60–100 words. One concept, one everyday analogy,
        then why it matters right here.
@@ -42,7 +47,7 @@ var STORY = {
     lcd: 'SYSTEMS NOMINAL.',
     text: [
       'Saturday, 9:12 in the morning. The gym smells like floor polish and someone’s poster glue.',
-      'D.U.D.E.A.D. sits on the folding table in front of you, wired and blinking and apparently fine. Six weeks of work. Judging starts at ten.',
+      'D.U.D.E.A.D. sits on the folding table in front of you, wired and blinking and apparently fine, lined up over the strip of black tape somebody stuck to the table as a sanity check before the real course. Six weeks of work. Judging starts at ten.',
       'You press the button.'
     ],
     next: 'break'
@@ -52,7 +57,7 @@ var STORY = {
     art: 'characters/dude-ad',
     lcd: 'LEFT MOTOR? LEFT MOTOR?',
     text: [
-      'He rolls forward about thirty centimetres. Then he swings hard left, keeps swinging, and comes to a stop facing the wall.',
+      'He rolls forward about thirty centimetres, dead straight over the tape. Then he swerves hard left off it, keeps swerving, and comes to a stop against the leg of the folding table.',
       'The LCD blinks twice.'
     ],
     text2: [
@@ -87,9 +92,10 @@ var STORY = {
     art: 'characters/dude-ad',
     lcd: 'THAT DIDN’T HELP.',
     text: [
-      'Bitsy re-uploads. The progress bar crawls. D.U.D.E.A.D. reboots, resets, and drives the exact same curve into the exact same wall.',
+      'Bitsy re-uploads. The progress bar crawls. D.U.D.E.A.D. reboots, resets, and swerves off the tape at the exact same spot, into the exact same table leg.',
       'Twelve minutes gone.'
     ],
+    who: 'D.U.D.E.A.D.', say: 'Reflashing me does not fix a wire, fool. Same robot, same problem — just slower to tell you about it now.',
     note: {
       topic: 'Debugging Methodology',
       body: 'An engineer’s first question is never “what should I change?” It is “what is actually happening?” Changing things before you understand the problem is like taking medicine before you know what is making you sick — you might get lucky, or you might make it worse. The Serial Monitor shows you exactly what D.U.D.E.A.D. is doing, in real time, while he does it. Look at the data before you touch the hardware.'
@@ -100,14 +106,15 @@ var STORY = {
   serial: {
     art: 'ui/laptop',
     text: [
-      'The Serial Monitor opens. Numbers scroll past — motor values, loop timing, distance readings. Most of it looks exactly like it should.',
+      'The Serial Monitor opens. Numbers scroll past — motor values, loop timing, line-sensor readings. Most of it looks exactly like it should.',
       'Then you see it.'
     ],
     serial: ['Sensor: 141', 'Sensor: 0', 'Sensor: 138', 'Sensor: 0', 'Sensor: 0', 'Sensor: 142'],
     text2: [
-      'The distance sensor is returning zero every few readings. When it reads zero, D.U.D.E.A.D.’s code believes there is a wall directly in front of him and steers hard left to avoid it.',
-      'That is the curve.'
+      'The line sensor is returning zero every few readings. When it reads zero, D.U.D.E.A.D.’s code believes he has drifted off the right edge of the tape and steers hard left to find it again.',
+      'That is the swerve.'
     ],
+    who: 'D.U.D.E.A.D.', say: 'I did exactly what the numbers told me to do. If the numbers are lying, fool, that is not a code problem.',
     next: 'd2'
   },
 
@@ -133,16 +140,17 @@ var STORY = {
     art: 'characters/dude-ad',
     lcd: 'I CAN’T SEE ANYTHING.',
     text: [
-      'You pull the old sensor and wire the new one in. Trigger, echo, power, ground. Fourteen minutes, most of it spent working out where the old jumper leads went.',
+      'You pull the old sensor and wire the new one in. Signal, power, ground. Fourteen minutes, most of it spent working out where the old jumper leads went.',
       'The Serial Monitor fills up again.'
     ],
     serial: ['Sensor: 0', 'Sensor: 0', 'Sensor: 137', 'Sensor: 0', 'Sensor: 0'],
     text2: [
       'Identical. A brand new sensor, doing exactly the same thing.'
     ],
+    who: 'D.U.D.E.A.D.', say: 'New sensor, same zeros. Nice try, fool — you swapped the part and not the path.',
     note: {
       topic: 'Signal vs. Component Failure',
-      body: 'A dead component fails the same way every time. This sensor kept returning real distances in between the zeros — which means it was working, and something between it and the Arduino was not. When a fault comes and goes, suspect the path before you suspect the part. Swapping parts is the slowest possible way to find a loose wire, and you usually end up with two good parts and the same problem.'
+      body: 'A dead component fails the same way every time. This sensor kept returning real readings in between the zeros — which means it was working, and something between it and the Arduino was not. When a fault comes and goes, suspect the path before you suspect the part. Swapping parts is the slowest possible way to find a loose wire, and you usually end up with two good parts and the same problem.'
     },
     next: 'found'
   },
@@ -150,12 +158,12 @@ var STORY = {
   found: {
     art: 'characters/spark',
     text: [
-      'You follow the echo wire from the sensor down to the breadboard and put your finger on it.',
+      'You follow the signal wire from the sensor down to the breadboard and put your finger on it.',
       'It moves. Barely a millimetre, but it moves — seated just far enough into the hole to make contact most of the time, and not quite far enough to make it always.'
     ],
     who: 'Spark', say: 'Told you it was a wire. It’s always a wire.',
     text2: [
-      'You push it fully home. The Serial Monitor steadies: 139, 141, 140, 138. D.U.D.E.A.D. drives the length of the table in a clean straight line and stops.'
+      'You push it fully home. The Serial Monitor steadies: 139, 141, 140, 138. D.U.D.E.A.D. traces the tape the length of the table in a clean straight line and stops.'
     ],
     lcd: 'THAT’S BETTER. PROBABLY.',
     next: 'd3'
@@ -209,6 +217,7 @@ var STORY = {
     text: [
       'D.U.D.E.A.D. is running off the laptop’s USB port, the way he has been all through building. The battery pack is in Spark’s bag, still taped shut from the ride over.'
     ],
+    who: 'D.U.D.E.A.D.', say: 'I have been drinking the laptop’s coffee all morning. Give the motors their own cup, fool.',
     note: {
       topic: 'Power Budgeting',
       body: 'Every part draws current, and motors draw far more the harder they work — a stalled motor pulls several times what a spinning one does. If the supply cannot deliver that much, the voltage sags for everyone sharing it, and a microcontroller below its minimum voltage does the only thing it can: it restarts. Nothing is wrong with the code. Add up what each part needs at its worst, and make sure the supply covers it.'
@@ -281,10 +290,10 @@ var CONSEQUENCES = {
   loose: {
     lcd: 'I CAN’T SEE ANYTHING.',
     text: [
-      'Eight seconds into the run, D.U.D.E.A.D. stops reading distance and turns hard into the tape marking the edge of the lane.',
-      'The echo lead has walked itself half out of the breadboard. Forty seconds of driving was all the vibration it took.'
+      'Eight seconds into the run, D.U.D.E.A.D. stops reading the line entirely and drives straight off the course, past the tape marking its edge.',
+      'The signal lead has walked itself half out of the breadboard. Forty seconds of driving was all the vibration it took.'
     ],
-    caught: 'Going down the checklist you find the echo lead standing slightly proud of the board — not out, but not properly in either. You seat it and tape it down. It would not have survived the run.'
+    caught: 'Going down the checklist you find the signal lead standing slightly proud of the board — not out, but not properly in either. You seat it and tape it down. It would not have survived the run.'
   },
   power: {
     lcd: 'REBOOTING... REBOOTING...',
@@ -297,8 +306,8 @@ var CONSEQUENCES = {
   calib: {
     lcd: 'THIS FLOOR IS DIFFERENT.',
     text: [
-      'He leaves the start line straight and arrives at the far end forty centimetres right of where he should be.',
-      'The polished floor lets the wheels slip in a way the carpet never did. The calibration is a good calibration. It is a good calibration for the carpet.'
+      'He tracks the line cleanly right up to the first turn, then skids wide on the polished floor and loses it entirely — by the time his sensors find dark again, he has already re-joined forty centimetres past where the line actually is.',
+      'The carpet never let the wheels slip like that. The calibration is a good calibration. It is a good calibration for the carpet.'
     ],
     caught: null
   }
@@ -311,11 +320,12 @@ var ENDINGS = {
     lcd: 'THAT WAS AWESOME.',
     title: 'A Clean Run',
     text: [
-      'D.U.D.E.A.D. drives the lane, finds the obstacle, goes around it, and stops on the line. The judge writes for a while without saying anything, which Spark finds unbearable.',
-      'Then she asks what broke this morning — because something always breaks on the morning of — and you tell her: an echo lead barely seated, found in the Serial Monitor, not by guessing.',
+      'D.U.D.E.A.D. follows the line through both turns without a single overcorrection, and stops dead center on the finish square. The judge writes for a while without saying anything, which Spark finds unbearable.',
+      'Then she asks what broke this morning — because something always breaks on the morning of — and you tell her: a signal lead barely seated, found in the Serial Monitor, not by guessing.',
       'She nods and writes some more.',
       'Nothing went wrong in front of her because you found all three of them first. That is not luck. Luck does not read intermittent zeros and go looking for the wire.'
-    ]
+    ],
+    who: 'D.U.D.E.A.D.', say: 'Six weeks of work, and the whole trick was listening to me properly. I would say I told you so, but I did tell you so.'
   },
   recovered: {
     lcd: 'THAT’S BETTER. PROBABLY.',
@@ -324,7 +334,8 @@ var ENDINGS = {
       'The run is not perfect, and it does not need to be. You know exactly what happened and you say so out loud, before the judge has to ask.',
       'She looks up at that.',
       'Every project on this floor broke at some point this morning. What separates them is whether anybody understood why. You did — including the one you nearly missed, and caught with two minutes to spare.'
-    ]
+    ],
+    who: 'D.U.D.E.A.D.', say: 'Cutting it close, fool. But close still counts as caught.'
   },
   rough: {
     lcd: 'THIS IS FINE. (IT IS NOT FINE.)',
