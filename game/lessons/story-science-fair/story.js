@@ -13,12 +13,15 @@
        Bitsy is right about code, wrong when she assumes hardware is fine.
        Ms. Chen texts questions, never answers outright.
        Mr. Torres is calm, practical, dryly funny after a crisis.
-     · D.U.D.E.A.D. is the throughline voice of reason. Same brash,
-       tough-love hype-robot voice as the classroom mascot ("fool", "kid",
-       no patience for excuses) — but he's the one who cuts straight
-       through the Spark/Bitsy back-and-forth with the actual read on
-       what's wrong. He speaks aloud at a few key beats, not only via LCD.
-     · D.U.D.E.A.D.'s LCD: ALL CAPS, ~24 characters maximum.
+     · D.U.D.E.A.D. is an already-built robot friend who hangs around and
+       helps — he is not the project. Same brash, tough-love hype-robot
+       voice as the classroom mascot ("fool", "kid", no patience for
+       excuses), and he's the throughline voice of reason: he cuts
+       straight through the Spark/Bitsy back-and-forth with the actual
+       read on what's wrong. He talks like a person — no LCD lines.
+     · Tracer is the robot they're actually building for the fair — the
+       one with the LCD, the one that breaks. His screen: ALL CAPS,
+       ~24 characters maximum.
      · Engineering Notes: 60–100 words. One concept, one everyday analogy,
        then why it matters right here.
 
@@ -26,7 +29,7 @@
      text     array of paragraphs (strings)
      who/say  a line of dialogue, with the speaker's name
      text2    paragraphs after the dialogue
-     lcd      D.U.D.E.A.D.'s screen for this beat
+     lcd      Tracer's screen for this beat
      art      portrait via Ignite.art(), e.g. 'characters/spark'
      note     { topic, body } — an Engineering Note callout
      next     id of the next node (linear beat)
@@ -47,7 +50,7 @@ var STORY = {
     lcd: 'SYSTEMS NOMINAL.',
     text: [
       'Saturday, 9:12 in the morning. The gym smells like floor polish and someone’s poster glue.',
-      'D.U.D.E.A.D. sits on the folding table in front of you, wired and blinking and apparently fine, lined up over the strip of black tape somebody stuck to the table as a sanity check before the real course. Six weeks of work. Judging starts at ten.',
+      'Tracer sits on the folding table in front of you, wired and blinking and apparently fine, lined up over the strip of black tape somebody stuck to the table as a sanity check before the real course. D.U.D.E.A.D. leans against the table next to him, arms crossed, waiting to see if six weeks of Saturdays paid off. Judging starts at ten.',
       'You press the button.'
     ],
     next: 'break'
@@ -61,7 +64,7 @@ var STORY = {
       'The LCD blinks twice.'
     ],
     text2: [
-      'Spark is already crouched down at table height, hands hovering over the breadboard. Bitsy has the laptop open before you can say anything.'
+      'Spark is already crouched down at table height, hands hovering over the breadboard. Bitsy has the laptop open before you can say anything. D.U.D.E.A.D. tilts his head at the table leg like it started it.'
     ],
     who: 'Spark', say: 'Something’s loose. I can feel it.',
     next: 'd1'
@@ -78,7 +81,7 @@ var STORY = {
     ],
     choices: [
       {
-        text: 'Open the Serial Monitor and read what D.U.D.E.A.D. is actually reporting.',
+        text: 'Open the Serial Monitor and read what Tracer is actually reporting.',
         to: 'serial', cost: 2
       },
       {
@@ -92,13 +95,13 @@ var STORY = {
     art: 'characters/dude-ad',
     lcd: 'THAT DIDN’T HELP.',
     text: [
-      'Bitsy re-uploads. The progress bar crawls. D.U.D.E.A.D. reboots, resets, and swerves off the tape at the exact same spot, into the exact same table leg.',
+      'Bitsy re-uploads. The progress bar crawls. Tracer reboots, resets, and swerves off the tape at the exact same spot, into the exact same table leg.',
       'Twelve minutes gone.'
     ],
-    who: 'D.U.D.E.A.D.', say: 'Reflashing me does not fix a wire, fool. Same robot, same problem — just slower to tell you about it now.',
+    who: 'D.U.D.E.A.D.', say: 'Reflashing him does not fix a wire, fool. Same robot, same problem — just slower to tell you about it now.',
     note: {
       topic: 'Debugging Methodology',
-      body: 'An engineer’s first question is never “what should I change?” It is “what is actually happening?” Changing things before you understand the problem is like taking medicine before you know what is making you sick — you might get lucky, or you might make it worse. The Serial Monitor shows you exactly what D.U.D.E.A.D. is doing, in real time, while he does it. Look at the data before you touch the hardware.'
+      body: 'An engineer’s first question is never “what should I change?” It is “what is actually happening?” Changing things before you understand the problem is like taking medicine before you know what is making you sick — you might get lucky, or you might make it worse. The Serial Monitor shows you exactly what Tracer is doing, in real time, while he does it. Look at the data before you touch the hardware.'
     },
     next: 'serial'
   },
@@ -111,10 +114,10 @@ var STORY = {
     ],
     serial: ['Sensor: 141', 'Sensor: 0', 'Sensor: 138', 'Sensor: 0', 'Sensor: 0', 'Sensor: 142'],
     text2: [
-      'The line sensor is returning zero every few readings. When it reads zero, D.U.D.E.A.D.’s code believes he has drifted off the right edge of the tape and steers hard left to find it again.',
+      'The line sensor is returning zero every few readings. When it reads zero, Tracer’s code believes he has drifted off the right edge of the tape and steers hard left to find it again.',
       'That is the swerve.'
     ],
-    who: 'D.U.D.E.A.D.', say: 'I did exactly what the numbers told me to do. If the numbers are lying, fool, that is not a code problem.',
+    who: 'D.U.D.E.A.D.', say: 'He did exactly what the numbers told him to do. If the numbers are lying, fool, that is not a code problem.',
     next: 'd2'
   },
 
@@ -163,7 +166,7 @@ var STORY = {
     ],
     who: 'Spark', say: 'Told you it was a wire. It’s always a wire.',
     text2: [
-      'You push it fully home. The Serial Monitor steadies: 139, 141, 140, 138. D.U.D.E.A.D. traces the tape the length of the table in a clean straight line and stops.'
+      'You push it fully home. The Serial Monitor steadies: 139, 141, 140, 138. Tracer traces the tape the length of the table in a clean straight line and stops.'
     ],
     lcd: 'THAT’S BETTER. PROBABLY.',
     next: 'd3'
@@ -206,18 +209,18 @@ var STORY = {
       'He drives well for four seconds. Then a front wheel catches the edge of a floor mat, the motors strain against it — and the LCD goes blank, then lights up from the beginning.'
     ],
     text2: [
-      'He has restarted himself. Mid-drive.'
+      'He has restarted himself. Mid-drive. D.U.D.E.A.D. lets out a low whistle.'
     ],
     who: 'Bitsy', say: 'That’s not the code. Nothing in the code reboots the board. That’s power.',
     next: 'd4'
   },
 
   d4: {
-    art: 'characters/spark',
+    art: 'characters/dude-ad',
     text: [
-      'D.U.D.E.A.D. is running off the laptop’s USB port, the way he has been all through building. The battery pack is in Spark’s bag, still taped shut from the ride over.'
+      'Tracer is running off the laptop’s USB port, the way he has been all through building. The battery pack is in Spark’s bag, still taped shut from the ride over.'
     ],
-    who: 'D.U.D.E.A.D.', say: 'I have been drinking the laptop’s coffee all morning. Give the motors their own cup, fool.',
+    who: 'D.U.D.E.A.D.', say: 'Tracer’s been drinking the laptop’s coffee all morning. Give the motors their own cup, fool.',
     note: {
       topic: 'Power Budgeting',
       body: 'Every part draws current, and motors draw far more the harder they work — a stalled motor pulls several times what a spinning one does. If the supply cannot deliver that much, the voltage sags for everyone sharing it, and a microcontroller below its minimum voltage does the only thing it can: it restarts. Nothing is wrong with the code. Add up what each part needs at its worst, and make sure the supply covers it.'
@@ -290,7 +293,7 @@ var CONSEQUENCES = {
   loose: {
     lcd: 'I CAN’T SEE ANYTHING.',
     text: [
-      'Eight seconds into the run, D.U.D.E.A.D. stops reading the line entirely and drives straight off the course, past the tape marking its edge.',
+      'Eight seconds into the run, Tracer stops reading the line entirely and drives straight off the course, past the tape marking its edge.',
       'The signal lead has walked itself half out of the breadboard. Forty seconds of driving was all the vibration it took.'
     ],
     caught: 'Going down the checklist you find the signal lead standing slightly proud of the board — not out, but not properly in either. You seat it and tape it down. It would not have survived the run.'
@@ -320,7 +323,7 @@ var ENDINGS = {
     lcd: 'THAT WAS AWESOME.',
     title: 'A Clean Run',
     text: [
-      'D.U.D.E.A.D. follows the line through both turns without a single overcorrection, and stops dead center on the finish square. The judge writes for a while without saying anything, which Spark finds unbearable.',
+      'Tracer follows the line through both turns without a single overcorrection, and stops dead center on the finish square. The judge writes for a while without saying anything, which Spark finds unbearable.',
       'Then she asks what broke this morning — because something always breaks on the morning of — and you tell her: a signal lead barely seated, found in the Serial Monitor, not by guessing.',
       'She nods and writes some more.',
       'Nothing went wrong in front of her because you found all three of them first. That is not luck. Luck does not read intermittent zeros and go looking for the wire.'
