@@ -22,36 +22,55 @@
   }
   .sf-layer { position: relative; z-index: 2; display: flex; flex-direction: column; height: 100%; }
 
-  /* ── Status bar ── */
+  /* ── Status bar ──
+     The clock is the whole premise of this story — judging is coming
+     whether you're ready or not — so it dominates the HUD instead of
+     sitting in it as one readout among several. */
   .sf-hud {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 14px;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px;
     background: linear-gradient(180deg, rgba(58,36,24,0.96), rgba(34,22,14,0.96));
     border-bottom: 2px solid var(--gold-dk);
     flex-shrink: 0;
   }
-  .sf-clock-group { display: flex; align-items: baseline; gap: 7px; }
-  .sf-clock {
+  .sf-timer {
+    display: flex; align-items: baseline; gap: 8px;
+    flex-wrap: wrap;
+  }
+  .sf-timer-text {
+    font-size: 0.78rem; font-weight: 600; color: #e8dcca;
+  }
+  .sf-timer-num {
     font-family: Consolas, Menlo, monospace;
-    font-size: 1.05rem; font-weight: bold; color: var(--gold);
-    text-shadow: 0 0 12px rgba(240,168,48,0.5);
-    letter-spacing: 0.05em;
+    font-size: 2.05rem; font-weight: 800; line-height: 1;
+    color: var(--gold);
+    text-shadow: 0 0 16px rgba(240,168,48,0.7), 0 0 34px rgba(240,168,48,0.4);
+    animation: sf-timer-pulse 2.4s ease-in-out infinite;
   }
-  .sf-clock.low { color: #ff8f6b; text-shadow: 0 0 12px rgba(255,110,80,0.55); }
-  .sf-clock-tag {
-    font-size: 0.56rem; font-weight: 700; letter-spacing: 0.1em;
-    text-transform: uppercase; color: #a89a88;
+  .sf-timer-num.low {
+    color: #ff5a3d;
+    text-shadow: 0 0 20px rgba(255,90,60,0.9), 0 0 40px rgba(255,90,60,0.55);
+    animation: sf-timer-pulse-urgent 0.85s ease-in-out infinite;
   }
-  .sf-start {
+  @keyframes sf-timer-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+  @keyframes sf-timer-pulse-urgent {
+    0%, 100% { transform: scale(1);    opacity: 1; }
+    50%      { transform: scale(1.12); opacity: 0.82; }
+  }
+  .sf-now {
+    margin-left: 2px;
     font-family: Consolas, Menlo, monospace;
-    font-size: 0.7rem; color: #a89a88; letter-spacing: 0.03em;
+    font-size: 0.66rem; color: #a89a88; letter-spacing: 0.03em;
   }
-  .sf-left { font-size: 0.7rem; color: #d8ccc0; }
   .sf-act {
     margin-left: auto;
     font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em;
     text-transform: uppercase; color: var(--gold);
     border: 1px solid var(--gold-dk); border-radius: 11px; padding: 3px 10px;
+    flex-shrink: 0;
   }
   .sf-notebook { display: flex; gap: 5px; }
   .sf-chip {
@@ -223,15 +242,12 @@
   <div class="sf-layer">
 
     <div class="sf-hud">
-      <span class="sf-clock-group">
-        <span class="sf-clock-tag">Now</span>
-        <span class="sf-clock" id="clock">9:12</span>
-      </span>
-      <span class="sf-clock-group">
-        <span class="sf-clock-tag">Demo</span>
-        <span class="sf-start" id="start">10:00</span>
-      </span>
-      <span class="sf-left" id="left">48 min remaining</span>
+      <div class="sf-timer">
+        <span class="sf-timer-text" id="timerPrefix">Judging starts at 10:00. You have</span>
+        <span class="sf-timer-num" id="left">48</span>
+        <span class="sf-timer-text" id="leftUnit">minutes.</span>
+      </div>
+      <span class="sf-now">now <span id="clock">9:12</span></span>
       <div class="sf-notebook" id="notebook"></div>
       <span class="sf-act" id="act">Act 1</span>
     </div>
@@ -273,19 +289,18 @@ var state = {
 };
 
 var el = {
-  stage:    Ignite.$('#stage'),
-  clock:    Ignite.$('#clock'),
-  start:    Ignite.$('#start'),
-  left:     Ignite.$('#left'),
-  notebook: Ignite.$('#notebook'),
-  act:      Ignite.$('#act'),
-  portrait: Ignite.$('#portrait'),
-  mid:      Ignite.$('#mid'),
-  box:      Ignite.$('#box'),
-  tick:     Ignite.$('#tick')
+  stage:       Ignite.$('#stage'),
+  clock:       Ignite.$('#clock'),
+  timerPrefix: Ignite.$('#timerPrefix'),
+  left:        Ignite.$('#left'),
+  leftUnit:    Ignite.$('#leftUnit'),
+  notebook:    Ignite.$('#notebook'),
+  act:         Ignite.$('#act'),
+  portrait:    Ignite.$('#portrait'),
+  mid:         Ignite.$('#mid'),
+  box:         Ignite.$('#box'),
+  tick:        Ignite.$('#tick')
 };
-
-el.start.textContent = clockText(JUDGE_MIN);
 
 var ACT_OF = {
   start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
@@ -302,11 +317,20 @@ function clockText(mins) {
 
 function drawHud() {
   var left = JUDGE_MIN - state.now;
+  var judgeText = clockText(JUDGE_MIN);
+
+  if (left > 0) {
+    el.timerPrefix.textContent = 'Judging starts at ' + judgeText + '. You have';
+    el.left.textContent = left;
+    el.leftUnit.textContent = (left === 1 ? 'minute.' : 'minutes.');
+  } else {
+    el.timerPrefix.textContent = 'Judging starts at ' + judgeText + '.';
+    el.left.textContent = '0';
+    el.leftUnit.textContent = 'They’re calling your table.';
+  }
+  el.left.classList.toggle('low', left <= 12);
+
   el.clock.textContent = clockText(state.now);
-  el.clock.classList.toggle('low', left <= 12);
-  el.left.textContent = left > 0
-    ? left + ' min remaining'
-    : 'They’re calling your table';
 
   /* One chip per decision made, so the run so far is always visible. */
   el.notebook.innerHTML = '';
