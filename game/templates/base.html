@@ -48,9 +48,10 @@
   (function () {
     var stage = document.getElementById('stage');
     function fit() {
-      /* max, not min: fill the viewport completely (cropping the edges of
-         the 960x600 stage) instead of letterboxing with bars. */
-      var scale = Math.max(window.innerWidth / {{ STAGE_W }},
+      /* min, not max: shrink to whichever dimension is tighter so the whole
+         960x600 stage always stays on screen (letterboxed if needed) instead
+         of overflowing and getting clipped on odd aspect ratios. */
+      var scale = Math.min(window.innerWidth / {{ STAGE_W }},
                            window.innerHeight / {{ STAGE_H }});
       stage.style.transform = 'scale(' + scale + ')';
     }
