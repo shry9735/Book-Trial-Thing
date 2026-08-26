@@ -224,11 +224,14 @@
 
     <div class="sf-hud">
       <span class="sf-clock-group">
-        <span class="sf-clock-tag">Story time</span>
+        <span class="sf-clock-tag">Now</span>
         <span class="sf-clock" id="clock">9:12</span>
-        <span class="sf-start" id="start">Start 9:12</span>
       </span>
-      <span class="sf-left" id="left">48 min to judging</span>
+      <span class="sf-clock-group">
+        <span class="sf-clock-tag">Demo</span>
+        <span class="sf-start" id="start">10:00</span>
+      </span>
+      <span class="sf-left" id="left">48 min remaining</span>
       <div class="sf-notebook" id="notebook"></div>
       <span class="sf-act" id="act">Act 1</span>
     </div>
@@ -282,7 +285,7 @@ var el = {
   tick:     Ignite.$('#tick')
 };
 
-el.start.textContent = 'Start ' + clockText(START_MIN);
+el.start.textContent = clockText(JUDGE_MIN);
 
 var ACT_OF = {
   start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
@@ -302,7 +305,7 @@ function drawHud() {
   el.clock.textContent = clockText(state.now);
   el.clock.classList.toggle('low', left <= 12);
   el.left.textContent = left > 0
-    ? left + ' min to judging'
+    ? left + ' min remaining'
     : 'They’re calling your table';
 
   /* One chip per decision made, so the run so far is always visible. */

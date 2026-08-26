@@ -106,10 +106,8 @@ var STORY = {
     serial: ['Sensor: 141', 'Sensor: 0', 'Sensor: 138', 'Sensor: 0', 'Sensor: 0', 'Sensor: 142'],
     text2: [
       'The distance sensor is returning zero every few readings. When it reads zero, D.U.D.E.A.D.’s code believes there is a wall directly in front of him and steers hard left to avoid it.',
-      'That is the curve.',
-      'Your phone buzzes. Ms. Chen, from home:'
+      'That is the curve.'
     ],
-    who: 'Ms. Chen', say: 'Before you assume that sensor is broken — what else could make a reading come back as zero? — Ms. C',
     next: 'd2'
   },
 
