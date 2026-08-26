@@ -153,17 +153,6 @@
     box-shadow: 0 3px 11px rgba(0,0,0,0.16);
   }
   .sf-choice .arrow { color: var(--orange); font-weight: 700; flex-shrink: 0; }
-  .sf-choice .cost {
-    margin-left: auto; flex-shrink: 0;
-    font-size: 0.68rem; font-weight: 700; color: var(--ink-dim);
-    background: var(--border-lt); border: 1px solid var(--border);
-    border-radius: 10px; padding: 2px 8px; white-space: nowrap;
-  }
-
-  .sf-choice.over { border-style: dashed; }
-  .sf-choice .cost.over {
-    background: var(--orange-lt); border-color: #f0c8b4; color: var(--orange-dk);
-  }
 
   .sf-next { display: flex; justify-content: flex-end; margin-top: 12px; }
 
@@ -372,20 +361,11 @@ function show(id) {
 
   if (node.choices) {
     var box = Ignite.$('#choices');
-    var left = JUDGE_MIN - state.now;
     node.choices.forEach(function (choice) {
-      var over = (choice.cost || 0) > left;
       var btn = document.createElement('button');
-      btn.className = 'sf-choice' + (over ? ' over' : '');
+      btn.className = 'sf-choice';
       btn.innerHTML =
-        '<span class="arrow">▸</span><span>' + choice.text + '</span>' +
-        '<span class="cost' + (over ? ' over' : '') + '">' +
-          (choice.cost ? choice.cost + ' min' : 'no time') +
-        '</span>';
-      /* Time you already spent shows up here as an option you can still
-         take, but not for free. Nothing is locked — the cost is just
-         honest about what it now means. */
-      if (over) btn.title = 'This runs past your judging slot.';
+        '<span class="arrow">▸</span><span>' + choice.text + '</span>';
       btn.addEventListener('click', function () { choose(choice); });
       box.appendChild(btn);
     });
