@@ -113,7 +113,7 @@
 
   .sf-mid { flex-shrink: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 9px; }
 
-  /* D.U.D.E.A.D.'s screen */
+  /* Tracer's screen */
   .sf-lcd {
     background: #1c3a24; border: 3px solid #2a2a2a; border-radius: 4px;
     padding: 7px 15px;
@@ -163,17 +163,53 @@
   .sf-say.text-msg { border-left-color: var(--teal); background: var(--teal-lt); }
   .sf-say.text-msg .who { color: var(--teal-dk); }
 
-  /* Engineering Note */
-  .sf-note {
-    border: 2px solid var(--teal); border-radius: 7px;
-    background: var(--teal-lt);
-    padding: 11px 14px; margin: 11px 0 2px;
+  /* D.U.D.E.A.D.'s aside — a tap-to-read comment, not a wall of text
+     blocking the story. The badge only appears when he has something to
+     say this beat, and both it and the popup vanish the moment the scene
+     moves on — nothing here is allowed to hold. */
+  .sf-dude-note {
+    align-self: center; flex-shrink: 0;
+    position: relative;
+    width: 44px; height: 44px;
+    border: 2px solid var(--gold-dk); border-radius: 50%;
+    background: rgba(0,0,0,0.3);
+    padding: 0; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    animation: sf-dude-note-bob 1.7s ease-in-out infinite;
   }
-  .sf-note .topic {
+  .sf-dude-note.show { display: flex; }
+  .sf-dude-note-avatar {
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+  }
+  .sf-dude-note-bulb {
+    position: absolute; top: -11px; right: -7px;
+    font-size: 1.15rem;
+    filter: drop-shadow(0 0 6px rgba(255,214,80,0.85));
+    animation: sf-dude-bulb-flicker 1.7s ease-in-out infinite;
+  }
+  @keyframes sf-dude-note-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+  }
+  @keyframes sf-dude-bulb-flicker {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+  }
+
+  .sf-dude-popup {
+    position: absolute; left: 16px; bottom: 16px; z-index: 6;
+    width: 300px; max-width: calc(100% - 32px);
+    border: 2px solid var(--teal); border-radius: 9px;
+    background: var(--teal-lt);
+    padding: 11px 14px; box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+    animation: sf-in 0.16s ease;
+  }
+  .sf-dude-popup.hide { display: none; }
+  .sf-dude-popup .head {
     font-size: 0.63rem; font-weight: 700; letter-spacing: 0.1em;
     text-transform: uppercase; color: var(--teal-dk); margin-bottom: 5px;
   }
-  .sf-note .body { font-size: 0.8rem; line-height: 1.6; color: var(--ink); }
+  .sf-dude-popup .body { font-size: 0.8rem; line-height: 1.6; color: var(--ink); }
 
   /* ── Choices ── */
   .sf-choices { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
@@ -261,9 +297,15 @@
       <div class="sf-char">
         <div class="sf-portrait" id="portrait"></div>
         <div class="sf-mid" id="mid"></div>
+        <button class="sf-dude-note" id="dudeNote" type="button" aria-label="D.U.D.E.A.D. has a thought">
+          <span class="sf-dude-note-bulb">💡</span>
+          <img class="sf-dude-note-avatar" id="dudeNoteAvatar" src="" alt="" />
+        </button>
       </div>
       <div class="sf-box" id="box"></div>
     </div>
+
+    <div class="sf-dude-popup hide" id="dudePopup"></div>
 
   </div>
   <div class="sf-tick" id="tick"></div>
@@ -294,17 +336,22 @@ var state = {
 };
 
 var el = {
-  stage:      Ignite.$('#stage'),
-  left:       Ignite.$('#left'),
-  timerLabel: Ignite.$('#timerLabel'),
-  timerSub:   Ignite.$('#timerSub'),
-  notebook:   Ignite.$('#notebook'),
-  act:        Ignite.$('#act'),
-  portrait:   Ignite.$('#portrait'),
-  mid:        Ignite.$('#mid'),
-  box:        Ignite.$('#box'),
-  tick:       Ignite.$('#tick')
+  stage:       Ignite.$('#stage'),
+  left:        Ignite.$('#left'),
+  timerLabel:  Ignite.$('#timerLabel'),
+  timerSub:    Ignite.$('#timerSub'),
+  notebook:    Ignite.$('#notebook'),
+  act:         Ignite.$('#act'),
+  portrait:    Ignite.$('#portrait'),
+  mid:         Ignite.$('#mid'),
+  box:         Ignite.$('#box'),
+  tick:        Ignite.$('#tick'),
+  dudeNote:    Ignite.$('#dudeNote'),
+  dudeAvatar:  Ignite.$('#dudeNoteAvatar'),
+  dudePopup:   Ignite.$('#dudePopup')
 };
+
+el.dudeAvatar.src = Ignite.art('characters/dude-ad');
 
 var ACT_OF = {
   start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
@@ -376,13 +423,33 @@ function sayBlock(who, line) {
          '</div>';
 }
 
-function noteBlock(note) {
-  if (!note) return '';
-  return '<div class="sf-note">' +
-           '<div class="topic">⚙ Engineering Note — ' + note.topic + '</div>' +
-           '<div class="body">' + note.body + '</div>' +
-         '</div>';
+/* D.U.D.E.A.D.'s asides — his badge shows up whenever the current beat
+   has one, but the content only appears if you tap it, and it never
+   survives into the next beat. Nothing here is allowed to hold. */
+var currentNote = null;
+
+function dudeNoteContent(note) {
+  return '<div class="head">💡 D.U.D.E.A.D. — ' + note.topic + '</div>' +
+         '<div class="body">' + note.body + '</div>';
 }
+
+function setDudeNote(note) {
+  currentNote = note || null;
+  el.dudeNote.classList.toggle('show', !!currentNote);
+  el.dudePopup.classList.add('hide');
+  el.dudePopup.innerHTML = '';
+}
+
+el.dudeNote.addEventListener('click', function () {
+  if (!currentNote) return;
+  var isHidden = el.dudePopup.classList.contains('hide');
+  if (isHidden) {
+    el.dudePopup.innerHTML = dudeNoteContent(currentNote);
+    el.dudePopup.classList.remove('hide');
+  } else {
+    el.dudePopup.classList.add('hide');
+  }
+});
 
 function setScene(node) {
   if (node.art) {
@@ -410,11 +477,11 @@ function show(id) {
   el.act.textContent = 'Act ' + (ACT_OF[id] || 3);
   setScene(node);
   drawHud();
+  setDudeNote(node.note);
 
   var html = paragraphs(node.text) +
              sayBlock(node.who, node.say) +
-             paragraphs(node.text2) +
-             noteBlock(node.note);
+             paragraphs(node.text2);
 
   if (node.choices) {
     html += '<div class="sf-choices" id="choices"></div>';
@@ -468,8 +535,35 @@ function choose(choice) {
   if (choice.check) state.checked = true;
 
   drawHud();
+
+  /* Judging does not wait for you to be ready. If that choice ran the
+     clock past 10:00 and you weren't already on your way to the judge,
+     she is at your table now — wherever you are in the story. */
+  if (state.now >= JUDGE_MIN && choice.to !== 'judging') { interrupt(); return; }
+
   if (choice.to === 'judging') judging();
   else show(choice.to);
+}
+
+/* Called on before you're ready. Anything you hadn't gotten to yet is
+   still exactly as broken as it was when the clock ran out. */
+function interrupt() {
+  ['loose', 'power', 'calib'].forEach(function (key) {
+    if (!(key in state.seeds)) state.seeds[key] = true;
+  });
+
+  el.act.textContent = 'Judging';
+  setScene({ art: 'characters/spark', lcd: 'UH OH.' });
+  setDudeNote(null);
+  drawHud();
+
+  el.box.innerHTML =
+    paragraphs(['The judge sets her clipboard down at the end of your table. You are not ready. Her schedule does not know that.']) +
+    sayBlock('Spark', '“We’re not quite—”') +
+    paragraphs(['“You are now,” she says.']) +
+    '<div class="sf-next"><button class="lk-btn" id="nextBtn">Continue →</button></div>';
+  el.box.scrollTop = 0;
+  Ignite.$('#nextBtn').addEventListener('click', judging);
 }
 
 /* ── Act 3: the seeds come due ───────────────────────────────────────── */
@@ -487,6 +581,7 @@ function judging() {
 
   var queue = due.slice();
   el.act.textContent = 'Judging';
+  setDudeNote(null);
 
   function step() {
     if (!queue.length) { finish(); return; }
@@ -504,7 +599,7 @@ function judging() {
   /* Opening beat of the judging run, plus anything the checklist saved. */
   var intro = [
     'The judge sets her clipboard down at the end of your table and asks you to run it.',
-    'Spark puts D.U.D.E.A.D. on the start line. You press the button.'
+    'Spark puts Tracer on the start line. You press the button.'
   ];
   var rescued = state.caught.map(function (k) { return CONSEQUENCES[k].caught; });
 
@@ -535,6 +630,7 @@ function finish() {
   el.act.textContent = 'Ending';
   setScene({ art: 'characters/dude-ad', lcd: end.lcd });
   drawHud();
+  setDudeNote(null);
 
   var tags = ['loose', 'power', 'calib'].map(function (k) {
     var label = { loose: 'Loose connection', power: 'Power supply', calib: 'Calibration' }[k];
