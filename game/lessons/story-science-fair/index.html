@@ -30,6 +30,7 @@
     border-bottom: 2px solid var(--gold-dk);
     flex-shrink: 0;
   }
+  .sf-clock-group { display: flex; align-items: baseline; gap: 7px; }
   .sf-clock {
     font-family: Consolas, Menlo, monospace;
     font-size: 1.05rem; font-weight: bold; color: var(--gold);
@@ -37,6 +38,14 @@
     letter-spacing: 0.05em;
   }
   .sf-clock.low { color: #ff8f6b; text-shadow: 0 0 12px rgba(255,110,80,0.55); }
+  .sf-clock-tag {
+    font-size: 0.56rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #a89a88;
+  }
+  .sf-start {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 0.7rem; color: #a89a88; letter-spacing: 0.03em;
+  }
   .sf-left { font-size: 0.7rem; color: #d8ccc0; }
   .sf-act {
     margin-left: auto;
@@ -153,6 +162,21 @@
     box-shadow: 0 3px 11px rgba(0,0,0,0.16);
   }
   .sf-choice .arrow { color: var(--orange); font-weight: 700; flex-shrink: 0; }
+  .sf-choice .cost {
+    margin-left: auto; flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+    font-size: 0.68rem; font-weight: 700; color: var(--gold-dk);
+    background: var(--border-lt); border: 1px solid var(--border);
+    border-radius: 10px; padding: 2px 8px; white-space: nowrap;
+  }
+  .sf-choice .cost .ico { font-size: 0.8rem; }
+
+  /* A choice whose cost would blow the judging deadline gets flagged the
+     same way spendTime()'s +N popup reads — same color, same "this moves
+     the clock" idea, just shown before you commit instead of after. */
+  .sf-choice.over { border-style: dashed; }
+  .sf-choice .cost.over {
+    background: var(--orange-lt); border-color: #f0c8b4; color: var(--orange-dk);
+  }
 
   .sf-next { display: flex; justify-content: flex-end; margin-top: 12px; }
 
@@ -193,7 +217,11 @@
   <div class="sf-layer">
 
     <div class="sf-hud">
-      <span class="sf-clock" id="clock">9:12</span>
+      <span class="sf-clock-group">
+        <span class="sf-clock-tag">Story time</span>
+        <span class="sf-clock" id="clock">9:12</span>
+        <span class="sf-start" id="start">Start 9:12</span>
+      </span>
       <span class="sf-left" id="left">48 min to judging</span>
       <div class="sf-notebook" id="notebook"></div>
       <span class="sf-act" id="act">Act 1</span>
@@ -237,6 +265,7 @@ var state = {
 var el = {
   stage:    Ignite.$('#stage'),
   clock:    Ignite.$('#clock'),
+  start:    Ignite.$('#start'),
   left:     Ignite.$('#left'),
   notebook: Ignite.$('#notebook'),
   act:      Ignite.$('#act'),
@@ -245,6 +274,8 @@ var el = {
   box:      Ignite.$('#box'),
   tick:     Ignite.$('#tick')
 };
+
+el.start.textContent = 'Start ' + clockText(START_MIN);
 
 var ACT_OF = {
   start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
@@ -361,11 +392,22 @@ function show(id) {
 
   if (node.choices) {
     var box = Ignite.$('#choices');
+    var left = JUDGE_MIN - state.now;
     node.choices.forEach(function (choice) {
+      var mins = choice.cost || 0;
+      var over = mins > left;
       var btn = document.createElement('button');
-      btn.className = 'sf-choice';
+      btn.className = 'sf-choice' + (over ? ' over' : '');
       btn.innerHTML =
-        '<span class="arrow">▸</span><span>' + choice.text + '</span>';
+        '<span class="arrow">▸</span><span>' + choice.text + '</span>' +
+        '<span class="cost' + (over ? ' over' : '') + '">' +
+          '<span class="ico">⏱</span>' +
+          (mins ? '+' + mins + ' min on the clock' : 'no time added') +
+        '</span>';
+      /* This is a consequence readout, not an answer key: it tells you
+         what picking this does to the clock, same as the +N popup you'd
+         see after choosing — just shown before you commit instead of after. */
+      if (over) btn.title = 'This runs past your judging slot.';
       btn.addEventListener('click', function () { choose(choice); });
       box.appendChild(btn);
     });
