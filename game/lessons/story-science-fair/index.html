@@ -24,8 +24,8 @@
 
   /* ── Status bar ──
      The clock is the whole premise of this story — judging is coming
-     whether you're ready or not — so it dominates the HUD instead of
-     sitting in it as one readout among several. */
+     whether you're ready or not — so it's a distinct, self-contained
+     card rather than a sentence with a number awkwardly stuffed in it. */
   .sf-hud {
     display: flex; align-items: center; gap: 14px;
     padding: 10px 16px;
@@ -34,22 +34,23 @@
     flex-shrink: 0;
   }
   .sf-timer {
-    display: flex; align-items: baseline; gap: 8px;
-    flex-wrap: wrap;
-  }
-  .sf-timer-text {
-    font-size: 0.78rem; font-weight: 600; color: #e8dcca;
+    display: flex; align-items: center; gap: 11px;
+    background: rgba(0,0,0,0.24);
+    border: 1px solid rgba(240,168,48,0.4);
+    border-radius: 10px;
+    padding: 5px 16px 5px 13px;
   }
   .sf-timer-num {
     font-family: Consolas, Menlo, monospace;
-    font-size: 2.05rem; font-weight: 800; line-height: 1;
+    font-size: 1.85rem; font-weight: 800; line-height: 1;
     color: var(--gold);
-    text-shadow: 0 0 16px rgba(240,168,48,0.7), 0 0 34px rgba(240,168,48,0.4);
-    animation: sf-timer-pulse 2.4s ease-in-out infinite;
+    text-shadow: 0 0 14px rgba(240,168,48,0.6);
+    min-width: 1.3em; text-align: right;
+    animation: sf-timer-pulse 2.6s ease-in-out infinite;
   }
   .sf-timer-num.low {
     color: #ff5a3d;
-    text-shadow: 0 0 20px rgba(255,90,60,0.9), 0 0 40px rgba(255,90,60,0.55);
+    text-shadow: 0 0 18px rgba(255,90,60,0.8);
     animation: sf-timer-pulse-urgent 0.85s ease-in-out infinite;
   }
   @keyframes sf-timer-pulse {
@@ -60,10 +61,13 @@
     0%, 100% { transform: scale(1);    opacity: 1; }
     50%      { transform: scale(1.12); opacity: 0.82; }
   }
-  .sf-now {
-    margin-left: 2px;
-    font-family: Consolas, Menlo, monospace;
-    font-size: 0.66rem; color: #a89a88; letter-spacing: 0.03em;
+  .sf-timer-info { display: flex; flex-direction: column; gap: 2px; }
+  .sf-timer-label {
+    font-size: 0.66rem; font-weight: 800; letter-spacing: 0.09em;
+    text-transform: uppercase; color: #f0e4d4; white-space: nowrap;
+  }
+  .sf-timer-sub {
+    font-size: 0.64rem; color: #a89a88; white-space: nowrap;
   }
   .sf-act {
     margin-left: auto;
@@ -243,11 +247,12 @@
 
     <div class="sf-hud">
       <div class="sf-timer">
-        <span class="sf-timer-text" id="timerPrefix">Judging starts at 10:00. You have</span>
         <span class="sf-timer-num" id="left">48</span>
-        <span class="sf-timer-text" id="leftUnit">minutes.</span>
+        <span class="sf-timer-info">
+          <span class="sf-timer-label" id="timerLabel">Minutes left</span>
+          <span class="sf-timer-sub" id="timerSub">Judging starts at 10:00</span>
+        </span>
       </div>
-      <span class="sf-now">now <span id="clock">9:12</span></span>
       <div class="sf-notebook" id="notebook"></div>
       <span class="sf-act" id="act">Act 1</span>
     </div>
@@ -289,17 +294,16 @@ var state = {
 };
 
 var el = {
-  stage:       Ignite.$('#stage'),
-  clock:       Ignite.$('#clock'),
-  timerPrefix: Ignite.$('#timerPrefix'),
-  left:        Ignite.$('#left'),
-  leftUnit:    Ignite.$('#leftUnit'),
-  notebook:    Ignite.$('#notebook'),
-  act:         Ignite.$('#act'),
-  portrait:    Ignite.$('#portrait'),
-  mid:         Ignite.$('#mid'),
-  box:         Ignite.$('#box'),
-  tick:        Ignite.$('#tick')
+  stage:      Ignite.$('#stage'),
+  left:       Ignite.$('#left'),
+  timerLabel: Ignite.$('#timerLabel'),
+  timerSub:   Ignite.$('#timerSub'),
+  notebook:   Ignite.$('#notebook'),
+  act:        Ignite.$('#act'),
+  portrait:   Ignite.$('#portrait'),
+  mid:        Ignite.$('#mid'),
+  box:        Ignite.$('#box'),
+  tick:       Ignite.$('#tick')
 };
 
 var ACT_OF = {
@@ -317,20 +321,17 @@ function clockText(mins) {
 
 function drawHud() {
   var left = JUDGE_MIN - state.now;
-  var judgeText = clockText(JUDGE_MIN);
 
   if (left > 0) {
-    el.timerPrefix.textContent = 'Judging starts at ' + judgeText + '. You have';
     el.left.textContent = left;
-    el.leftUnit.textContent = (left === 1 ? 'minute.' : 'minutes.');
+    el.timerLabel.textContent = (left === 1 ? 'Minute left' : 'Minutes left');
+    el.timerSub.textContent = 'Judging starts at ' + clockText(JUDGE_MIN);
   } else {
-    el.timerPrefix.textContent = 'Judging starts at ' + judgeText + '.';
     el.left.textContent = '0';
-    el.leftUnit.textContent = 'They’re calling your table.';
+    el.timerLabel.textContent = 'Time’s up';
+    el.timerSub.textContent = 'They’re calling your table';
   }
   el.left.classList.toggle('low', left <= 12);
-
-  el.clock.textContent = clockText(state.now);
 
   /* One chip per decision made, so the run so far is always visible. */
   el.notebook.innerHTML = '';
