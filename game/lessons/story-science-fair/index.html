@@ -64,27 +64,34 @@
   .sf-chip.good { background: rgba(52,184,74,0.28); border-color: #34b84a; }
   .sf-chip.risk { background: rgba(212,82,26,0.3);  border-color: var(--orange); }
 
-  /* ── Scene ── */
+  /* ── Scene ──
+     Character on the left, story text on the right, side by side —
+     each gets its own column so a tall sprite or a long passage never
+     squeezes the other and spills past the stage edge. */
   .sf-scene {
-    flex: 1; display: flex; align-items: flex-end;
-    padding: 12px 18px 0; gap: 14px; min-height: 0;
+    flex: 1; display: flex; align-items: stretch;
+    padding: 12px 18px 14px; gap: 14px; min-height: 0;
+  }
+  .sf-char {
+    width: 200px; flex-shrink: 0; min-height: 0;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-end; gap: 9px;
   }
   .sf-portrait {
-    width: 168px; flex-shrink: 0;
+    flex: 1; width: 100%; min-height: 0;
     display: flex; align-items: flex-end; justify-content: center;
   }
   .sf-portrait img {
-    max-width: 100%; max-height: 236px;
+    max-width: 100%; max-height: 100%; object-fit: contain;
     filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6));
     animation: sf-in 0.32s ease backwards;
   }
   @keyframes sf-in { from { opacity: 0; transform: translateY(12px); } }
 
-  .sf-mid { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 9px; min-width: 0; }
+  .sf-mid { flex-shrink: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 9px; }
 
   /* D.U.D.E.A.D.'s screen */
   .sf-lcd {
-    align-self: flex-start;
     background: #1c3a24; border: 3px solid #2a2a2a; border-radius: 4px;
     padding: 7px 15px;
     font-family: Consolas, Menlo, monospace; font-size: 0.82rem;
@@ -95,7 +102,7 @@
 
   /* Serial output */
   .sf-serial {
-    align-self: flex-start; max-width: 260px;
+    width: 100%;
     background: #0d1117; border: 2px solid var(--wood); border-radius: 5px;
     padding: 8px 12px;
     font-family: Consolas, Menlo, monospace; font-size: 0.74rem;
@@ -107,12 +114,11 @@
   /* ── Text box ── */
   .sf-box {
     background: linear-gradient(180deg, rgba(255,253,248,0.98), rgba(246,240,231,0.98));
-    border: 2px solid var(--wood); border-top-width: 3px;
-    border-radius: 9px 9px 0 0;
+    border: 2px solid var(--wood);
+    border-radius: 9px;
     padding: 15px 20px 16px;
-    margin: 10px 14px 0;
-    box-shadow: 0 -5px 22px rgba(0,0,0,0.42);
-    flex-shrink: 0; max-height: 62%; overflow-y: auto;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.32);
+    flex: 1; min-width: 0; min-height: 0; overflow-y: auto;
   }
   .sf-box::-webkit-scrollbar { width: 7px; }
   .sf-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -228,11 +234,12 @@
     </div>
 
     <div class="sf-scene">
-      <div class="sf-portrait" id="portrait"></div>
-      <div class="sf-mid" id="mid"></div>
+      <div class="sf-char">
+        <div class="sf-portrait" id="portrait"></div>
+        <div class="sf-mid" id="mid"></div>
+      </div>
+      <div class="sf-box" id="box"></div>
     </div>
-
-    <div class="sf-box" id="box"></div>
 
   </div>
   <div class="sf-tick" id="tick"></div>
