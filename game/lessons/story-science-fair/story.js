@@ -31,13 +31,14 @@
      text2    paragraphs after the dialogue
      lcd      Tracer's screen for this beat
      art      portrait via Ignite.art(), e.g. 'characters/spark'
-     note     { topic, body } — an Engineering Note callout
+     note     { topic, body } — a D.U.D.E.A.D. comment, tap-to-read only
      next     id of the next node (linear beat)
      choices  [{ text, to, cost, seed, note }]
                 cost  minutes spent
-                seed  plants a delayed consequence: 'loose' | 'power' | 'calib'
+                seed  plants a delayed consequence:
+                        'loose' | 'power' | 'calib' | 'debounce'
 
-   The three seeds are the whole point: nothing about them goes wrong at
+   The four seeds are the whole point: nothing about them goes wrong at
    the moment you choose them. They come due in Act 3.
    ========================================================================== */
 
@@ -190,11 +191,38 @@ var STORY = {
     choices: [
       {
         text: 'Tape the sensor leads down so vibration can’t work them loose.',
-        to: 'power_sym', cost: 4
+        to: 'debounce', cost: 4
       },
       {
         text: 'Leave it. It’s seated properly now and the clock is running.',
-        to: 'power_sym', cost: 0, seed: 'loose'
+        to: 'debounce', cost: 0, seed: 'loose'
+      }
+    ]
+  },
+
+  /* Seed 4 — a button that isn't debounced. Works fine on the bench,
+     where nobody's hand is shaking. Nothing goes wrong here. */
+  debounce: {
+    art: 'characters/spark',
+    text: [
+      'Bitsy is three lines into something else when she stops and squints at the Serial Monitor.'
+    ],
+    who: 'Bitsy', say: 'The start button just logged five presses. You pressed it once.',
+    text2: [
+      'Sure enough: one press, five signals, back to back. D.U.D.E.A.D. doesn’t say anything. He just looks at the button like it personally disappointed him.'
+    ],
+    note: {
+      topic: 'Debouncing',
+      body: 'A mechanical button doesn’t make clean contact — the metal parts inside bounce, connecting and separating several times in the first few milliseconds. To a person that feels like one press. To a microcontroller running thousands of instructions per second, it can look like five or ten. Debouncing means adding a short rule: after one press, ignore anything else for the next 200 milliseconds. A few lines of code, and the false presses stop happening.'
+    },
+    choices: [
+      {
+        text: 'Add the debounce fix now. A few lines, a quick reupload.',
+        to: 'power_sym', cost: 5
+      },
+      {
+        text: 'Leave it. One button, works most of the time — bigger problems to chase.',
+        to: 'power_sym', cost: 0, seed: 'debounce'
       }
     ]
   },
@@ -311,6 +339,14 @@ var CONSEQUENCES = {
     text: [
       'He tracks the line cleanly right up to the first turn, then skids wide on the polished floor and loses it entirely — by the time his sensors find dark again, he has already re-joined forty centimetres past where the line actually is.',
       'The carpet never let the wheels slip like that. The calibration is a good calibration. It is a good calibration for the carpet.'
+    ],
+    caught: null
+  },
+  debounce: {
+    lcd: 'PRESS? PRESS? PRESS?',
+    text: [
+      'You press the button once to start the run. The count on the Serial Monitor ticks up on its own — two, three, four — and Tracer starts, stops, and restarts twice before the run has even begun.',
+      'The button never stopped bouncing. You just never had to press it with a judge watching before.'
     ],
     caught: null
   }
