@@ -87,6 +87,32 @@ class Config:
     SMTP_PASSWORD     = os.environ.get("SMTP_PASSWORD", "")
     SMTP_STARTTLS     = _bool("SMTP_STARTTLS", True)
 
+    # ── Billing (Stripe) ────────────────────────────────────────────────────
+    # Card data never reaches this server: Checkout and the Customer Portal
+    # are pages on Stripe's own domain, and we only ever hold their ids.
+    STRIPE_SECRET_KEY      = os.environ.get("STRIPE_SECRET_KEY", "")
+    STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    # Price lookup keys, not price ids — a lookup key survives you creating
+    # a new price for a rate change, so a price rise is a Stripe dashboard
+    # task rather than a deploy.
+    PRICE_FAMILY           = os.environ.get("STRIPE_PRICE_FAMILY", "family_monthly")
+    PRICE_ORG_SEAT         = os.environ.get("STRIPE_PRICE_ORG_SEAT", "org_seat_monthly")
+    TRIAL_DAYS             = _int("STRIPE_TRIAL_DAYS", 14)
+
+    # How long access survives a payment that has not landed. Card failures
+    # resolve in days; a school paying a net-30 invoice through a purchase
+    # order routinely takes longer than the terms, and cutting a classroom
+    # off mid-term over an invoice in someone's approval queue is the wrong
+    # trade.
+    GRACE_DAYS_CARD        = _int("GRACE_DAYS_CARD", 14)
+    GRACE_DAYS_INVOICE     = _int("GRACE_DAYS_INVOICE", 45)
+    INVOICE_DUE_DAYS       = _int("INVOICE_DUE_DAYS", 30)
+
+    # Physical goods live in an Amazon storefront, which runs its own
+    # checkout. Nothing about it touches this app or its PCI scope — it is
+    # a link.
+    STORE_URL              = os.environ.get("STORE_URL", "").rstrip("/")
+
     # ── Static assets ───────────────────────────────────────────────────────
     # Set to a CDN origin (https://cdn.example.com) to serve /static from it.
     # Empty means Flask serves the files, which is fine for a single box.
@@ -132,6 +158,18 @@ def validate() -> Config:
 
     if cfg.EMAIL_BACKEND not in ("console", "smtp"):
         problems.append(f"EMAIL_BACKEND={cfg.EMAIL_BACKEND!r} is not 'console' or 'smtp'.")
+
+    # Billing is optional: with no key the app runs with every lesson open,
+    # which is what development and a free pilot want. But a half-configured
+    # Stripe is worse than none — an unverifiable webhook would let anyone
+    # POST themselves a subscription.
+    if cfg.STRIPE_SECRET_KEY and not cfg.STRIPE_WEBHOOK_SECRET:
+        problems.append("STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET is not — "
+                        "webhook signatures could not be verified.")
+    if cfg.STRIPE_WEBHOOK_SECRET and not cfg.STRIPE_SECRET_KEY:
+        problems.append("STRIPE_WEBHOOK_SECRET is set but STRIPE_SECRET_KEY is not.")
+    if cfg.IS_PROD and cfg.STRIPE_SECRET_KEY.startswith("sk_test_"):
+        problems.append("A Stripe test key is configured in production.")
 
     if cfg.IS_PROD and cfg.EMAIL_BACKEND == "console":
         print("  config: EMAIL_BACKEND=console in production — verification and", file=sys.stderr)

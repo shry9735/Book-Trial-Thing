@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Locked — Ignite Academy{% endblock %}
+
+{% block stage_content %}
+{# Aimed at a student, who is not the payer. It tells them who to ask
+   rather than trying to sell them anything. #}
+<div class="panel locked-panel">
+  <div class="panel-head">This one's locked</div>
+  <div class="locked-body">
+    <div class="locked-icon">🔒</div>
+    <h2 class="locked-title">
+      {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %} isn't unlocked yet
+    </h2>
+    <p class="locked-text">
+      {% if entitlement.status == 'none' %}
+        Your class or a grown-up at home needs to set up a subscription before
+        this one opens up.
+      {% else %}
+        There's a hold on the subscription that covers your account. A grown-up
+        can sort it out.
+      {% endif %}
+    </p>
+    <p class="locked-text dim">Plenty of free lessons are still open.</p>
+    <a class="btn lg" href="{{ url_for('lessons') }}">← Back to lessons</a>
+  </div>
+</div>
+{% endblock %}

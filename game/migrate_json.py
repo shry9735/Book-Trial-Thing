@@ -101,7 +101,7 @@ def main() -> int:
     with db.write() as cur:
         # Reusing an org of the same name is what makes a second run a
         # resume rather than a duplicate import.
-        cur.execute("SELECT id, name, join_code FROM orgs WHERE name = %s", (args.org,))
+        cur.execute(f"SELECT {db.ORG_COLUMNS} FROM orgs WHERE name = %s", (args.org,))
         org = cur.fetchone()
         if org:
             print(f"\nReusing existing org {org['name']!r} — join code {org['join_code']}")

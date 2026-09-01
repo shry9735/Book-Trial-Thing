@@ -1,0 +1,130 @@
+{% extends "teacher_base.html" %}
+{% block title %}{{ org.name }} — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← Students</a></div>
+    <h1>{{ org.name }}</h1>
+  </div>
+  <a class="btn sm ghost" href="{{ url_for('billing_home') }}">Billing</a>
+</div>
+
+{# ── Joining ─────────────────────────────────────────────────────────── #}
+<div class="panel join-panel">
+  <div class="join-row">
+    <div>
+      <div class="join-label">Join code</div>
+      <code class="join-code">{{ org.join_code }}</code>
+    </div>
+    <div class="join-note">
+      Students and parents need this to sign up. Rotate it if it ends up
+      somewhere it shouldn't — everyone already in stays in.
+    </div>
+    <form method="POST" action="{{ url_for('org_rotate_code') }}"
+          onsubmit="return confirm('Rotate the join code? The old one stops working immediately.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button type="submit" class="btn sm ghost">Rotate</button>
+    </form>
+  </div>
+
+  <form class="join-row policy-row" method="POST" action="{{ url_for('org_join_policy') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <div>
+      <div class="join-label">Who can join</div>
+      <label class="check-row">
+        <input type="radio" name="join_policy" value="open"
+               {% if org.join_policy == 'open' %}checked{% endif %} />
+        <span>Anyone with the code joins straight away</span>
+      </label>
+      <label class="check-row">
+        <input type="radio" name="join_policy" value="approval"
+               {% if org.join_policy == 'approval' %}checked{% endif %} />
+        <span>I approve each person before they get in</span>
+      </label>
+    </div>
+    <button type="submit" class="btn sm">Save</button>
+  </form>
+</div>
+
+{# ── Waiting for approval ────────────────────────────────────────────── #}
+{% if pending %}
+  <div class="panel">
+    <div class="panel-head">Waiting for you ({{ pending | length }})</div>
+    <table class="t-table">
+      <thead>
+        <tr><th>Name</th><th>Username</th><th>Role</th><th>Asked</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for person in pending %}
+          <tr>
+            <td><b>{{ person.name }}</b></td>
+            <td><code>{{ person.username }}</code></td>
+            <td>{{ person.role | title }}</td>
+            <td class="dim">{{ person.created_at.strftime('%d %b') }}</td>
+            <td class="row-actions">
+              <form method="POST" action="{{ url_for('org_approve_member', member_id=person.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn sm">Let in</button>
+              </form>
+              <form method="POST" action="{{ url_for('org_remove_member', member_id=person.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn sm ghost">Decline</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{# ── Everyone in ─────────────────────────────────────────────────────── #}
+<div class="panel">
+  <div class="panel-head">
+    In this class ({{ members | rejectattr('membership_status', 'equalto', 'pending') | list | length }})
+    <span class="head-note">{{ seats }} billable seat{{ '' if seats == 1 else 's' }}</span>
+  </div>
+  <table class="t-table">
+    <thead>
+      <tr><th>Name</th><th>Username</th><th>Role</th><th>Student code</th><th>Last seen</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for person in members if person.membership_status == 'active' %}
+        <tr>
+          <td>
+            <b>{{ person.name }}</b>
+            {% if person.org_admin %}<span class="pill">admin</span>{% endif %}
+          </td>
+          <td><code>{{ person.username }}</code></td>
+          <td>{{ person.role | title }}</td>
+          <td>{% if person.link_code %}<code>{{ person.link_code }}</code>{% else %}—{% endif %}</td>
+          <td class="dim">
+            {{ person.last_login_at.strftime('%d %b') if person.last_login_at else 'never' }}
+          </td>
+          <td class="row-actions">
+            {% if person.role == 'teacher' and person.id != user.id %}
+              <form method="POST" action="{{ url_for('org_set_admin', member_id=person.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <input type="hidden" name="admin" value="{{ '0' if person.org_admin else '1' }}" />
+                <button type="submit" class="btn sm ghost">
+                  {{ 'Remove admin' if person.org_admin else 'Make admin' }}
+                </button>
+              </form>
+            {% endif %}
+            {% if person.id != user.id %}
+              <form method="POST" action="{{ url_for('org_remove_member', member_id=person.id) }}"
+                    onsubmit="return confirm('Remove {{ person.name }}? Their work is kept, but they lose access.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn sm ghost danger">Remove</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

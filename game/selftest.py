@@ -55,12 +55,16 @@ def check(name):
 
 
 def reset_database():
+    """
+    Drop whatever is in the public schema and migrate from nothing.
+
+    Dropping the schema rather than a hardcoded table list means adding a
+    migration never silently breaks the teardown — which it did once,
+    exactly that way.
+    """
     with db.write() as cur:
-        cur.execute("""
-            DROP TABLE IF EXISTS rate_events, auth_tokens, assignments, inventory,
-                example_answers, quiz_answers, lesson_progress, group_members,
-                groups, parent_links, users, orgs, schema_migrations CASCADE
-        """)
+        cur.execute("DROP SCHEMA public CASCADE")
+        cur.execute("CREATE SCHEMA public")
     db.migrate()
 
 

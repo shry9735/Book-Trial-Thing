@@ -49,9 +49,47 @@ production.
 ```bash
 createdb ignite_test
 DATABASE_URL=postgresql://localhost/ignite_test python selftest.py
+DATABASE_URL=postgresql://localhost/ignite_test python selftest_billing.py
 ```
 
-Runs against a real database and wipes it, so point it at a scratch one.
+Both run against a real database and wipe it, so point them at a scratch
+one. The billing suite never calls Stripe — it drives the code around
+Stripe with genuine Stripe-shaped payloads.
+
+## Paying
+
+Off by default. With no `STRIPE_SECRET_KEY` every lesson is open, which is
+what local development wants.
+
+Switched on, there are two payers and they never overlap:
+
+- A **parent** buys a family plan for their own linked children.
+- An **admin teacher** buys one seat per active student in their org.
+
+A student is covered if their school pays *or* any one linked parent does.
+That single decision lives in `billing.entitlement_for()`.
+
+Lessons are free unless a manifest opts out with `"free": false`, so
+turning payments on never silently locks existing content.
+
+Schools that can't use a card request invoice billing (net 30) at
+`/billing`. Requesting is not being granted — a human approves it with
+`manage.py approve-invoice`, because net 30 is unsecured credit.
+
+Card details never touch this server: Checkout and the Customer Portal are
+Stripe's own pages. Full detail in [`../DEPLOY.md`](../DEPLOY.md).
+
+## Who runs a class
+
+The teacher who signs up creates the org and is its first admin. Admins
+get `/org`, where they set whether the join code admits people straight
+away or holds them for approval, let people in, remove them, and promote
+other teachers. Ordinary teachers see students but not the roster controls
+or billing.
+
+Operator-level jobs — approving invoice terms, comping an account,
+deactivating someone, reconciling Stripe seat counts — are in `manage.py`,
+deliberately off the web.
 
 ## Where state lives
 

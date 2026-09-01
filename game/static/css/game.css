@@ -1345,3 +1345,51 @@ table.data tr:hover td { background: var(--orange-lt); }
    anchor reset the button version gets for free. */
 a.role-tab         { text-decoration: none; display: inline-flex;
                      align-items: center; justify-content: center; }
+
+
+/* ── Billing, org console and locked lessons ───────────────────────────────
+   Added with subscriptions. Kept in the same flat, high-contrast style as
+   the rest of the teacher views — a billing page that looks like a
+   different product erodes trust at exactly the wrong moment. */
+
+.policy-row        { border-top: 1px solid rgba(0,0,0,.08); margin-top: 14px; padding-top: 14px; }
+.head-note         { float: right; font-weight: normal; opacity: .75; font-size: 12px; }
+
+.row-actions       { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.row-actions form  { display: inline; margin: 0; }
+
+.pill              { display: inline-block; padding: 1px 8px; border-radius: 999px;
+                     font-size: 11px; font-weight: bold; text-transform: uppercase;
+                     letter-spacing: .05em; background: #e9e4f5; color: #5a4a8a;
+                     vertical-align: middle; margin-left: 6px; }
+.pill.good         { background: #dcf0e0; color: #2c6b3a; }
+.pill.warn         { background: #fbe6cf; color: #8a5216; }
+
+.btn.danger        { color: #b03030; border-color: #e0b4b4; }
+.btn.danger:hover  { background: #fdeaea; }
+
+.billing-body      { padding: 18px 20px; }
+.billing-facts     { display: flex; flex-wrap: wrap; gap: 28px; margin: 0 0 20px; }
+.billing-facts div { margin: 0; }
+.billing-facts dt  { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+                     color: #8888a0; margin-bottom: 3px; }
+.billing-facts dd  { margin: 0; font-size: 17px; font-weight: bold; }
+
+.billing-actions   { border-top: 1px solid rgba(0,0,0,.08); padding-top: 16px; }
+.billing-actions form { margin: 0 0 8px; }
+
+.po-form           { max-width: 440px; margin-top: 16px; }
+.small             { font-size: 12px; }
+.dim               { color: #8888a0; }
+
+/* A locked card stays legible and clickable — the lesson page explains
+   why, which is more useful than an inert grey rectangle. */
+.lesson-card.locked            { opacity: .72; }
+.lesson-card.locked:hover      { opacity: 1; }
+.lock-badge                    { font-size: 13px; margin-right: 2px; }
+
+.locked-panel      { max-width: 520px; margin: 40px auto; }
+.locked-body       { padding: 30px 28px; text-align: center; }
+.locked-icon       { font-size: 44px; margin-bottom: 10px; }
+.locked-title      { margin: 0 0 12px; font-size: 21px; }
+.locked-text       { margin: 0 0 12px; line-height: 1.5; }

@@ -12,6 +12,17 @@
   <div class="mark">🔥</div>
   <a class="title" href="{{ url_for('grownup_home') }}">Ignite Academy</a>
   <div class="who">Signed in as <b>{{ user.name }}</b></div>
+  {% if user.role == 'teacher' and user.org_admin %}
+    <a class="btn sm ghost" href="{{ url_for('org_home') }}">Class</a>
+  {% endif %}
+  {% if user.role == 'parent' or (user.role == 'teacher' and user.org_admin) %}
+    <a class="btn sm ghost" href="{{ url_for('billing_home') }}">Billing</a>
+  {% endif %}
+  {% if store_url %}
+    {# Physical goods are sold through an Amazon storefront, which runs its
+       own checkout. Nothing about it touches this app. #}
+    <a class="btn sm ghost" href="{{ store_url }}" target="_blank" rel="noopener noreferrer">Shop</a>
+  {% endif %}
   <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <button type="submit" class="btn sm ghost">Log out</button>

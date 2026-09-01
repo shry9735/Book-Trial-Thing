@@ -1,0 +1,197 @@
+{% extends "teacher_base.html" %}
+{% block title %}Billing — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← Students</a></div>
+    <h1>Billing</h1>
+  </div>
+  {% if ctx.kind == 'org' %}
+    <a class="btn sm ghost" href="{{ url_for('org_home') }}">Class settings</a>
+  {% endif %}
+</div>
+
+{% if not billing_enabled %}
+
+  <div class="panel join-panel">
+    <div class="panel-head">Everything's open</div>
+    <div class="login-form">
+      <p class="login-blurb">
+        Payments aren't switched on, so every lesson is available. Nothing to do here.
+      </p>
+    </div>
+  </div>
+
+{% else %}
+
+  {# ── Current state ─────────────────────────────────────────────────── #}
+  <div class="panel">
+    <div class="panel-head {% if entitlement.active %}teal{% endif %}">
+      {% if entitlement.status == 'comped' %}Complimentary access
+      {% elif entitlement.status == 'trialing' %}Free trial
+      {% elif entitlement.active and entitlement.in_grace %}Payment outstanding
+      {% elif entitlement.active %}Active
+      {% elif entitlement.status == 'none' %}No subscription
+      {% else %}Lapsed{% endif %}
+    </div>
+
+    <div class="billing-body">
+      {% if entitlement.in_grace %}
+        <div class="flash-msg error">
+          {% if entitlement.collection_method == 'send_invoice' %}
+            An invoice is past due. Access stays on until
+            {{ entitlement.until.strftime('%d %B') }} while it's settled.
+          {% else %}
+            The last payment didn't go through. Update the card and access
+            carries on — otherwise it ends {{ entitlement.until.strftime('%d %B') }}.
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <dl class="billing-facts">
+        <div>
+          <dt>Plan</dt>
+          <dd>
+            {% if ctx.kind == 'org' %}Class — per student seat{% else %}Family{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>{{ 'Seats' if ctx.kind == 'org' else 'Children' }}</dt>
+          <dd>{{ ctx.seats }}</dd>
+        </div>
+        {% if subscription and subscription.current_period_end %}
+          <div>
+            <dt>{{ 'Ends' if subscription.cancel_at_period_end else 'Renews' }}</dt>
+            <dd>{{ subscription.current_period_end.strftime('%d %B %Y') }}</dd>
+          </div>
+        {% endif %}
+        {% if subscription and subscription.collection_method == 'send_invoice' %}
+          <div>
+            <dt>Terms</dt>
+            <dd>Invoice, net {{ due_days }}</dd>
+          </div>
+        {% endif %}
+      </dl>
+
+      <div class="billing-actions">
+        {% if subscription and subscription.stripe_subscription_id %}
+          {# Stripe's hosted portal: card changes, cancellation and invoice
+             history, none of which we build or store. #}
+          <form method="POST" action="{{ url_for('billing_portal') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button type="submit" class="btn">Manage subscription</button>
+          </form>
+          <p class="dim small">
+            Change your card, download invoices or cancel — all on Stripe's
+            own secure page.
+          </p>
+        {% else %}
+          <form method="POST" action="{{ url_for('billing_subscribe') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button type="submit" class="btn lg">
+              {% if trial_days %}Start {{ trial_days }}-day free trial{% else %}Subscribe{% endif %}
+            </button>
+          </form>
+          <p class="dim small">
+            You'll be taken to Stripe to pay. We never see or store your card details.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Invoices ──────────────────────────────────────────────────────── #}
+  {% if invoices %}
+    <div class="panel">
+      <div class="panel-head">Invoices</div>
+      <table class="t-table">
+        <thead>
+          <tr><th>Number</th><th>Status</th><th>Amount</th><th>Due</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for invoice in invoices %}
+            <tr>
+              <td><code>{{ invoice.number or '—' }}</code></td>
+              <td>
+                <span class="pill {{ 'good' if invoice.status == 'paid' else 'warn' }}">
+                  {{ invoice.status | title }}
+                </span>
+              </td>
+              <td>{{ '%.2f' | format(invoice.amount_due / 100) }} {{ invoice.currency | upper }}</td>
+              <td class="dim">
+                {{ invoice.due_date.strftime('%d %b %Y') if invoice.due_date else '—' }}
+              </td>
+              <td class="row-actions">
+                {% if invoice.hosted_invoice_url %}
+                  <a class="btn sm ghost" href="{{ invoice.hosted_invoice_url }}"
+                     target="_blank" rel="noopener noreferrer">View</a>
+                {% endif %}
+                {% if invoice.pdf_url %}
+                  <a class="btn sm ghost" href="{{ invoice.pdf_url }}"
+                     target="_blank" rel="noopener noreferrer">PDF</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {# ── Purchase orders ───────────────────────────────────────────────── #}
+  {% if ctx.kind == 'org' %}
+    <div class="panel">
+      <div class="panel-head">Paying by purchase order</div>
+      <div class="billing-body">
+        {% if ctx.org.invoice_approved_at %}
+          <p class="login-blurb">
+            This class is set up for invoice billing, net {{ due_days }}.
+            Invoices go to <b>{{ ctx.org.billing_email }}</b>{% if ctx.org.po_number %},
+            quoting PO <code>{{ ctx.org.po_number }}</code>{% endif %}.
+          </p>
+        {% elif ctx.org.invoice_requested_at %}
+          <p class="login-blurb">
+            Requested on {{ ctx.org.invoice_requested_at.strftime('%d %B') }}. We'll
+            confirm by email, usually within a business day.
+          </p>
+        {% else %}
+          <p class="login-blurb">
+            Most schools can't put a subscription on a personal card. Tell us
+            where invoices should go and we'll bill you on net {{ due_days }}
+            terms instead — pay by cheque, ACH or card at your end.
+          </p>
+
+          <form class="po-form" method="POST" action="{{ url_for('billing_invoice_request') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+            <div class="field">
+              <label for="billing_email">Where should invoices go?</label>
+              <input type="email" id="billing_email" name="billing_email"
+                     value="{{ ctx.org.billing_email or '' }}"
+                     placeholder="accounts@yourschool.edu" required />
+            </div>
+
+            <div class="field">
+              <label for="po_number">PO number <span class="dim">(if you have one)</span></label>
+              <input type="text" id="po_number" name="po_number"
+                     value="{{ ctx.org.po_number or '' }}" maxlength="60" />
+            </div>
+
+            <label class="check-row">
+              <input type="checkbox" name="tax_exempt" value="1"
+                     {% if ctx.org.tax_exempt %}checked{% endif %} />
+              <span>We're tax exempt — we'll send our certificate.</span>
+            </label>
+
+            <button type="submit" class="btn">Request invoice billing</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+{% endif %}
+
+{% endblock %}

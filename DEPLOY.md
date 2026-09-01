@@ -155,6 +155,151 @@ them somewhere outside the deployment.
 
 ---
 
+## Payments
+
+### The short version
+
+Card details never reach this server. Both places a card gets typed —
+Stripe Checkout and the Stripe Customer Portal — are pages on Stripe's own
+domain. We store customer and subscription ids and nothing else, which
+keeps this app in **PCI SAQ A** rather than SAQ D.
+
+Leave `STRIPE_SECRET_KEY` unset and every lesson is open. That is the
+right setting for development and for a free pilot. Setting the key
+without `STRIPE_WEBHOOK_SECRET` is refused at boot, because an
+unverifiable webhook endpoint would let anyone POST themselves a
+subscription.
+
+### Who pays for whom
+
+| Payer | Buys | Manages it at |
+|---|---|---|
+| Parent | A family plan | `/billing` → Stripe Customer Portal |
+| Org admin teacher | One seat per active student | `/billing` → Checkout or invoice |
+
+A student is entitled if **their school pays, or any one linked parent
+does**. Whichever exists first wins, so a school and a family never both
+have to buy for the same child. Teachers and parents are never billed as
+seats — `count_billable_seats()` counts active students only.
+
+Everything about entitlement is decided in `billing.entitlement_for()`.
+When someone is locked out who should not be, that is the one function to
+read.
+
+### Setting it up
+
+1. In the Stripe dashboard create two recurring prices and give them
+   **lookup keys** matching `STRIPE_PRICE_FAMILY` and
+   `STRIPE_PRICE_ORG_SEAT`. Lookup keys rather than price ids means a
+   price change is a dashboard task, not a deploy.
+2. Add a webhook endpoint pointing at `https://your-domain/stripe/webhook`,
+   subscribed to the events in `billing.HANDLED_EVENTS`. Copy its signing
+   secret into `STRIPE_WEBHOOK_SECRET`.
+3. Locally, `stripe listen --forward-to localhost:5000/stripe/webhook`
+   prints a signing secret to use instead.
+
+### Lesson gating
+
+Lessons are **free unless a manifest says otherwise**:
+
+```json
+{ "title": "Ohm's Law", "free": false }
+```
+
+Defaulting the other way would have locked every existing lesson the
+moment a Stripe key appeared in the environment. Gating is enforced on the
+lesson page *and* on every API route — the page can simply be skipped, so
+the API is the real boundary.
+
+### Purchase orders and net 30
+
+Schools frequently cannot pay by card. A district raises a PO, someone
+approves it, and a cheque or ACH arrives weeks later. Refusing that is
+refusing the sale.
+
+An admin teacher requests invoice billing at `/billing`. That records the
+request; it grants nothing. Approving it is deliberately a human decision
+made off the web — net 30 is unsecured credit, and a school district is
+worth extending it to in a way an anonymous signup is not:
+
+```bash
+python game/manage.py invoice-requests            # what is waiting
+python game/manage.py approve-invoice 3           # grant the terms
+python game/manage.py start-invoice-subscription 3   # begin billing
+```
+
+Approving the terms and starting the clock are separate on purpose: a
+school usually wants billing to line up with the start of a term.
+
+Chase what is late with `python game/manage.py overdue`. Access does not
+stop the moment an invoice does — `GRACE_DAYS_INVOICE` (45 by default)
+keeps a classroom running while a PO works its way through, where a failed
+card gets `GRACE_DAYS_CARD` (14).
+
+### Webhooks
+
+The `Stripe-Signature` header **is** the authentication for
+`/stripe/webhook`; it is verified against the raw request body before
+anything else happens. The route is explicitly marked `@csrf_exempt`
+rather than being exempt by URL shape, so a future route cannot inherit
+the exemption by accident.
+
+Stripe retries and delivers out of order, so:
+
+- Every event id is claimed in `stripe_events` before it is applied. A
+  replay is answered `{"duplicate": true}` and does nothing.
+- A handler that throws **releases its claim** and returns 500, so the
+  retry can succeed. A transient failure must not become permanent.
+- Event types we do not handle are acknowledged with 200. Returning
+  non-2xx for them would have Stripe retry forever and eventually disable
+  the endpoint.
+
+`/billing/return` — where Stripe sends the browser after Checkout — grants
+nothing. Anyone can visit that URL. Entitlement changes only when the
+signed webhook lands.
+
+### Seats
+
+Approving or removing a member resizes the Stripe quantity, best-effort:
+a Stripe outage must not stop a teacher letting a student into a class.
+Anything those calls drop is reconciled by a nightly job:
+
+```
+30 2 * * *  cd /srv/ignite && python game/manage.py sync-seats
+```
+
+`--dry-run` shows what it would change.
+
+### Physical goods
+
+Sold through an Amazon storefront, which runs its own checkout. Set
+`STORE_URL` and it appears as a nav link. Nothing about it touches this
+app, its database, or its PCI scope.
+
+---
+
+## Organisations and membership
+
+The teacher who signs up creates the org and is its first admin. Admins
+control the roster and the money; ordinary teachers see students but not
+`/org` or `/billing`.
+
+- **Join policy.** `open` means the join code is enough. `approval` means
+  a correct code buys a place in a queue, and an admin lets people
+  through. Set at `/org`.
+- **Removing someone** sets `membership_status = 'removed'`: they lose
+  access and their existing session dies immediately, but their work is
+  kept and nothing is orphaned.
+- **The last admin** cannot be removed or demoted — an org with no admin
+  has nobody who can approve members or pay the bill.
+- **Only teachers** can be admins. Being an admin means spending money.
+
+Operator overrides live in `manage.py`: `make-admin`, `deactivate`, and
+`comp` (free access for a pilot, or for a school whose PO is still in
+procurement).
+
+---
+
 ## Operations
 
 **Health.** `GET /healthz` round-trips a query and returns 503 when
@@ -210,8 +355,10 @@ Not done, and worth knowing:
   the lesson isolation model settled first. If lessons ever come from
   outside your team, serve them from a separate origin and sandbox the
   iframe — until then, a lesson author is effectively trusted code.
-- **No admin UI.** Deactivating a user, moving someone between
-  organisations or deleting an account is `psql` today.
+- **Partial admin tooling.** `manage.py` covers the operator tasks that
+  come up (orgs, invoice approval, comps, deactivation, seat sync), and
+  admin teachers manage their own rosters at `/org`. Moving a user between
+  organisations, or deleting an account outright, is still `psql`.
 - **No 2FA** on teacher accounts, which are the ones that can see a whole
   class.
 - **No audit log** of grown-up access to student records.
@@ -270,7 +417,14 @@ the real database.
 ```bash
 createdb ignite_test
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
 ```
 
-It wipes the target database on each run, so point it at a scratch one. It
-refuses to run with `APP_ENV=production`.
+`selftest.py` covers auth, tenancy, concurrency and the web surface.
+`selftest_billing.py` covers subscriptions, entitlement, org
+administration and webhook handling — it never calls Stripe, because the
+part that can be wrong is the code *around* Stripe, and it builds genuine
+Stripe-shaped payloads to prove it.
+
+Both wipe the target database on each run, so point them at a scratch one.
+Both refuse to run with `APP_ENV=production`.

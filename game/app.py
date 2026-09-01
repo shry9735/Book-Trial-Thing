@@ -102,6 +102,7 @@ try:
 except ImportError as exc:
     sys.exit(f"Missing dependency ({exc.name}): run  pip install -r ../requirements.txt")
 
+import billing
 import db
 import emailer
 import security
@@ -390,7 +391,9 @@ def render_content(source: str) -> str:
 
 @app.before_request
 def _guard():
-    security.check_csrf()
+    # Hand the resolved view over so a route can declare itself exempt,
+    # rather than the check guessing from the URL.
+    security.check_csrf(app.view_functions.get(request.endpoint or ""))
 
 
 @app.after_request
@@ -401,6 +404,7 @@ def _headers(response):
 @app.teardown_appcontext
 def _teardown(exception=None):
     g.pop("_user", None)
+    g.pop("_entitlement", None)
 
 
 @app.route("/healthz")
@@ -469,9 +473,65 @@ def login_required(*roles: str):
     return decorator
 
 
+def membership_required(fn):
+    """
+    Hold a pending member at the door.
+
+    They have a real account and can sign in — they just cannot reach any
+    classroom until an org admin lets them through. Bouncing them to a
+    holding page rather than a 403 keeps it obvious that nothing is broken.
+    """
+    @functools.wraps(fn)
+    def wrapper(*fargs, **fkwargs):
+        user = current_user()
+        if user and user["membership_status"] == "pending":
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Your place hasn't been approved yet."}), 403
+            return redirect(url_for("pending"))
+        return fn(*fargs, **fkwargs)
+    return wrapper
+
+
+def org_admin_required(fn):
+    """Admin teachers only: the roster and the money."""
+    @functools.wraps(fn)
+    def wrapper(*fargs, **fkwargs):
+        user = current_user()
+        if not user:
+            return redirect(url_for("login", next=request.path))
+        if user["role"] != "teacher" or not user["org_admin"]:
+            abort(404)
+        return fn(*fargs, **fkwargs)
+    return wrapper
+
+
+def entitlement() -> dict:
+    """This request's entitlement, resolved once and cached on g."""
+    if "_entitlement" not in g:
+        user = current_user()
+        g._entitlement = billing.entitlement_for(cfg, user) if user else billing.NO_ENTITLEMENT
+    return g._entitlement
+
+
+@app.route("/pending")
+@login_required()
+def pending():
+    user = current_user()
+    if user["membership_status"] != "pending":
+        return redirect(url_for("home"))
+    return render_template("pending.html", org=db.org_by_id(user["org_id"]))
+
+
 @app.context_processor
 def inject_user():
-    return {"user": current_user(), "config": cfg}
+    user = current_user()
+    return {
+        "user": user,
+        "config": cfg,
+        "entitlement": entitlement() if user else billing.NO_ENTITLEMENT,
+        "billing_enabled": billing.enabled(cfg),
+        "store_url": cfg.STORE_URL,
+    }
 
 
 @app.route("/")
@@ -609,6 +669,13 @@ def signup():
         return refuse("There's already an account with that email. Try signing in.")
 
     verified = not cfg.REQUIRE_EMAIL_VERIFICATION
+    # On an approval-gated org, a correct join code buys a place in the
+    # queue rather than a seat. The teacher who creates an org is always
+    # its first admin.
+    membership = "active"
+    if role != "teacher" and org.get("join_policy") == "approval":
+        membership = "pending"
+
     try:
         with db.write() as cur:
             if role == "teacher":
@@ -625,6 +692,8 @@ def signup():
                 email_verified=verified,
                 age_confirmed=(role == "student"),
                 terms_accepted=True,
+                org_admin=(role == "teacher"),
+                membership_status=membership,
             )
             raw_token, token_hash = security.new_token()
             db.store_token(cur, token_hash, user["id"], "verify", cfg.TOKEN_HOURS)
@@ -640,6 +709,9 @@ def signup():
     if role == "teacher":
         flash(f"Class created. Your join code is {org['join_code']} — "
               "students and parents need it to sign up.", "success")
+    elif membership == "pending":
+        flash("Account created. A teacher has to let you in before you can "
+              "start — you'll be able to sign in once they do.", "success")
 
     if cfg.REQUIRE_EMAIL_VERIFICATION:
         flash("Check your email for a confirmation link.", "success")
@@ -927,6 +999,7 @@ DUDE_LINES = [
 
 @app.route("/classroom")
 @login_required("student")
+@membership_required
 def classroom():
     user = current_user()
     return render_template("classroom.html",
@@ -937,10 +1010,14 @@ def classroom():
 
 @app.route("/lessons")
 @login_required("student")
+@membership_required
 def lessons():
     user = current_user()
     entries = db.lesson_entries(user["id"])
-    catalog = [{**l, "progress": entries.get(l["id"], {"status": "not_started"})}
+    paid_ok = entitlement()["active"]
+    catalog = [{**l,
+                "progress": entries.get(l["id"], {"status": "not_started"}),
+                "locked": not (billing.lesson_is_free(l) or paid_ok)}
                for l in assigned_lessons(user["id"], load_lessons())]
 
     # Grouped by subject, in the order each subject first appears in the
@@ -957,6 +1034,7 @@ def lessons():
 
 @app.route("/lesson/<lesson_id>")
 @login_required("student")
+@membership_required
 def lesson(lesson_id: str):
     user = current_user()
     found = get_lesson(lesson_id)
@@ -965,6 +1043,12 @@ def lesson(lesson_id: str):
     assigned = db.assigned_lesson_ids(user["id"])
     if assigned is not None and lesson_id not in assigned:
         abort(403)
+
+    # Paid lessons need a live subscription somewhere — the school's or a
+    # parent's. Free lessons stay open, so a lapsed account still has
+    # something to come back to.
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return redirect(url_for("locked", lesson_id=lesson_id))
 
     entry = db.lesson_entries(user["id"]).get(lesson_id, {})
     if entry.get("status") != "completed":
@@ -985,6 +1069,7 @@ def lesson(lesson_id: str):
 
 @app.route("/satchel")
 @login_required("student")
+@membership_required
 def satchel():
     user = current_user()
     catalog = load_items()
@@ -1016,6 +1101,8 @@ def api_progress():
         return jsonify({"error": "Unknown lesson."}), 400
     if status not in ("in_progress", "completed"):
         return jsonify({"error": "Invalid status."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
 
     try:
         score = None if body.get("score") is None else max(0, min(int(body["score"]), 100))
@@ -1040,6 +1127,8 @@ def api_quiz():
     found = get_lesson(body.get("lesson_id", ""))
     if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
 
     question = next((q for q in found.get("quiz", []) if q["id"] == body.get("question_id")), None)
     if not question:
@@ -1071,6 +1160,8 @@ def api_examples(lesson_id: str):
     found = get_lesson(lesson_id)
     if not found:
         abort(404)
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
     stripped = [{"id": e["id"], "prompt": e["prompt"], "choices": e.get("choices", [])}
                 for e in found.get("examples", [])]
     return jsonify(stripped)
@@ -1091,6 +1182,8 @@ def api_example():
     found = get_lesson(body.get("lesson_id", ""))
     if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
 
     example = next((e for e in found.get("examples", []) if e["id"] == body.get("example_id")), None)
     if not example:
@@ -1121,6 +1214,8 @@ def api_quiz_finish():
     found = get_lesson(body.get("lesson_id", ""))
     if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
 
     entry = db.lesson_entries(user["id"]).get(found["id"], {})
     score = quiz_score(found, entry)
@@ -1149,6 +1244,7 @@ def api_quiz_finish():
 
 @app.route("/grownup")
 @login_required("teacher", "parent")
+@membership_required
 def grownup_home():
     """
     Answers "is my kid doing the work?" without any digging: a headline
@@ -1399,6 +1495,393 @@ def group_delete(gid: int):
     if name:
         flash(f"Deleted “{name}”.", "success")
     return redirect(url_for("groups_home"))
+
+
+# ── Locked lesson ───────────────────────────────────────────────────────────────
+
+@app.route("/locked")
+@login_required()
+def locked():
+    """
+    Where a student lands on a lesson their account does not cover.
+
+    Deliberately not a 402 page with a Buy button: a 13-year-old is not
+    the payer, so this tells them who to ask rather than selling to them.
+    """
+    lesson = get_lesson(request.args.get("lesson_id", "")) or None
+    return render_template("locked.html", lesson=lesson,
+                           entitlement=entitlement()), 402
+
+
+# ── Org administration (admin teachers only) ────────────────────────────────────
+
+@app.route("/org")
+@org_admin_required
+def org_home():
+    user = current_user()
+    org = db.org_by_id(user["org_id"])
+    subscription = db.subscription_for_org(org["id"])
+
+    return render_template("org.html",
+                           org=org,
+                           members=db.org_members(org["id"]),
+                           pending=db.pending_members(org["id"]),
+                           seats=db.count_billable_seats(org["id"]),
+                           subscription=subscription,
+                           entitlement=entitlement(),
+                           admin_count=db.count_org_admins(org["id"]))
+
+
+def _member_or_404(user: dict, raw_id: str) -> dict:
+    """
+    Resolve a member id from a form to someone in the admin's own org.
+
+    Scoping the lookup by org_id is what stops an admin posting another
+    org's user id and editing a roster they cannot see.
+    """
+    try:
+        member_id = int(raw_id)
+    except (TypeError, ValueError):
+        abort(404)
+    member = db.member_in_org(member_id, user["org_id"])
+    if not member:
+        abort(404)
+    return member
+
+
+@app.route("/org/join-policy", methods=["POST"])
+@org_admin_required
+def org_join_policy():
+    user = current_user()
+    policy = request.form.get("join_policy", "open")
+    if policy not in ("open", "approval"):
+        abort(400, "Unknown join policy.")
+
+    db.set_join_policy(user["org_id"], policy)
+    flash("New sign-ups need approval." if policy == "approval"
+          else "Anyone with the join code can sign up.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/rotate-code", methods=["POST"])
+@org_admin_required
+def org_rotate_code():
+    user = current_user()
+    code = db.rotate_join_code(user["org_id"])
+    flash(f"New join code: {code}. The old one no longer works.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/approve", methods=["POST"])
+@org_admin_required
+def org_approve_member(member_id: str):
+    user = current_user()
+    member = _member_or_404(user, member_id)
+
+    db.set_membership_status(member["id"], user["org_id"], "active")
+    _resize_org_seats(user["org_id"])
+    flash(f"{member['name']} is in.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/remove", methods=["POST"])
+@org_admin_required
+def org_remove_member(member_id: str):
+    user = current_user()
+    member = _member_or_404(user, member_id)
+
+    if member["id"] == user["id"]:
+        flash("You can't remove yourself.", "error")
+        return redirect(url_for("org_home"))
+    # Removing the last admin would leave the org with nobody who can
+    # approve members or pay the bill.
+    if member["org_admin"] and db.count_org_admins(user["org_id"]) <= 1:
+        flash("Make someone else an admin first — an org needs one.", "error")
+        return redirect(url_for("org_home"))
+
+    db.set_membership_status(member["id"], user["org_id"], "removed")
+    _resize_org_seats(user["org_id"])
+    flash(f"Removed {member['name']}. Their work is kept.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/admin", methods=["POST"])
+@org_admin_required
+def org_set_admin(member_id: str):
+    user = current_user()
+    member = _member_or_404(user, member_id)
+    make_admin = request.form.get("admin") == "1"
+
+    if not make_admin and member["org_admin"] and db.count_org_admins(user["org_id"]) <= 1:
+        flash("An org needs at least one admin.", "error")
+        return redirect(url_for("org_home"))
+
+    if not db.set_org_admin(member["id"], user["org_id"], make_admin):
+        flash("Only teacher accounts can be admins.", "error")
+        return redirect(url_for("org_home"))
+
+    flash(f"{member['name']} is {'now an admin' if make_admin else 'no longer an admin'}.",
+          "success")
+    return redirect(url_for("org_home"))
+
+
+def _resize_org_seats(org_id: int) -> None:
+    """
+    Keep the Stripe quantity in step with the roster.
+
+    Best-effort on purpose: a Stripe outage must not stop a teacher
+    approving a student. The nightly `manage.py sync-seats` reconciles
+    anything that failed here.
+    """
+    if not billing.enabled(cfg):
+        return
+    subscription = db.subscription_for_org(org_id)
+    if not subscription or not subscription.get("stripe_subscription_id"):
+        return
+    try:
+        billing.update_seats(cfg,
+                             stripe_subscription_id=subscription["stripe_subscription_id"],
+                             quantity=db.count_billable_seats(org_id))
+    except Exception:
+        log.exception("could not resize seats for org %s", org_id)
+
+
+# ── Billing ─────────────────────────────────────────────────────────────────────
+
+def _billing_context(user: dict) -> dict:
+    """
+    Who is the payer for this account, and what are they paying with?
+
+    An org admin manages the school's subscription; a parent manages their
+    own. Nobody else sees a billing page at all.
+    """
+    if user["role"] == "teacher" and user["org_admin"]:
+        org = db.org_by_id(user["org_id"])
+        subscription = db.subscription_for_org(org["id"])
+        return {
+            "kind": "org",
+            "org": org,
+            "subscription": subscription,
+            "seats": db.count_billable_seats(org["id"]),
+            "price_key": cfg.PRICE_ORG_SEAT,
+            "metadata": {"account_kind": "org", "org_id": org["id"], "ref": f"org:{org['id']}"},
+        }
+    if user["role"] == "parent":
+        subscription = db.subscription_for_parent(user["id"])
+        return {
+            "kind": "parent",
+            "org": None,
+            "subscription": subscription,
+            "seats": max(1, len(db.visible_students(user))),
+            "price_key": cfg.PRICE_FAMILY,
+            "metadata": {"account_kind": "parent", "user_id": user["id"],
+                         "ref": f"parent:{user['id']}"},
+        }
+    return {}
+
+
+@app.route("/billing")
+@login_required("teacher", "parent")
+@membership_required
+def billing_home():
+    user = current_user()
+    context = _billing_context(user)
+    if not context:
+        abort(404)
+
+    subscription = context["subscription"]
+    return render_template("billing.html",
+                           ctx=context,
+                           subscription=subscription,
+                           entitlement=entitlement(),
+                           invoices=db.invoices_for(subscription["id"]) if subscription else [],
+                           trial_days=cfg.TRIAL_DAYS,
+                           due_days=cfg.INVOICE_DUE_DAYS)
+
+
+@app.route("/billing/subscribe", methods=["POST"])
+@login_required("teacher", "parent")
+@membership_required
+def billing_subscribe():
+    """Send the payer to Stripe's hosted Checkout. No card touches us."""
+    user = current_user()
+    context = _billing_context(user)
+    if not context:
+        abort(404)
+    if not billing.enabled(cfg):
+        flash("Payments aren't switched on yet.", "error")
+        return redirect(url_for("billing_home"))
+
+    existing = context["subscription"]
+    try:
+        customer_id = billing.ensure_customer(
+            cfg,
+            existing_id=existing["stripe_customer_id"] if existing else None,
+            email=(context["org"]["billing_email"] if context["kind"] == "org" and context["org"]["billing_email"]
+                   else user["email"]),
+            name=context["org"]["name"] if context["kind"] == "org" else user["name"],
+            metadata=context["metadata"],
+        )
+        url = billing.checkout_session(
+            cfg,
+            customer_id=customer_id,
+            price_lookup_key=context["price_key"],
+            quantity=context["seats"],
+            success_url=f"{cfg.BASE_URL}{url_for('billing_return')}",
+            cancel_url=f"{cfg.BASE_URL}{url_for('billing_home')}",
+            metadata=context["metadata"],
+            trial_days=cfg.TRIAL_DAYS if not existing else None,
+        )
+    except billing.BillingUnavailable as exc:
+        log.error("checkout unavailable: %s", exc)
+        flash("Payments aren't available right now. Try again shortly.", "error")
+        return redirect(url_for("billing_home"))
+    except Exception:
+        log.exception("could not start checkout")
+        flash("Something went wrong starting checkout.", "error")
+        return redirect(url_for("billing_home"))
+
+    return redirect(url, code=303)
+
+
+@app.route("/billing/portal", methods=["POST"])
+@login_required("teacher", "parent")
+@membership_required
+def billing_portal():
+    """
+    Stripe's hosted account page: change card, cancel, download invoices.
+
+    Everything a payer wants to do to their own billing, on Stripe's
+    domain, with no billing UI of ours in the way.
+    """
+    user = current_user()
+    context = _billing_context(user)
+    if not context or not context["subscription"]:
+        abort(404)
+
+    try:
+        url = billing.portal_session(
+            cfg,
+            customer_id=context["subscription"]["stripe_customer_id"],
+            return_url=f"{cfg.BASE_URL}{url_for('billing_home')}",
+        )
+    except Exception:
+        log.exception("could not open the customer portal")
+        flash("Couldn't open the billing portal. Try again shortly.", "error")
+        return redirect(url_for("billing_home"))
+
+    return redirect(url, code=303)
+
+
+@app.route("/billing/return")
+@login_required("teacher", "parent")
+def billing_return():
+    """
+    Where Stripe sends the browser after Checkout.
+
+    It grants nothing. Anyone can visit this URL, so entitlement changes
+    only when the signed webhook arrives — this page just says so politely
+    while that happens.
+    """
+    return render_template("billing_return.html", entitlement=entitlement())
+
+
+@app.route("/billing/invoice-request", methods=["POST"])
+@org_admin_required
+def billing_invoice_request():
+    """
+    Ask to be billed by invoice on terms instead of by card.
+
+    This records the request; it does not grant it. Net 30 is unsecured
+    credit, and a school district is worth extending it to in a way an
+    anonymous signup is not — a human approves it with
+    `manage.py approve-invoice`.
+    """
+    user = current_user()
+    org = db.org_by_id(user["org_id"])
+
+    billing_email = request.form.get("billing_email", "").strip()
+    problem = security.email_problem(billing_email)
+    if problem:
+        flash(problem, "error")
+        return redirect(url_for("billing_home"))
+
+    db.set_billing_profile(
+        org["id"],
+        billing_email=billing_email,
+        po_number=request.form.get("po_number", "").strip() or None,
+        tax_exempt=request.form.get("tax_exempt") == "1",
+        requested=True,
+    )
+    log.info("invoice terms requested", extra={"org_id": org["id"], "org": org["name"]})
+
+    emailer.send(cfg, cfg.EMAIL_FROM, "Invoice billing requested",
+                 f"""{org['name']} has asked to be billed by invoice.
+
+  Org id:        {org['id']}
+  Billing email: {billing_email}
+  PO number:     {request.form.get('po_number', '') or '—'}
+  Tax exempt:    {'yes' if request.form.get('tax_exempt') == '1' else 'no'}
+  Seats:         {db.count_billable_seats(org['id'])}
+
+Approve with:  python game/manage.py approve-invoice {org['id']}
+""")
+
+    flash("Request received. We'll confirm by email, usually within a "
+          "business day, and then send the first invoice.", "success")
+    return redirect(url_for("billing_home"))
+
+
+# ── Stripe webhook ──────────────────────────────────────────────────────────────
+#
+# Deliberately outside /api/, which would have exempted it from CSRF as a
+# side effect of that prefix requiring JSON. The exemption here is
+# explicit and justified: the Stripe-Signature header IS this endpoint's
+# authentication, and it is checked before anything else happens.
+
+@app.route("/stripe/webhook", methods=["POST"])
+@security.csrf_exempt
+def stripe_webhook():
+    if not billing.enabled(cfg):
+        abort(404)
+
+    # The signature is computed over the exact bytes Stripe sent. Anything
+    # that re-encodes the body invalidates it.
+    payload = request.get_data()
+    signature = request.headers.get("Stripe-Signature")
+
+    try:
+        event = billing.verify_webhook(cfg, payload, signature)
+    except Exception as exc:
+        # 400, not 500: the request is malformed or forged, and Stripe
+        # should not retry it.
+        log.warning("rejected webhook: %s", exc)
+        return jsonify({"error": "invalid signature"}), 400
+
+    event_id, event_type = event["id"], event["type"]
+
+    if event_type not in billing.HANDLED_EVENTS:
+        # Acknowledged, not acted on. Returning non-2xx for events we do
+        # not care about would have Stripe retry them until it disables
+        # the endpoint.
+        return jsonify({"ok": True, "ignored": event_type})
+
+    if not db.claim_event(event_id, event_type):
+        # Already handled. Stripe retries and delivers out of order, so
+        # this is normal traffic, not an error.
+        return jsonify({"ok": True, "duplicate": True})
+
+    try:
+        outcome = billing.handle_event(cfg, event)
+    except Exception:
+        log.exception("webhook %s (%s) failed", event_id, event_type)
+        # Hand the claim back so the retry can try again, and ask for one.
+        db.release_event(event_id)
+        return jsonify({"error": "handler failed"}), 500
+
+    db.finish_event(event_id)
+    log.info("webhook handled", extra={"event": event_type, "outcome": outcome})
+    return jsonify({"ok": True})
 
 
 # ── Errors ──────────────────────────────────────────────────────────────────────

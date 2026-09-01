@@ -264,6 +264,123 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         """,
         "CREATE INDEX rate_events_bucket_idx ON rate_events (bucket, created_at DESC)",
     ]),
+    (2, [
+        # ── Org membership and administration ───────────────────────────────
+        # The teacher who creates an org is its admin; admins control who
+        # gets in and who pays. Existing orgs have exactly one teacher, so
+        # backfilling every teacher to admin is correct for them.
+        "ALTER TABLE users ADD COLUMN org_admin boolean NOT NULL DEFAULT false",
+        "UPDATE users SET org_admin = true WHERE role = 'teacher'",
+        # pending → holds a place but reaches no lessons; removed → kept for
+        # referential integrity so their work is not orphaned, but cannot
+        # sign in.
+        """
+        ALTER TABLE users ADD COLUMN membership_status text NOT NULL DEFAULT 'active'
+            CHECK (membership_status IN ('active','pending','removed'))
+        """,
+        "CREATE INDEX users_pending_idx ON users (org_id) WHERE membership_status = 'pending'",
+
+        # open: the join code is enough. approval: the code creates a pending
+        # membership an admin has to let through.
+        """
+        ALTER TABLE orgs ADD COLUMN join_policy text NOT NULL DEFAULT 'open'
+            CHECK (join_policy IN ('open','approval'))
+        """,
+
+        # ── Billing profile on the org ──────────────────────────────────────
+        "ALTER TABLE orgs ADD COLUMN billing_email text",
+        """
+        ALTER TABLE orgs ADD COLUMN billing_terms text NOT NULL DEFAULT 'card'
+            CHECK (billing_terms IN ('card','invoice'))
+        """,
+        "ALTER TABLE orgs ADD COLUMN po_number text",
+        "ALTER TABLE orgs ADD COLUMN tax_exempt boolean NOT NULL DEFAULT false",
+        # Invoice terms are granted by a human, not self-served: net-30 is
+        # unsecured credit, and a school district is worth extending it to
+        # in a way that an anonymous signup is not.
+        "ALTER TABLE orgs ADD COLUMN invoice_requested_at timestamptz",
+        "ALTER TABLE orgs ADD COLUMN invoice_approved_at timestamptz",
+
+        # ── Subscriptions ───────────────────────────────────────────────────
+        # One row per Stripe subscription. Owned by an org (a school paying
+        # for seats) or by a parent (a family plan) — never both, which the
+        # CHECK enforces rather than trusting the application to remember.
+        """
+        CREATE TABLE subscriptions (
+            id                     bigserial PRIMARY KEY,
+            account_kind           text NOT NULL CHECK (account_kind IN ('org','parent')),
+            org_id                 bigint REFERENCES orgs(id)  ON DELETE CASCADE,
+            user_id                bigint REFERENCES users(id) ON DELETE CASCADE,
+            stripe_customer_id     text NOT NULL,
+            stripe_subscription_id text UNIQUE,
+            -- Stripe's status, stored verbatim. Reinterpreting it into our
+            -- own vocabulary would mean two sources of truth drifting apart.
+            status                 text NOT NULL,
+            plan                   text,
+            seats                  integer NOT NULL DEFAULT 1,
+            collection_method      text NOT NULL DEFAULT 'charge_automatically'
+                                   CHECK (collection_method IN ('charge_automatically','send_invoice')),
+            current_period_end     timestamptz,
+            cancel_at_period_end   boolean NOT NULL DEFAULT false,
+            trial_end              timestamptz,
+            -- Set by the operator CLI to grant access with no Stripe
+            -- subscription behind it: pilots, comps, a school mid-purchase.
+            comp_until             timestamptz,
+            created_at             timestamptz NOT NULL DEFAULT now(),
+            updated_at             timestamptz NOT NULL DEFAULT now(),
+            CHECK (
+                (account_kind = 'org'    AND org_id IS NOT NULL AND user_id IS NULL) OR
+                (account_kind = 'parent' AND user_id IS NOT NULL AND org_id IS NULL)
+            )
+        )
+        """,
+        # At most one live subscription per payer. Without this, a double
+        # submit on the checkout button buys the same school twice.
+        """
+        CREATE UNIQUE INDEX subscriptions_one_live_org ON subscriptions (org_id)
+            WHERE org_id IS NOT NULL AND status NOT IN ('canceled','incomplete_expired')
+        """,
+        """
+        CREATE UNIQUE INDEX subscriptions_one_live_parent ON subscriptions (user_id)
+            WHERE user_id IS NOT NULL AND status NOT IN ('canceled','incomplete_expired')
+        """,
+        "CREATE INDEX subscriptions_customer_idx ON subscriptions (stripe_customer_id)",
+
+        # ── Webhook idempotency ─────────────────────────────────────────────
+        # Stripe retries, and delivers out of order. The primary key is the
+        # whole defence against applying an event twice.
+        """
+        CREATE TABLE stripe_events (
+            event_id     text PRIMARY KEY,
+            type         text NOT NULL,
+            received_at  timestamptz NOT NULL DEFAULT now(),
+            processed_at timestamptz,
+            error        text
+        )
+        """,
+        "CREATE INDEX stripe_events_received_idx ON stripe_events (received_at DESC)",
+
+        # ── Invoice history ─────────────────────────────────────────────────
+        # Denormalised from Stripe so a teacher can see "what do we owe, and
+        # is it late" without a live API call on every page load.
+        """
+        CREATE TABLE invoices (
+            stripe_invoice_id text PRIMARY KEY,
+            subscription_id   bigint REFERENCES subscriptions(id) ON DELETE SET NULL,
+            number            text,
+            status            text NOT NULL,
+            amount_due        integer NOT NULL DEFAULT 0,
+            amount_paid       integer NOT NULL DEFAULT 0,
+            currency          text NOT NULL DEFAULT 'usd',
+            due_date          timestamptz,
+            hosted_invoice_url text,
+            pdf_url           text,
+            created_at        timestamptz NOT NULL DEFAULT now(),
+            updated_at        timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX invoices_subscription_idx ON invoices (subscription_id, created_at DESC)",
+    ]),
 ]
 
 
@@ -328,10 +445,19 @@ def _unique_code(cur, table: str, column: str, length: int) -> str:
 
 # ── Orgs ────────────────────────────────────────────────────────────────────────
 
+# Selected everywhere an org is loaded. Naming the columns in one place
+# stopped a class of bug where a caller read a field the query had never
+# fetched — the billing page and the join-policy check both did.
+ORG_COLUMNS = """
+    id, name, join_code, join_policy, billing_email, billing_terms,
+    po_number, tax_exempt, invoice_requested_at, invoice_approved_at, created_at
+"""
+
+
 def create_org(cur, name: str) -> dict:
     join_code = _unique_code(cur, "orgs", "join_code", 8)
     cur.execute(
-        "INSERT INTO orgs (name, join_code) VALUES (%s, %s) RETURNING id, name, join_code",
+        f"INSERT INTO orgs (name, join_code) VALUES (%s, %s) RETURNING {ORG_COLUMNS}",
         (name, join_code),
     )
     return cur.fetchone()
@@ -339,14 +465,14 @@ def create_org(cur, name: str) -> dict:
 
 def org_by_join_code(code: str) -> dict | None:
     with query() as cur:
-        cur.execute("SELECT id, name, join_code FROM orgs WHERE join_code = %s",
+        cur.execute(f"SELECT {ORG_COLUMNS} FROM orgs WHERE join_code = %s",
                     (code.strip().upper(),))
         return cur.fetchone()
 
 
 def org_by_id(org_id: int) -> dict | None:
     with query() as cur:
-        cur.execute("SELECT id, name, join_code FROM orgs WHERE id = %s", (org_id,))
+        cur.execute(f"SELECT {ORG_COLUMNS} FROM orgs WHERE id = %s", (org_id,))
         return cur.fetchone()
 
 
@@ -361,21 +487,27 @@ def rotate_join_code(org_id: int) -> str:
 
 USER_COLUMNS = """
     id, org_id, username, email, password_hash, role, name, avatar,
-    session_epoch, email_verified, is_active, link_code,
-    age_confirmed_at, terms_accepted_at, created_at, last_login_at
+    session_epoch, email_verified, is_active, link_code, org_admin,
+    membership_status, age_confirmed_at, terms_accepted_at,
+    created_at, last_login_at
 """
 
 
 def user_by_id(user_id: int) -> dict | None:
     with query() as cur:
-        cur.execute(f"SELECT {USER_COLUMNS} FROM users WHERE id = %s AND is_active", (user_id,))
+        cur.execute(
+            f"SELECT {USER_COLUMNS} FROM users "
+            "WHERE id = %s AND is_active AND membership_status <> 'removed'",
+            (user_id,))
         return cur.fetchone()
 
 
 def user_by_username(username: str) -> dict | None:
     with query() as cur:
         cur.execute(
-            f"SELECT {USER_COLUMNS} FROM users WHERE lower(username) = lower(%s) AND is_active",
+            f"SELECT {USER_COLUMNS} FROM users "
+            "WHERE lower(username) = lower(%s) AND is_active "
+            "AND membership_status <> 'removed'",
             (username.strip(),),
         )
         return cur.fetchone()
@@ -384,7 +516,9 @@ def user_by_username(username: str) -> dict | None:
 def user_by_email(email: str) -> dict | None:
     with query() as cur:
         cur.execute(
-            f"SELECT {USER_COLUMNS} FROM users WHERE lower(email) = lower(%s) AND is_active",
+            f"SELECT {USER_COLUMNS} FROM users "
+            "WHERE lower(email) = lower(%s) AND is_active "
+            "AND membership_status <> 'removed'",
             (email.strip(),),
         )
         return cur.fetchone()
@@ -406,23 +540,30 @@ def create_user(cur, *, org_id: int, username: str, email: str | None,
                 password_hash: str, role: str, name: str, avatar: str = "",
                 email_verified: bool = False,
                 age_confirmed: bool = False,
-                terms_accepted: bool = True) -> dict:
+                terms_accepted: bool = True,
+                org_admin: bool = False,
+                membership_status: str = "active") -> dict:
     """
     Insert one account.  Students get a link_code so a parent can attach
     themselves later without a teacher having to broker it by hand.
+
+    membership_status comes from the org's join policy: on an
+    approval-gated org, a correct join code buys you a pending place in
+    the queue, not a seat.
     """
     link_code = _unique_code(cur, "users", "link_code", 6) if role == "student" else None
     stamp = now()
     cur.execute(
         f"""
         INSERT INTO users (org_id, username, email, password_hash, role, name,
-                           avatar, email_verified, link_code,
-                           age_confirmed_at, terms_accepted_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           avatar, email_verified, link_code, org_admin,
+                           membership_status, age_confirmed_at, terms_accepted_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING {USER_COLUMNS}
         """,
         (org_id, username.strip(), (email or "").strip() or None, password_hash,
-         role, name.strip(), avatar, email_verified, link_code,
+         role, name.strip(), avatar, email_verified, link_code, org_admin,
+         membership_status,
          stamp if age_confirmed else None,
          stamp if terms_accepted else None),
     )
@@ -491,7 +632,8 @@ def visible_students(user: dict) -> list[dict]:
         if user["role"] == "teacher":
             cur.execute(
                 "SELECT id, username, name, avatar, link_code FROM users "
-                "WHERE org_id = %s AND role = 'student' AND is_active ORDER BY name",
+                "WHERE org_id = %s AND role = 'student' AND is_active "
+                "AND membership_status = 'active' ORDER BY name",
                 (user["org_id"],),
             )
         elif user["role"] == "parent":
@@ -501,6 +643,7 @@ def visible_students(user: dict) -> list[dict]:
                 FROM users u
                 JOIN parent_links pl ON pl.student_id = u.id
                 WHERE pl.parent_id = %s AND u.role = 'student' AND u.is_active
+                  AND u.membership_status = 'active'
                 ORDER BY u.name
                 """,
                 (user["id"],),
@@ -515,7 +658,7 @@ def can_see_student(user: dict, student_id: int) -> bool:
         with query() as cur:
             cur.execute(
                 "SELECT 1 FROM users WHERE id = %s AND org_id = %s "
-                "AND role = 'student' AND is_active",
+                "AND role = 'student' AND is_active AND membership_status = 'active'",
                 (student_id, user["org_id"]),
             )
             return cur.fetchone() is not None
@@ -995,3 +1138,383 @@ def purge_rate_events(window_seconds: int) -> int:
             (window_seconds * 4,),
         )
         return cur.rowcount
+
+
+# ── Org administration ──────────────────────────────────────────────────────────
+
+def set_join_policy(org_id: int, policy: str) -> None:
+    with write() as cur:
+        cur.execute("UPDATE orgs SET join_policy = %s WHERE id = %s", (policy, org_id))
+
+
+def pending_members(org_id: int) -> list[dict]:
+    with query() as cur:
+        cur.execute(
+            "SELECT id, username, name, role, email, created_at FROM users "
+            "WHERE org_id = %s AND membership_status = 'pending' AND is_active "
+            "ORDER BY created_at",
+            (org_id,),
+        )
+        return cur.fetchall()
+
+
+def org_members(org_id: int) -> list[dict]:
+    """Everyone in the org, whatever their role — the admin console's list."""
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT id, username, name, role, email, org_admin, membership_status,
+                   link_code, last_login_at, created_at
+            FROM users
+            WHERE org_id = %s AND is_active AND membership_status <> 'removed'
+            ORDER BY (role = 'teacher') DESC, org_admin DESC, lower(name)
+            """,
+            (org_id,),
+        )
+        return cur.fetchall()
+
+
+def member_in_org(user_id: int, org_id: int) -> dict | None:
+    with query() as cur:
+        cur.execute(
+            f"SELECT {USER_COLUMNS} FROM users WHERE id = %s AND org_id = %s AND is_active",
+            (user_id, org_id),
+        )
+        return cur.fetchone()
+
+
+def set_membership_status(user_id: int, org_id: int, status: str) -> bool:
+    """Scoped to the org so one admin can never touch another org's roster."""
+    with write() as cur:
+        cur.execute(
+            "UPDATE users SET membership_status = %s WHERE id = %s AND org_id = %s",
+            (status, user_id, org_id),
+        )
+        return cur.rowcount > 0
+
+
+def count_org_admins(org_id: int) -> int:
+    with query() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM users WHERE org_id = %s AND org_admin "
+            "AND is_active AND membership_status = 'active'",
+            (org_id,),
+        )
+        return cur.fetchone()["n"]
+
+
+def set_org_admin(user_id: int, org_id: int, is_admin: bool) -> bool:
+    """
+    Only a teacher can be an admin: an admin can approve members and spend
+    money, which is not a thing to hand a student account by accident.
+    """
+    with write() as cur:
+        cur.execute(
+            "UPDATE users SET org_admin = %s "
+            "WHERE id = %s AND org_id = %s AND role = 'teacher'",
+            (is_admin, user_id, org_id),
+        )
+        return cur.rowcount > 0
+
+
+def count_billable_seats(org_id: int) -> int:
+    """
+    What the org is charged for: active students. Teachers and parents ride
+    along free, because charging a school for the teacher who administers
+    it is a good way to lose the renewal.
+    """
+    with query() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM users WHERE org_id = %s AND role = 'student' "
+            "AND is_active AND membership_status = 'active'",
+            (org_id,),
+        )
+        return cur.fetchone()["n"]
+
+
+def set_billing_profile(org_id: int, *, billing_email: str | None = None,
+                        po_number: str | None = None,
+                        tax_exempt: bool | None = None,
+                        requested: bool = False) -> None:
+    with write() as cur:
+        cur.execute(
+            """
+            UPDATE orgs SET
+                billing_email = COALESCE(%s, billing_email),
+                po_number     = COALESCE(%s, po_number),
+                tax_exempt    = COALESCE(%s, tax_exempt),
+                invoice_requested_at = CASE WHEN %s THEN now() ELSE invoice_requested_at END
+            WHERE id = %s
+            """,
+            (billing_email, po_number, tax_exempt, requested, org_id),
+        )
+
+
+def approve_invoice_terms(org_id: int) -> bool:
+    """Grant net-30. Deliberately not reachable from the web app — see manage.py."""
+    with write() as cur:
+        cur.execute(
+            "UPDATE orgs SET billing_terms = 'invoice', invoice_approved_at = now() "
+            "WHERE id = %s",
+            (org_id,),
+        )
+        return cur.rowcount > 0
+
+
+def orgs_awaiting_invoice_approval() -> list[dict]:
+    with query() as cur:
+        cur.execute(
+            "SELECT id, name, billing_email, po_number, tax_exempt, invoice_requested_at "
+            "FROM orgs WHERE invoice_requested_at IS NOT NULL AND invoice_approved_at IS NULL "
+            "ORDER BY invoice_requested_at",
+        )
+        return cur.fetchall()
+
+
+# ── Subscriptions ───────────────────────────────────────────────────────────────
+
+SUB_COLUMNS = """
+    id, account_kind, org_id, user_id, stripe_customer_id, stripe_subscription_id,
+    status, plan, seats, collection_method, current_period_end,
+    cancel_at_period_end, trial_end, comp_until, created_at, updated_at
+"""
+
+# Statuses that are finished for good. Anything else still occupies the
+# "one live subscription per payer" slot.
+DEAD_STATUSES = ("canceled", "incomplete_expired")
+
+
+def subscription_for_org(org_id: int) -> dict | None:
+    with query() as cur:
+        cur.execute(
+            f"SELECT {SUB_COLUMNS} FROM subscriptions "
+            "WHERE org_id = %s AND status <> ALL(%s) ORDER BY id DESC LIMIT 1",
+            (org_id, list(DEAD_STATUSES)),
+        )
+        return cur.fetchone()
+
+
+def subscription_for_parent(user_id: int) -> dict | None:
+    with query() as cur:
+        cur.execute(
+            f"SELECT {SUB_COLUMNS} FROM subscriptions "
+            "WHERE user_id = %s AND status <> ALL(%s) ORDER BY id DESC LIMIT 1",
+            (user_id, list(DEAD_STATUSES)),
+        )
+        return cur.fetchone()
+
+
+def subscriptions_for_parents_of(student_id: int) -> list[dict]:
+    """
+    Every live subscription belonging to a parent of this student.
+
+    A student is entitled if their school pays *or* any one parent does, so
+    this answers the second half of that question in a single query.
+    """
+    with query() as cur:
+        cur.execute(
+            f"""
+            SELECT {", ".join("s." + c.strip() for c in SUB_COLUMNS.split(","))}
+            FROM subscriptions s
+            JOIN parent_links pl ON pl.parent_id = s.user_id
+            WHERE pl.student_id = %s AND s.status <> ALL(%s)
+            """,
+            (student_id, list(DEAD_STATUSES)),
+        )
+        return cur.fetchall()
+
+
+def upsert_subscription(*, account_kind: str, org_id: int | None, user_id: int | None,
+                        stripe_customer_id: str, stripe_subscription_id: str | None,
+                        status: str, plan: str | None, seats: int,
+                        collection_method: str,
+                        current_period_end, cancel_at_period_end: bool,
+                        trial_end) -> dict:
+    """
+    Record the state Stripe reports.
+
+    Keyed on stripe_subscription_id, so replaying the same webhook — which
+    Stripe will do — converges on the same row instead of stacking up
+    duplicates.
+    """
+    with write() as cur:
+        cur.execute(
+            f"""
+            INSERT INTO subscriptions
+                (account_kind, org_id, user_id, stripe_customer_id, stripe_subscription_id,
+                 status, plan, seats, collection_method, current_period_end,
+                 cancel_at_period_end, trial_end)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (stripe_subscription_id) DO UPDATE SET
+                status               = EXCLUDED.status,
+                plan                 = EXCLUDED.plan,
+                seats                = EXCLUDED.seats,
+                collection_method    = EXCLUDED.collection_method,
+                current_period_end   = EXCLUDED.current_period_end,
+                cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+                trial_end            = EXCLUDED.trial_end,
+                stripe_customer_id   = EXCLUDED.stripe_customer_id,
+                updated_at           = now()
+            RETURNING {SUB_COLUMNS}
+            """,
+            (account_kind, org_id, user_id, stripe_customer_id, stripe_subscription_id,
+             status, plan, seats, collection_method, current_period_end,
+             cancel_at_period_end, trial_end),
+        )
+        return cur.fetchone()
+
+
+def set_comp_until(*, org_id: int | None, user_id: int | None,
+                   until, customer_id: str = "comp") -> dict:
+    """
+    Access with no Stripe subscription behind it: a pilot, a comp, or a
+    school whose purchase order is still working its way through.
+    """
+    kind = "org" if org_id else "parent"
+    with write() as cur:
+        # Cast explicitly: a bare "%s IS NOT NULL" gives Postgres nothing to
+        # infer a parameter type from, and it refuses to plan the query.
+        cur.execute(
+            "SELECT id FROM subscriptions "
+            "WHERE (%s::bigint IS NOT NULL AND org_id = %s::bigint) "
+            "   OR (%s::bigint IS NOT NULL AND user_id = %s::bigint)",
+            (org_id, org_id, user_id, user_id),
+        )
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                f"UPDATE subscriptions SET comp_until = %s, updated_at = now() "
+                f"WHERE id = %s RETURNING {SUB_COLUMNS}",
+                (until, row["id"]),
+            )
+        else:
+            cur.execute(
+                f"""
+                INSERT INTO subscriptions
+                    (account_kind, org_id, user_id, stripe_customer_id, status,
+                     plan, seats, comp_until)
+                VALUES (%s, %s, %s, %s, 'comped', 'comp', 1, %s)
+                RETURNING {SUB_COLUMNS}
+                """,
+                (kind, org_id, user_id, customer_id, until),
+            )
+        return cur.fetchone()
+
+
+def subscription_by_stripe_id(stripe_subscription_id: str) -> dict | None:
+    with query() as cur:
+        cur.execute(f"SELECT {SUB_COLUMNS} FROM subscriptions "
+                    "WHERE stripe_subscription_id = %s", (stripe_subscription_id,))
+        return cur.fetchone()
+
+
+def subscription_by_customer(stripe_customer_id: str) -> dict | None:
+    with query() as cur:
+        cur.execute(f"SELECT {SUB_COLUMNS} FROM subscriptions "
+                    "WHERE stripe_customer_id = %s ORDER BY id DESC LIMIT 1",
+                    (stripe_customer_id,))
+        return cur.fetchone()
+
+
+# ── Webhook events ──────────────────────────────────────────────────────────────
+
+def claim_event(event_id: str, event_type: str) -> bool:
+    """
+    Take ownership of one webhook event, once.
+
+    Returns False if this event has been seen before. Stripe retries on any
+    non-2xx and can deliver the same event several times over; without this
+    a retried invoice.paid would extend a subscription twice.
+    """
+    with write() as cur:
+        cur.execute(
+            "INSERT INTO stripe_events (event_id, type) VALUES (%s, %s) "
+            "ON CONFLICT (event_id) DO NOTHING",
+            (event_id, event_type),
+        )
+        return cur.rowcount > 0
+
+
+def finish_event(event_id: str, error: str | None = None) -> None:
+    with write() as cur:
+        cur.execute(
+            "UPDATE stripe_events SET processed_at = now(), error = %s WHERE event_id = %s",
+            (error, event_id),
+        )
+
+
+
+def release_event(event_id: str) -> None:
+    """
+    Give the claim back so Stripe's retry can have another go.
+
+    Called when handling threw: the row was inserted before the work, so
+    leaving it in place would make a transient failure permanent.
+    """
+    with write() as cur:
+        cur.execute("DELETE FROM stripe_events WHERE event_id = %s AND processed_at IS NULL",
+                    (event_id,))
+
+
+def purge_stripe_events(days: int = 90) -> int:
+    with write() as cur:
+        cur.execute("DELETE FROM stripe_events WHERE received_at < now() - make_interval(days => %s)",
+                    (days,))
+        return cur.rowcount
+
+
+# ── Invoices ────────────────────────────────────────────────────────────────────
+
+def upsert_invoice(*, stripe_invoice_id: str, subscription_id: int | None,
+                   number: str | None, status: str, amount_due: int, amount_paid: int,
+                   currency: str, due_date, hosted_invoice_url: str | None,
+                   pdf_url: str | None) -> None:
+    with write() as cur:
+        cur.execute(
+            """
+            INSERT INTO invoices (stripe_invoice_id, subscription_id, number, status,
+                                  amount_due, amount_paid, currency, due_date,
+                                  hosted_invoice_url, pdf_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (stripe_invoice_id) DO UPDATE SET
+                subscription_id    = COALESCE(EXCLUDED.subscription_id, invoices.subscription_id),
+                number             = EXCLUDED.number,
+                status             = EXCLUDED.status,
+                amount_due         = EXCLUDED.amount_due,
+                amount_paid        = EXCLUDED.amount_paid,
+                due_date           = EXCLUDED.due_date,
+                hosted_invoice_url = EXCLUDED.hosted_invoice_url,
+                pdf_url            = EXCLUDED.pdf_url,
+                updated_at         = now()
+            """,
+            (stripe_invoice_id, subscription_id, number, status, amount_due,
+             amount_paid, currency, due_date, hosted_invoice_url, pdf_url),
+        )
+
+
+def invoices_for(subscription_id: int, limit: int = 12) -> list[dict]:
+    with query() as cur:
+        cur.execute(
+            "SELECT stripe_invoice_id, number, status, amount_due, amount_paid, currency, "
+            "       due_date, hosted_invoice_url, pdf_url, created_at "
+            "FROM invoices WHERE subscription_id = %s ORDER BY created_at DESC LIMIT %s",
+            (subscription_id, limit),
+        )
+        return cur.fetchall()
+
+
+def overdue_invoices() -> list[dict]:
+    """Open invoices past their due date — what the operator chases."""
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT i.stripe_invoice_id, i.number, i.amount_due, i.currency, i.due_date,
+                   i.hosted_invoice_url, o.name AS org_name, o.billing_email, o.po_number
+            FROM invoices i
+            JOIN subscriptions s ON s.id = i.subscription_id
+            LEFT JOIN orgs o ON o.id = s.org_id
+            WHERE i.status = 'open' AND i.due_date IS NOT NULL AND i.due_date < now()
+            ORDER BY i.due_date
+            """,
+        )
+        return cur.fetchall()

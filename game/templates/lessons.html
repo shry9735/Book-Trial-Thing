@@ -19,7 +19,8 @@
     <div class="lesson-grid">
       {% for lesson in cat_lessons %}
         {% set status = lesson.progress.status %}
-        <a class="panel lesson-card" href="{{ url_for('lesson', lesson_id=lesson.id) }}">
+        <a class="panel lesson-card {% if lesson.locked %}locked{% endif %}"
+           href="{{ url_for('lesson', lesson_id=lesson.id) }}">
 
           <div class="lesson-thumb" style="background-image:url('{{ art(lesson.thumb) }}')">
             <span class="lesson-type">
@@ -38,7 +39,10 @@
           </div>
 
           <div class="lesson-body">
-            <div class="lesson-name">{{ lesson.title }}</div>
+            <div class="lesson-name">
+              {% if lesson.locked %}<span class="lock-badge" title="Needs a subscription">🔒</span>{% endif %}
+              {{ lesson.title }}
+            </div>
             <div class="lesson-desc">{{ lesson.description }}</div>
             <div class="lesson-meta">
               <span>⏱ {{ lesson.duration_min }} min</span>

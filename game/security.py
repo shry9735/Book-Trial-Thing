@@ -64,7 +64,20 @@ def _submitted_token() -> str:
             or "")
 
 
-def check_csrf() -> None:
+def csrf_exempt(fn):
+    """
+    Mark a view as exempt from the CSRF check.
+
+    Only for endpoints that authenticate the *request itself* rather than
+    the session — the Stripe webhook proves origin with a signature over
+    the raw body, and has no session or form to carry a token. Anything
+    that relies on a cookie for authority must not use this.
+    """
+    fn._csrf_exempt = True
+    return fn
+
+
+def check_csrf(view_func=None) -> None:
     """
     Reject any unsafe request that cannot prove it came from our own page.
 
@@ -78,6 +91,11 @@ def check_csrf() -> None:
     a cross-site POST does not get the cookie in the first place.
     """
     if request.method in SAFE_METHODS:
+        return
+
+    # Exempt by explicit decoration, never by URL shape: a path-prefix rule
+    # would silently exempt any future route that happened to match it.
+    if getattr(view_func, "_csrf_exempt", False):
         return
 
     if request.path.startswith("/api/"):
