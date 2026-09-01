@@ -20,6 +20,14 @@ game/data/progress.json
 game/data/assignments.json
 game/data/secret_key
 
+# ── Documentation ────────────────────────────────────────────────────────────────
+# Generated API reference. Rebuilt by ./scripts/gendocs.sh, and published to
+# GitHub Pages by .github/workflows/docs.yml — committing 3MB of generated
+# HTML would make every diff unreadable.
+# docs/CALLGRAPH.md IS committed: it is Markdown, GitHub renders its Mermaid
+# inline, and its diff shows when a change reshapes the module graph.
+docs/api/
+
 # ── Deployment ───────────────────────────────────────────────────────────────────
 # Secrets and anything derived from them.
 .env

@@ -1,0 +1,16 @@
+# Development and documentation tooling. Not needed to run the app.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+# API reference generator. Chosen over Doxygen, which treats Python as an
+# afterthought and needs Graphviz to render call graphs into images that
+# cannot be reviewed in a pull request. pdoc reads the docstrings that are
+# already in this codebase and needs no configuration file.
+pdoc>=14.0
+
+# Fast, no-config lint. Catches unused imports and undefined names, which
+# is most of what actually breaks a Python change.
+pyflakes>=3.0
+
+# Only needed to run the test suites against a scratch database; the app's
+# own requirements already cover psycopg.

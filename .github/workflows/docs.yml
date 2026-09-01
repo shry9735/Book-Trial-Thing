@@ -1,0 +1,58 @@
+name: Docs
+
+# Publishes the pdoc API reference to GitHub Pages. The reference is
+# generated from the docstrings in the source, so it is never committed —
+# 3MB of generated HTML would make every diff unreadable.
+#
+# Enable once under Settings → Pages → Source → GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # pdoc imports each module to read its signatures. Nothing here
+      # connects to anything — app.py only builds its config at import.
+      - name: Build
+        env:
+          APP_ENV: development
+          SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+          DATABASE_URL: postgresql://localhost/ignite_docs
+        run: ./scripts/gendocs.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/api
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
