@@ -1,11 +1,16 @@
-# RAG pipeline (ingest.py + query.py)
+# ── RAG pipeline (ingest.py + query.py) ────────────────────────────────────────
 ebooklib>=0.18
 beautifulsoup4>=4.12
 qdrant-client>=1.9
 requests>=2.31
 
-# EPUB builder (make_epub.py)
+# ── EPUB builder (make_epub.py) ────────────────────────────────────────────────
 markdown>=3.5
 
-# Webserver (webserver/server.py)
+# ── Game server (game/) ────────────────────────────────────────────────────────
 flask>=3.0
+# psycopg 3. [binary] ships the libpq wheel so no local Postgres dev headers
+# are needed; [pool] is the connection pool each worker process owns.
+psycopg[binary,pool]>=3.1
+# WSGI server. The Flask dev server is single-threaded and must not face users.
+gunicorn>=21.2

@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""
+config.py — every knob this app reads from the environment.
+
+Nothing here touches the filesystem for state.  A container can be
+destroyed and recreated with no data loss, because the only durable
+things are Postgres and the object store the art is served from.
+
+Required in production (APP_ENV=production):
+
+    SECRET_KEY      64 hex chars — signs session cookies.  Generate with
+                    `python -c "import secrets;print(secrets.token_hex(32))"`
+    DATABASE_URL    postgresql://user:pass@host:5432/dbname
+
+Everything else has a working default.  See DEPLOY.md.
+"""
+
+import os
+import secrets
+import sys
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        sys.exit(f"Config error: {name}={raw!r} is not an integer.")
+
+
+class Config:
+    # ── Environment ─────────────────────────────────────────────────────────
+    ENV        = os.environ.get("APP_ENV", "development").strip().lower()
+    IS_PROD    = ENV == "production"
+    BASE_URL   = os.environ.get("BASE_URL", "http://localhost:5000").rstrip("/")
+
+    # ── Database ────────────────────────────────────────────────────────────
+    DATABASE_URL  = os.environ.get("DATABASE_URL", "")
+    DB_POOL_MIN   = _int("DB_POOL_MIN", 1)
+    # Each gunicorn worker opens its own pool, so the ceiling on Postgres
+    # connections is WEB_CONCURRENCY * DB_POOL_MAX.  Keep the product under
+    # your server's max_connections (default 100).
+    DB_POOL_MAX   = _int("DB_POOL_MAX", 5)
+    DB_TIMEOUT    = _int("DB_TIMEOUT", 10)
+
+    # ── Sessions ────────────────────────────────────────────────────────────
+    SECRET_KEY        = os.environ.get("SECRET_KEY", "")
+    SESSION_DAYS      = _int("SESSION_DAYS", 14)
+    # Behind a TLS-terminating proxy the cookie must still be Secure; set
+    # this to false only for plain-HTTP local development.
+    COOKIE_SECURE     = _bool("COOKIE_SECURE", IS_PROD)
+    # How many proxies sit in front of us.  Wrong values here let a client
+    # spoof its own IP via X-Forwarded-For, which would defeat rate limiting.
+    TRUSTED_PROXIES   = _int("TRUSTED_PROXIES", 1 if IS_PROD else 0)
+
+    # ── Signup / verification ───────────────────────────────────────────────
+    REQUIRE_EMAIL_VERIFICATION = _bool("REQUIRE_EMAIL_VERIFICATION", IS_PROD)
+    # Students must attest to this age at signup.  Below 13, US COPPA
+    # applies and this app is not built for it — see DEPLOY.md.
+    MIN_AGE           = _int("MIN_AGE", 13)
+    TOKEN_HOURS       = _int("TOKEN_HOURS", 24)      # verify + reset link life
+
+    # ── Rate limiting (all windows in seconds) ──────────────────────────────
+    RL_WINDOW         = _int("RL_WINDOW", 900)       # 15 minutes
+    RL_LOGIN_USER     = _int("RL_LOGIN_USER", 10)    # failures per username
+    RL_LOGIN_IP       = _int("RL_LOGIN_IP", 30)      # failures per IP
+    RL_SIGNUP_IP      = _int("RL_SIGNUP_IP", 10)     # signups per IP
+    RL_RESET_IP       = _int("RL_RESET_IP", 10)      # reset requests per IP
+
+    # ── Email ───────────────────────────────────────────────────────────────
+    # Backend "console" prints the message to stdout, which is what local
+    # development and the test suite use.  "smtp" needs the SMTP_* values.
+    EMAIL_BACKEND     = os.environ.get("EMAIL_BACKEND", "console").strip().lower()
+    EMAIL_FROM        = os.environ.get("EMAIL_FROM", "Ignite Academy <no-reply@localhost>")
+    SMTP_HOST         = os.environ.get("SMTP_HOST", "")
+    SMTP_PORT         = _int("SMTP_PORT", 587)
+    SMTP_USER         = os.environ.get("SMTP_USER", "")
+    SMTP_PASSWORD     = os.environ.get("SMTP_PASSWORD", "")
+    SMTP_STARTTLS     = _bool("SMTP_STARTTLS", True)
+
+    # ── Static assets ───────────────────────────────────────────────────────
+    # Set to a CDN origin (https://cdn.example.com) to serve /static from it.
+    # Empty means Flask serves the files, which is fine for a single box.
+    CDN_URL           = os.environ.get("CDN_URL", "").rstrip("/")
+    STATIC_MAX_AGE    = _int("STATIC_MAX_AGE", 60 * 60 * 24 * 30)
+
+    # ── Logging ─────────────────────────────────────────────────────────────
+    LOG_LEVEL         = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    LOG_JSON          = _bool("LOG_JSON", IS_PROD)
+
+
+def validate() -> Config:
+    """
+    Fail loudly at boot rather than quietly at 9am on a school day.
+
+    In development the missing pieces get safe stand-ins; in production
+    they are hard errors, because a generated secret key would silently
+    log every user out on each restart and each worker would disagree
+    about cookie signatures.
+    """
+    cfg = Config()
+    problems: list[str] = []
+
+    if not cfg.DATABASE_URL:
+        if cfg.IS_PROD:
+            problems.append("DATABASE_URL is required.")
+        else:
+            cfg.DATABASE_URL = "postgresql://ignite:ignite@localhost:5432/ignite"
+            print(f"  config: DATABASE_URL unset, using {cfg.DATABASE_URL}", file=sys.stderr)
+
+    if not cfg.SECRET_KEY:
+        if cfg.IS_PROD:
+            problems.append("SECRET_KEY is required (64 hex chars).")
+        else:
+            cfg.SECRET_KEY = secrets.token_hex(32)
+            print("  config: SECRET_KEY unset, generated a temporary one —", file=sys.stderr)
+            print("          sessions will not survive a restart.", file=sys.stderr)
+    elif len(cfg.SECRET_KEY) < 32:
+        problems.append("SECRET_KEY is too short; use at least 32 characters.")
+
+    if cfg.EMAIL_BACKEND == "smtp" and not cfg.SMTP_HOST:
+        problems.append("EMAIL_BACKEND=smtp needs SMTP_HOST.")
+
+    if cfg.EMAIL_BACKEND not in ("console", "smtp"):
+        problems.append(f"EMAIL_BACKEND={cfg.EMAIL_BACKEND!r} is not 'console' or 'smtp'.")
+
+    if cfg.IS_PROD and cfg.EMAIL_BACKEND == "console":
+        print("  config: EMAIL_BACKEND=console in production — verification and", file=sys.stderr)
+        print("          password-reset links will only appear in the logs.", file=sys.stderr)
+
+    if cfg.IS_PROD and not cfg.COOKIE_SECURE:
+        problems.append("COOKIE_SECURE=false in production would send session cookies over plain HTTP.")
+
+    if cfg.IS_PROD and cfg.BASE_URL.startswith("http://"):
+        problems.append("BASE_URL must be https:// in production — it is used to build email links.")
+
+    if problems:
+        sys.exit("Configuration errors:\n" + "\n".join(f"  - {p}" for p in problems))
+
+    return cfg

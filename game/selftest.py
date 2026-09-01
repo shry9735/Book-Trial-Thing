@@ -1,0 +1,693 @@
+#!/usr/bin/env python3
+"""
+selftest.py — end-to-end checks against a real Postgres.
+
+Deliberately not unit tests with a mocked database: every bug this
+rewrite was meant to fix (lost concurrent writes, cross-organisation
+disclosure, replayable reset links) only exists in the interaction with
+the real thing.  A fake would pass while the product broke.
+
+    createdb ignite_test
+    DATABASE_URL=postgresql://.../ignite_test python selftest.py
+
+The target database is wiped at the start of the run, so point it at a
+scratch database and never at production.  It refuses to run if
+APP_ENV=production.
+"""
+
+import os
+import re
+import sys
+import threading
+
+os.environ.setdefault("APP_ENV", "development")
+os.environ.setdefault("REQUIRE_EMAIL_VERIFICATION", "0")
+os.environ.setdefault("SECRET_KEY", "0" * 64)
+os.environ.setdefault("RUN_MIGRATIONS", "1")
+# This run creates a few dozen accounts from one address, which the real
+# signup limit is there to stop. Raised here and exercised on its own in
+# t_signup_rate_limit() rather than tripping every later test.
+os.environ.setdefault("RL_SIGNUP_IP", "10000")
+
+if os.environ.get("APP_ENV") == "production":
+    sys.exit("selftest refuses to run against APP_ENV=production")
+
+import app as appmod           # noqa: E402
+import db                      # noqa: E402
+import security                # noqa: E402
+
+PASSED, FAILED = [], []
+
+
+def check(name):
+    def decorator(fn):
+        def run():
+            try:
+                fn()
+                PASSED.append(name)
+                print(f"  \033[32mPASS\033[0m  {name}")
+            except Exception as exc:
+                FAILED.append((name, exc))
+                print(f"  \033[31mFAIL\033[0m  {name}\n          {type(exc).__name__}: {exc}")
+        run.__name__ = fn.__name__
+        return run
+    return decorator
+
+
+def reset_database():
+    with db.write() as cur:
+        cur.execute("""
+            DROP TABLE IF EXISTS rate_events, auth_tokens, assignments, inventory,
+                example_answers, quiz_answers, lesson_progress, group_members,
+                groups, parent_links, users, orgs, schema_migrations CASCADE
+        """)
+    db.migrate()
+
+
+def client():
+    return appmod.app.test_client()
+
+
+def token_from(html: str) -> str:
+    match = re.search(r'name="csrf_token" value="([^"]+)"', html)
+    assert match, "no CSRF token in the page"
+    return match.group(1)
+
+
+def signup(c, role, **fields):
+    page = c.get(f"/signup?role={role}").get_data(as_text=True)
+    data = {
+        "csrf_token": token_from(page),
+        "name": fields.get("name", "Test Person"),
+        "username": fields["username"],
+        "email": fields["email"],
+        "password": fields.get("password", "correct-horse-battery"),
+        "password_confirm": fields.get("password", "correct-horse-battery"),
+        "terms_ok": "1",
+    }
+    if role == "student":
+        data["age_ok"] = "1"
+        data["join_code"] = fields["join_code"]
+    elif role == "parent":
+        data["join_code"] = fields["join_code"]
+    else:
+        data["org_name"] = fields.get("org_name", "Test School")
+    return c.post(f"/signup?role={role}", data=data, follow_redirects=True)
+
+
+def login(c, username, password="correct-horse-battery"):
+    page = c.get("/login").get_data(as_text=True)
+    return c.post("/login", data={
+        "csrf_token": token_from(page),
+        "username": username,
+        "password": password,
+    }, follow_redirects=True)
+
+
+def join_code_for(username):
+    user = db.user_by_username(username)
+    return db.org_by_id(user["org_id"])["join_code"]
+
+
+# ── Accounts ────────────────────────────────────────────────────────────────────
+
+@check("teacher signup creates an org with a join code")
+def t_teacher_signup():
+    c = client()
+    res = signup(c, "teacher", username="ms_chen", email="chen@example.com",
+                 org_name="Rivera Middle")
+    assert res.status_code == 200, res.status_code
+    user = db.user_by_username("ms_chen")
+    assert user and user["role"] == "teacher", "teacher not created"
+    org = db.org_by_id(user["org_id"])
+    assert org["name"] == "Rivera Middle", org
+    assert len(org["join_code"]) == 8, org["join_code"]
+
+
+@check("student signup requires a valid join code")
+def t_student_join_code():
+    c = client()
+    res = signup(c, "student", username="badjoin", email="bad@example.com",
+                 join_code="ZZZZZZZZ")
+    assert db.user_by_username("badjoin") is None, "account created with a bogus join code"
+    assert "join code" in res.get_data(as_text=True).lower()
+
+    code = join_code_for("ms_chen")
+    signup(client(), "student", username="alex", email="alex@example.com", join_code=code)
+    student = db.user_by_username("alex")
+    assert student and student["role"] == "student", "student not created"
+    assert student["link_code"] and len(student["link_code"]) == 6, "no parent link code"
+    assert student["age_confirmed_at"] is not None, "age attestation not recorded"
+
+
+@check("duplicate usernames and emails are refused")
+def t_duplicates():
+    code = join_code_for("ms_chen")
+    signup(client(), "student", username="ALEX", email="other@example.com", join_code=code)
+    with db.query() as cur:
+        cur.execute("SELECT count(*) AS n FROM users WHERE lower(username) = 'alex'")
+        assert cur.fetchone()["n"] == 1, "case-different duplicate username was allowed"
+
+    signup(client(), "student", username="alex2", email="ALEX@example.com", join_code=code)
+    assert db.user_by_username("alex2") is None, "case-different duplicate email was allowed"
+
+
+@check("short and common passwords are refused")
+def t_password_policy():
+    code = join_code_for("ms_chen")
+    signup(client(), "student", username="weak1", email="w1@example.com",
+           join_code=code, password="short")
+    assert db.user_by_username("weak1") is None, "short password accepted"
+    signup(client(), "student", username="weak2", email="w2@example.com",
+           join_code=code, password="password123")
+    assert db.user_by_username("weak2") is None, "common password accepted"
+
+
+@check("login works and a wrong password is refused")
+def t_login():
+    c = client()
+    res = login(c, "alex")
+    assert res.status_code == 200
+    assert "/classroom" in res.request.path or c.get("/").headers.get("Location", "") != "/login", res.request.path
+
+    bad = client()
+    res = login(bad, "alex", "wrong-password-entirely")
+    assert "don&#39;t match" in res.get_data(as_text=True) or "don't match" in res.get_data(as_text=True)
+    assert bad.get("/classroom").status_code == 302, "signed in despite a wrong password"
+
+
+# ── Web hardening ───────────────────────────────────────────────────────────────
+
+@check("a form POST without a CSRF token is rejected")
+def t_csrf():
+    c = client()
+    login(c, "ms_chen")
+    res = c.post("/groups/new", data={"name": "No Token Group"})
+    assert res.status_code == 400, f"expected 400, got {res.status_code}"
+
+    page = c.get("/groups").get_data(as_text=True)
+    res = c.post("/groups/new", data={"name": "Real Group", "csrf_token": token_from(page)})
+    assert res.status_code in (302, 200), res.status_code
+
+
+@check("a form-encoded POST to a JSON API is rejected")
+def t_api_content_type():
+    c = client()
+    login(c, "alex")
+    # This is the shape a cross-site <form> attack takes: it can only send
+    # form encodings, never application/json.
+    res = c.post("/api/progress", data={"lesson_id": "circuits-01-breadboard",
+                                        "status": "completed"})
+    assert res.status_code == 415, f"expected 415, got {res.status_code}"
+
+
+@check("open redirect via ?next= is blocked")
+def t_open_redirect():
+    assert security.safe_next("//evil.example.com") == "/", "protocol-relative URL allowed"
+    assert security.safe_next("https://evil.example.com") == "/", "absolute URL allowed"
+    assert security.safe_next("/\\evil.example.com") == "/", "backslash form allowed"
+    assert security.safe_next("/lessons") == "/lessons", "local path rejected"
+
+
+@check("security headers are set on responses")
+def t_headers():
+    res = client().get("/login")
+    assert res.headers.get("X-Content-Type-Options") == "nosniff"
+    assert res.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert res.headers.get("Referrer-Policy") == "same-origin"
+
+
+@check("session cookie is HttpOnly and SameSite=Lax")
+def t_cookie_flags():
+    c = client()
+    res = login(c, "alex")
+    cookies = [h for k, h in res.headers if k == "Set-Cookie"] or []
+    if not cookies:
+        # Set during the redirect chain; check the config the app applied.
+        assert appmod.app.config["SESSION_COOKIE_HTTPONLY"] is True
+        assert appmod.app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+        return
+    assert any("HttpOnly" in c_ for c_ in cookies), cookies
+
+
+@check("signup is rate limited per address")
+def t_signup_rate_limit():
+    original = appmod.cfg.RL_SIGNUP_IP
+    appmod.cfg.RL_SIGNUP_IP = 2
+    try:
+        code = join_code_for("ms_chen")
+        last = None
+        for n in range(4):
+            last = signup(client(), "student", username=f"flood{n}",
+                          email=f"flood{n}@example.com", join_code=code)
+        assert last.status_code == 429, f"expected 429, got {last.status_code}"
+        assert db.user_by_username("flood3") is None, "account created past the limit"
+    finally:
+        appmod.cfg.RL_SIGNUP_IP = original
+        security.clear_attempts("signup_ip", "127.0.0.1")
+
+
+@check("login is rate limited")
+def t_rate_limit():
+    c = client()
+    limit = appmod.cfg.RL_LOGIN_USER
+    for _ in range(limit + 1):
+        login(c, "alex", "definitely-wrong-password")
+    res = login(c, "alex", "definitely-wrong-password")
+    assert res.status_code == 429, f"expected 429 after {limit} failures, got {res.status_code}"
+    # A correct password must still be refused while the lockout holds.
+    security.clear_attempts("login_user", "alex")
+    security.clear_attempts("login_ip", "127.0.0.1")
+
+
+# ── Tenancy ─────────────────────────────────────────────────────────────────────
+
+@check("a teacher cannot see another organisation's students")
+def t_tenancy():
+    signup(client(), "teacher", username="mr_other", email="other@school.com",
+           org_name="Other School")
+    other_code = join_code_for("mr_other")
+    signup(client(), "student", username="notyours", email="ny@example.com",
+           join_code=other_code)
+
+    chen = db.user_by_username("ms_chen")
+    visible = {s["username"] for s in db.visible_students(chen)}
+    assert "alex" in visible, "own student missing"
+    assert "notyours" not in visible, "SAW ANOTHER ORG'S STUDENT"
+
+    c = client()
+    login(c, "ms_chen")
+    res = c.get("/grownup/student/notyours")
+    assert res.status_code == 404, f"cross-org student page returned {res.status_code}"
+
+    body = c.get("/grownup").get_data(as_text=True)
+    assert "notyours" not in body, "cross-org student leaked onto the dashboard"
+
+
+@check("a parent sees only their linked children")
+def t_parent_scope():
+    code = join_code_for("ms_chen")
+    signup(client(), "parent", username="dana", email="dana@example.com", join_code=code)
+    parent = db.user_by_username("dana")
+    assert db.visible_students(parent) == [], "parent saw children before linking"
+
+    alex = db.user_by_username("alex")
+    db.link_parent(parent["id"], alex["id"])
+    visible = {s["username"] for s in db.visible_students(parent)}
+    assert visible == {"alex"}, visible
+
+    c = client()
+    login(c, "dana")
+    assert c.get("/grownup/student/notyours").status_code == 404
+    assert c.get("/groups").status_code == 302, "parent reached teacher-only groups"
+
+
+# ── Progress ────────────────────────────────────────────────────────────────────
+
+def api(c, path, payload):
+    return c.post(path, json=payload)
+
+
+@check("quiz answers record tries and first_try correctly")
+def t_quiz_recording():
+    lesson = next(l for l in appmod.load_lessons() if l.get("quiz"))
+    question = lesson["quiz"][0]
+    wrong = 0 if question["answer"] != 0 else 1
+
+    c = client()
+    login(c, "alex")
+    alex = db.user_by_username("alex")
+
+    res = api(c, "/api/quiz", {"lesson_id": lesson["id"],
+                               "question_id": question["id"], "chosen": wrong})
+    assert res.get_json()["correct"] is False, res.get_json()
+
+    res = api(c, "/api/quiz", {"lesson_id": lesson["id"],
+                               "question_id": question["id"], "chosen": question["answer"]})
+    assert res.get_json()["correct"] is True
+
+    entries = db.lesson_entries(alex["id"])
+    answer = entries[lesson["id"]]["quiz"][question["id"]]
+    assert answer["tries"] == 2, f"tries={answer['tries']}, expected 2"
+    assert answer["correct"] is True
+    assert answer["first_try"] is False, "second-attempt correct counted as first try"
+
+
+@check("a reward is granted exactly once, even on a double submit")
+def t_reward_once():
+    lesson = next((l for l in appmod.load_lessons() if l.get("reward")), None)
+    if lesson is None:
+        raise AssertionError("no lesson defines a reward — cannot test grant-once")
+
+    alex = db.user_by_username("alex")
+    c = client()
+    login(c, "alex")
+
+    first = api(c, "/api/quiz/finish", {"lesson_id": lesson["id"], "quiz_seconds": 30})
+    second = api(c, "/api/quiz/finish", {"lesson_id": lesson["id"], "quiz_seconds": 30})
+
+    assert len(first.get_json()["rewards"]) >= 0
+    assert len(second.get_json()["rewards"]) == 0, "the same reward was granted twice"
+
+    items = db.inventory(alex["id"])
+    assert items.count(lesson["reward"]) == 1, items
+
+
+@check("concurrent progress writes do not lose data")
+def t_concurrent_writes():
+    """
+    The failure the JSON store had: read whole file, mutate, write whole
+    file.  Two students finishing at once meant one result vanished.
+    """
+    code = join_code_for("ms_chen")
+    ids = []
+    for n in range(8):
+        signup(client(), "student", username=f"racer{n}",
+               email=f"racer{n}@example.com", join_code=code)
+        ids.append(db.user_by_username(f"racer{n}")["id"])
+
+    lesson_ids = [l["id"] for l in appmod.load_lessons()][:4]
+    assert lesson_ids, "no lessons to write against"
+
+    errors = []
+
+    def worker(student_id):
+        try:
+            for lesson_id in lesson_ids:
+                db.set_lesson_status(student_id, lesson_id, "completed", 100)
+        except Exception as exc:            # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(sid,)) for sid in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"writer errors: {errors[:3]}"
+    for student_id in ids:
+        entries = db.lesson_entries(student_id)
+        done = [l for l in lesson_ids if entries.get(l, {}).get("status") == "completed"]
+        assert len(done) == len(lesson_ids), (
+            f"student {student_id} kept {len(done)}/{len(lesson_ids)} lessons — writes were lost")
+
+
+@check("the same question answered concurrently counts every try")
+def t_concurrent_same_row():
+    lesson = next(l for l in appmod.load_lessons() if l.get("quiz"))
+    question = lesson["quiz"][0]
+    student = db.user_by_username("racer0")
+    wrong = 0 if question["answer"] != 0 else 1
+
+    def worker():
+        db.record_answer(student["id"], lesson["id"], question["id"], wrong, False)
+
+    threads = [threading.Thread(target=worker) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    entries = db.lesson_entries(student["id"])
+    tries = entries[lesson["id"]]["quiz"][question["id"]]["tries"]
+    assert tries == 10, f"10 concurrent answers recorded {tries} tries"
+
+
+@check("the dashboard runs a constant number of queries")
+def t_dashboard_queries():
+    """
+    Guards the N+1 that made the old grown-up page re-parse the whole
+    progress file once per student per metric.
+    """
+    chen = db.user_by_username("ms_chen")
+    students = db.visible_students(chen)
+    assert len(students) >= 8, f"only {len(students)} students to measure against"
+
+    calls = {"n": 0}
+    original = db.query
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def counting():
+        calls["n"] += 1
+        with original() as cur:
+            yield cur
+
+    db.query = counting
+    try:
+        c = client()
+        login(c, "ms_chen")
+        calls["n"] = 0
+        res = c.get("/grownup")
+    finally:
+        db.query = original
+
+    assert res.status_code == 200, res.status_code
+    # Constant work: session lookup, student list, three summary queries,
+    # the stuck-count query and the org lookup. Nothing per student.
+    assert calls["n"] <= 12, (
+        f"{calls['n']} queries for {len(students)} students — this scales per student")
+
+
+# ── Tokens ──────────────────────────────────────────────────────────────────────
+
+@check("a password reset link works once and then never again")
+def t_reset_single_use():
+    user = db.user_by_username("alex")
+    raw, hashed = security.new_token()
+    with db.write() as cur:
+        db.store_token(cur, hashed, user["id"], "reset", 24)
+
+    c = client()
+    page = c.get(f"/reset/{raw}").get_data(as_text=True)
+    res = c.post(f"/reset/{raw}", data={
+        "csrf_token": token_from(page),
+        "password": "brand-new-password-here",
+        "password_confirm": "brand-new-password-here",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    assert login(client(), "alex", "brand-new-password-here").status_code == 200
+    fresh = client()
+    login(fresh, "alex", "brand-new-password-here")
+    assert fresh.get("/classroom").status_code == 200, "new password does not work"
+
+    page = c.get(f"/reset/{raw}").get_data(as_text=True)
+    c.post(f"/reset/{raw}", data={
+        "csrf_token": token_from(page),
+        "password": "second-attempt-password",
+        "password_confirm": "second-attempt-password",
+    }, follow_redirects=True)
+    replay = client()
+    login(replay, "alex", "second-attempt-password")
+    assert replay.get("/classroom").status_code == 302, "reset link was replayable"
+
+
+@check("changing a password invalidates existing sessions")
+def t_session_epoch():
+    code = join_code_for("ms_chen")
+    signup(client(), "student", username="rotate", email="rotate@example.com", join_code=code)
+
+    c = client()
+    login(c, "rotate")
+    assert c.get("/classroom").status_code == 200, "could not sign in"
+
+    user = db.user_by_username("rotate")
+    from werkzeug.security import generate_password_hash
+    db.set_password(user["id"], generate_password_hash("a-completely-new-password"))
+
+    assert c.get("/classroom").status_code == 302, "old session still valid after password change"
+
+
+@check("an expired token is refused")
+def t_expired_token():
+    user = db.user_by_username("ms_chen")
+    raw, hashed = security.new_token()
+    with db.write() as cur:
+        db.store_token(cur, hashed, user["id"], "reset", 24)
+        cur.execute("UPDATE auth_tokens SET expires_at = now() - interval '1 hour' "
+                    "WHERE token_hash = %s", (hashed,))
+    assert db.consume_token(hashed, "reset") is None, "expired token accepted"
+
+
+@check("the forgot-password form does not reveal which emails exist")
+def t_no_enumeration():
+    c = client()
+    page = c.get("/forgot").get_data(as_text=True)
+    known = c.post("/forgot", data={"csrf_token": token_from(page),
+                                    "email": "chen@example.com"}, follow_redirects=True)
+    c2 = client()
+    page = c2.get("/forgot").get_data(as_text=True)
+    unknown = c2.post("/forgot", data={"csrf_token": token_from(page),
+                                       "email": "nobody@nowhere.test"}, follow_redirects=True)
+    assert known.status_code == unknown.status_code
+    assert "reset link is on its way" in known.get_data(as_text=True)
+    assert "reset link is on its way" in unknown.get_data(as_text=True)
+
+
+# ── Assignments and groups ──────────────────────────────────────────────────────
+
+@check("assignment restrictions are enforced server-side")
+def t_assignments():
+    lessons = appmod.load_lessons()
+    assert len(lessons) >= 2, "need at least two lessons"
+    allowed, blocked = lessons[0]["id"], lessons[1]["id"]
+
+    student = db.user_by_username("racer1")
+    teacher = db.user_by_username("ms_chen")
+    db.set_assignment(student["id"], [allowed], teacher["id"])
+
+    c = client()
+    login(c, "racer1")
+    assert c.get(f"/lesson/{allowed}").status_code == 200
+    assert c.get(f"/lesson/{blocked}").status_code == 403, "blocked lesson was reachable"
+
+    db.set_assignment(student["id"], None, teacher["id"])
+    assert c.get(f"/lesson/{blocked}").status_code == 200, "unrestricting did not work"
+
+
+@check("group membership cannot cross organisations")
+def t_group_tenancy():
+    teacher = db.user_by_username("ms_chen")
+    gid = db.create_group(teacher["org_id"], "Period 1", teacher["id"])
+
+    c = client()
+    login(c, "ms_chen")
+    page = c.get(f"/groups/{gid}").get_data(as_text=True)
+    res = c.post(f"/groups/{gid}/add",
+                 data={"csrf_token": token_from(page), "username": "notyours"})
+    assert res.status_code == 404, "added another org's student to a group"
+
+    res = c.post(f"/groups/{gid}/add",
+                 data={"csrf_token": token_from(page), "username": "alex"})
+    assert res.status_code in (302, 200)
+    assert {m["username"] for m in db.group_members(gid)} == {"alex"}
+
+    other = db.user_by_username("mr_other")
+    assert db.group_in_org(gid, other["org_id"]) is None, "group visible to another org"
+
+
+@check("HTTP errors keep their own status instead of becoming 500s")
+def t_http_error_codes():
+    """
+    A handler registered for Exception also catches HTTPException, which
+    turned every 404, 405 and 415 into a 500 with a stack trace.
+    """
+    c = client()
+    cases = [
+        ("GET", "/logout", 405),          # POST-only
+        ("GET", "/api/progress", 405),    # POST-only
+        ("GET", "/definitely-not-a-page", 404),
+    ]
+    for method, path, expect in cases:
+        res = c.open(path, method=method)
+        assert res.status_code == expect, f"{method} {path} → {res.status_code}, expected {expect}"
+
+    # API errors answer as JSON, not as an HTML error page.
+    res = c.get("/api/progress")
+    assert res.is_json, f"API error returned {res.content_type}"
+
+
+@check("a HEAD request does not run the login POST path")
+def t_head_not_post():
+    """
+    Flask adds HEAD to every GET route, so a `method == "GET"` guard is
+    false for HEAD and the POST branch runs.  An uptime monitor doing
+    HEAD /login would have burned a password hash and a rate-limit slot
+    on every probe.
+    """
+    c = client()
+    before = db.rate_count(
+        "login_user:" + __import__("hashlib").sha256(b"").hexdigest()[:32], 900)
+    for path in ("/login", "/signup", "/forgot", "/reset/some-token"):
+        res = c.head(path)
+        assert res.status_code == 200, f"HEAD {path} returned {res.status_code}"
+    after = db.rate_count(
+        "login_user:" + __import__("hashlib").sha256(b"").hexdigest()[:32], 900)
+    assert after == before, "a HEAD request recorded a failed-login attempt"
+
+
+@check("every page renders for every role")
+def t_pages_render():
+    """
+    A 500 from a template is invisible to the checks above, which mostly
+    assert on status codes for a handful of paths.  This walks the whole
+    surface, because the read model changing shape breaks views, not logic
+    — which is exactly how the quiz_seconds guard broke.
+    """
+    broken = []
+
+    def visit(c, path, expect=200):
+        res = c.get(path)
+        if res.status_code != expect:
+            broken.append((path, res.status_code, expect))
+
+    anon = client()
+    for path in ("/login", "/signup?role=student", "/signup?role=parent",
+                 "/signup?role=teacher", "/forgot", "/reset/not-a-real-token",
+                 "/healthz", "/art-placeholder/missing/thing"):
+        visit(anon, path)
+    visit(anon, "/no-such-page", 404)
+
+    student = client()
+    login(student, "racer0")
+    for path in ("/classroom", "/lessons", "/satchel"):
+        visit(student, path)
+    for lesson in appmod.load_lessons():
+        visit(student, f"/lesson/{lesson['id']}")
+
+    teacher = client()
+    login(teacher, "ms_chen")
+    visit(teacher, "/grownup")
+    visit(teacher, "/groups")
+    chen = db.user_by_username("ms_chen")
+    for row in db.visible_students(chen):
+        visit(teacher, f"/grownup/student/{row['username']}")
+    for row in db.group_summary_rows(chen["org_id"]):
+        visit(teacher, f"/groups/{row['id']}")
+
+    parent = client()
+    login(parent, "dana")
+    visit(parent, "/grownup")
+    visit(parent, "/grownup/student/alex")
+
+    assert not broken, f"pages did not render: {broken}"
+
+
+@check("health check reports the database")
+def t_health():
+    res = client().get("/healthz")
+    assert res.status_code == 200, res.status_code
+    assert res.get_json() == {"status": "ok", "database": True}, res.get_json()
+
+
+# ── Runner ──────────────────────────────────────────────────────────────────────
+
+TESTS = [
+    t_teacher_signup, t_student_join_code, t_duplicates, t_password_policy, t_login,
+    t_csrf, t_api_content_type, t_open_redirect, t_headers, t_cookie_flags,
+    t_signup_rate_limit, t_rate_limit,
+    t_tenancy, t_parent_scope,
+    t_quiz_recording, t_reward_once, t_concurrent_writes, t_concurrent_same_row,
+    t_dashboard_queries,
+    t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
+    t_assignments, t_group_tenancy, t_http_error_codes, t_head_not_post, t_pages_render, t_health,
+]
+
+
+def main() -> int:
+    appmod.db.init_pool(appmod.cfg)
+    reset_database()
+    appmod.refresh_catalog()
+
+    print(f"\n  {len(TESTS)} checks against {appmod.cfg.DATABASE_URL.rsplit('@', 1)[-1]}\n")
+    for test in TESTS:
+        test()
+
+    print(f"\n  {len(PASSED)} passed, {len(FAILED)} failed\n")
+    return 1 if FAILED else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

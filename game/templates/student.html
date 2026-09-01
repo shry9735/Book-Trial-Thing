@@ -8,6 +8,13 @@
     <div class="crumb"><a href="{{ url_for('grownup_home') }}">← All students</a></div>
     <h1>{{ student.name }}</h1>
   </div>
+  {% if is_teacher and student.link_code %}
+    {# A parent types this to attach themselves to this child. #}
+    <div class="student-code">
+      <div class="join-label">Student code</div>
+      <code class="join-code">{{ student.link_code }}</code>
+    </div>
+  {% endif %}
 </div>
 
 {# Plain-language verdict first. Everything below is the evidence for it. #}
@@ -41,7 +48,7 @@
     <div class="stat-lbl">Quiz Average</div>
   </div>
   <div class="panel stat-box">
-    <div class="stat-num">{{ summary.trinkets | length }}</div>
+    <div class="stat-num">{{ summary.trinkets }}</div>
     <div class="stat-lbl">Trinkets Earned</div>
   </div>
 </div>
@@ -138,6 +145,7 @@
     {% endif %}
   </div>
   <form method="POST" action="{{ url_for('student_assign', username=student.username) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <table class="data">
       <thead>
         <tr>
@@ -176,12 +184,14 @@
               {% else %}—{% endif %}
             </td>
             <td style="color:var(--ink-dim);font-size:0.78rem">
-              {% if row.progress.quiz_seconds is defined %}
-                {{ (row.progress.quiz_seconds // 60) }}m {{ '%02d' | format(row.progress.quiz_seconds % 60) }}s
+              {% set secs = row.progress.get('quiz_seconds') %}
+              {% if secs %}
+                {{ (secs // 60) }}m {{ '%02d' | format(secs % 60) }}s
               {% else %}—{% endif %}
             </td>
             <td style="color:var(--ink-dim);font-size:0.78rem">
-              {{ row.progress.updated[:16] | replace('T', ' ') if row.progress.updated is defined else '—' }}
+              {% set when = row.progress.get('updated') %}
+              {{ when[:16] | replace('T', ' ') if when else '—' }}
             </td>
           </tr>
         {% endfor %}

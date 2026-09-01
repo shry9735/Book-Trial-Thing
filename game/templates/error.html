@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ code }} — Ignite Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body>
+
+<div class="login-stage">
+  <div class="login-box">
+    <div class="login-crest">
+      <div class="mark">🔥</div>
+      <div class="title">Ignite Academy</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        {% if code == 404 %}Nothing here
+        {% elif code == 403 %}Not your page
+        {% elif code == 429 %}Slow down a moment
+        {% else %}Something went wrong{% endif %}
+      </div>
+      <div class="login-form">
+        <p class="login-blurb">
+          {% if code == 404 %}
+            That page doesn't exist, or isn't yours to see.
+          {% elif code == 429 %}
+            Too many tries in a row. Wait a few minutes and have another go.
+          {% elif code == 500 %}
+            That's on us. The problem has been logged — try again in a moment.
+          {% else %}
+            {{ message or "That request couldn't be completed." }}
+          {% endif %}
+        </p>
+        <a class="btn block lg" href="{{ url_for('home') }}">Back to safety</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

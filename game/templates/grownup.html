@@ -10,6 +10,42 @@
   {% endif %}
 </div>
 
+{# A teacher hands the join code out; students and parents type it at
+   sign-up. Rotating it is a support call away, so it lives on the page
+   they already look at. #}
+{% if is_teacher and org %}
+  <div class="panel join-panel">
+    <div class="join-row">
+      <div>
+        <div class="join-label">Class join code</div>
+        <code class="join-code">{{ org.join_code }}</code>
+      </div>
+      <div class="join-note">
+        Students and parents need this to sign up for <b>{{ org.name }}</b>.
+        Each student also gets their own code, shown on their page, which is
+        what links a parent to that child.
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if not is_teacher %}
+  <div class="panel join-panel">
+    <form class="join-row" method="POST" action="{{ url_for('link_child') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div>
+        <div class="join-label">Add a child</div>
+        <input type="text" name="link_code" maxlength="6" placeholder="Student code"
+               style="text-transform:uppercase" required />
+      </div>
+      <button type="submit" class="btn sm">Link</button>
+      <div class="join-note">
+        Ask their teacher for the six-character student code.
+      </div>
+    </form>
+  </div>
+{% endif %}
+
 {# The whole point of this page: if something needs doing, it's at the top
    in plain words. If nothing does, that's stated too — so a quick look is
    genuinely enough. #}
@@ -82,7 +118,7 @@
         <div class="kid-bar"><div style="width:{{ card.percent }}%"></div></div>
 
         <div class="kid-foot">
-          <span>🎒 {{ card.trinkets | length }} trinket{{ '' if card.trinkets | length == 1 else 's' }}</span>
+          <span>🎒 {{ card.trinkets }} trinket{{ '' if card.trinkets == 1 else 's' }}</span>
           <span class="kid-foot-sep">·</span>
           <span>
             {% if card.quiet is none %}Not started

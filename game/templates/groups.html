@@ -29,6 +29,7 @@
   <div class="panel-head teal">New Group</div>
   <div style="padding:16px">
     <form class="inline-form" method="POST" action="{{ url_for('group_create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="text" name="name" placeholder="Group name — e.g. Tuesday Robotics" required />
       <button type="submit" class="btn teal">Create Group</button>
     </form>

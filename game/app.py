@@ -2,19 +2,35 @@
 """
 app.py — Ignite Academy game server.
 
-Two account roles:
+Three account roles:
 
     student  → classroom → lessons → quiz → trinkets
     parent   → plain-language progress, no digging required
     teacher  → same view as parent, plus group management
 
+State lives in Postgres (see db.py).  Configuration comes from the
+environment (see config.py).  Nothing durable is written to local disk,
+so the process is disposable and can be run N-up behind a load balancer.
+
 Usage:
     pip install -r ../requirements.txt
-    python app.py
-    python app.py --host 0.0.0.0 --port 5000
+    export DATABASE_URL=postgresql://ignite:ignite@localhost:5432/ignite
+    python app.py                     # development server
+    python app.py --migrate-only      # apply schema, then exit
+    gunicorn -c ../gunicorn.conf.py wsgi:app     # production
 
-Default accounts are seeded into data/users.json on first run.
-See README.md for credentials.
+See ../DEPLOY.md for a real deployment.
+
+──────────────────────────────────────────────────────
+ORGANISATIONS ARE THE PRIVACY BOUNDARY
+──────────────────────────────────────────────────────
+Every account belongs to exactly one organisation.  A teacher sees the
+students in their own organisation; a parent sees only the children
+linked to them by link code.  No screen ever enumerates across that line
+— see db.visible_students(), which is the single place the rule lives.
+
+Signing up as a teacher creates an organisation and a join code.
+Students and parents join an existing one with that code.
 
 ──────────────────────────────────────────────────────
 LESSONS ARE SELF-CONTAINED PACKAGES
@@ -34,8 +50,9 @@ lesson can define `window.player`, throw on load, or capture every key
 event, and no other lesson can observe it.  There is no shared bundle to
 break and no load order to get wrong.
 
-Lessons talk to the host only through postMessage, via the kit — see
-static/kit/lesson-kit.js.
+The catalog is read from disk once and cached — see load_lessons().  It
+used to be re-scanned and re-parsed on every single request, including
+once per answered quiz question.
 
 ──────────────────────────────────────────────────────
 GRAPHICS ARE SHARED, CODE IS NOT
@@ -61,38 +78,45 @@ RAG index:
     python ../make_epub.py content/ -t "Ignite Academy" -o ignite.epub
 """
 
+from __future__ import annotations
+
 import argparse
+import functools
 import json
+import logging
+import os
 import random
-import re
-import secrets
 import sys
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
     from flask import (
-        Flask, abort, flash, jsonify, redirect, render_template,
+        Flask, abort, flash, g, jsonify, redirect, render_template,
         request, send_from_directory, session, url_for,
     )
+    from werkzeug.exceptions import HTTPException
     from werkzeug.security import check_password_hash, generate_password_hash
-except ImportError:
-    sys.exit("Missing dependency: run  pip install -r ../requirements.txt")
+    import psycopg
+except ImportError as exc:
+    sys.exit(f"Missing dependency ({exc.name}): run  pip install -r ../requirements.txt")
+
+import db
+import emailer
+import security
+from config import validate as load_config
+from logsetup import configure_logging
 
 
 BASE_DIR    = Path(__file__).parent
-DATA_DIR    = BASE_DIR / "data"
 ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
+DATA_DIR    = BASE_DIR / "data"       # content only: item and classroom catalogs
 
-USERS_FILE       = DATA_DIR / "users.json"
-GROUPS_FILE      = DATA_DIR / "groups.json"
-PROGRESS_FILE    = DATA_DIR / "progress.json"
-ITEMS_FILE       = DATA_DIR / "items.json"
-CLASSROOM_FILE   = DATA_DIR / "classroom.json"
-ASSIGNMENTS_FILE = DATA_DIR / "assignments.json"
-SECRET_FILE      = DATA_DIR / "secret_key"
+ITEMS_FILE     = DATA_DIR / "items.json"
+CLASSROOM_FILE = DATA_DIR / "classroom.json"
 
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
@@ -102,62 +126,53 @@ STAGE_H = 600
 
 # A student is "quiet" after this many days with no activity
 QUIET_DAYS = 5
-# A question missed this many times counts as a sticking point
-STUCK_TRIES = 2
 
-SEED_USERS = {
-    "student":  {"password": "spark123",  "role": "student", "name": "Alex Rivera",  "avatar": "characters/avatar-student"},
-    "student2": {"password": "spark123",  "role": "student", "name": "Jamie Chen",   "avatar": "characters/avatar-student2"},
-    "teacher":  {"password": "ignite123", "role": "teacher", "name": "Ms. Chen",     "avatar": "characters/avatar-teacher"},
-    "parent":   {"password": "ignite123", "role": "parent",  "name": "Dana Rivera",  "avatar": "characters/avatar-parent",
-                 "children": ["student"]},
-}
+log = logging.getLogger("ignite.app")
+
+cfg = load_config()
+configure_logging(cfg)
 
 app = Flask(__name__)
+app.secret_key = cfg.SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,          # JavaScript can never read it
+    SESSION_COOKIE_SECURE=cfg.COOKIE_SECURE,
+    # Lax, not Strict: a student clicking the emailed verification link
+    # should land signed in.  Lax still withholds the cookie from every
+    # cross-site POST, which is what CSRF needs.
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_NAME="ignite_session",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=cfg.SESSION_DAYS),
+    MAX_CONTENT_LENGTH=1 * 1024 * 1024,    # no request body needs to be bigger
+    SEND_FILE_MAX_AGE_DEFAULT=cfg.STATIC_MAX_AGE,
+    JSON_SORT_KEYS=False,
+    TRAP_HTTP_EXCEPTIONS=False,
+)
 
 
-# ── JSON store ──────────────────────────────────────────────────────────────────
+# ── Read-only content catalogs (files, not state) ───────────────────────────────
+#
+# Lessons, items and the classroom layout are content: they ship with the
+# code and change on deploy, not at runtime.  They are read once and held
+# in memory behind a lock, because the previous version re-scanned the
+# lessons directory and re-parsed every manifest on every request — once
+# per answered quiz question, among others.
 
-def read_json(path: Path, default):
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            print(f"Warning: could not parse {path.name}, using default.", file=sys.stderr)
-    return default
-
-
-def write_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+_catalog_lock = threading.Lock()
+_catalog: dict[str, object] = {}
 
 
-def load_users()      -> dict: return read_json(USERS_FILE,      {})
-def load_groups()     -> dict: return read_json(GROUPS_FILE,     {})
-def load_progress()   -> dict: return read_json(PROGRESS_FILE,   {})
-def load_items()      -> dict: return read_json(ITEMS_FILE,      {})
-def load_assignments() -> dict: return read_json(ASSIGNMENTS_FILE, {})
+def _read_json_file(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.exception("could not parse %s, using default", path.name)
+        return default
 
 
-def assigned_lessons(username: str, catalog: list[dict]) -> list[dict]:
-    """
-    A teacher or parent can narrow a student's lesson menu (see
-    /grownup/student/<username>/assign). No entry for a student means
-    nothing has been restricted yet, so everything is available.
-    """
-    assigned = load_assignments().get(username)
-    if assigned is None:
-        return catalog
-    return [l for l in catalog if l["id"] in assigned]
-
-
-def load_classroom() -> dict:
-    return read_json(CLASSROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
-
-
-# ── Lesson discovery ────────────────────────────────────────────────────────────
-
-def load_lessons() -> list[dict]:
+def _build_lessons() -> list[dict]:
     """
     Scan lessons/*/lesson.json.  The folder name is the lesson id, so
     adding a lesson is dropping a folder in — nothing to register.
@@ -172,25 +187,75 @@ def load_lessons() -> list[dict]:
         manifest = folder / "lesson.json"
         if not folder.is_dir() or not manifest.is_file():
             continue
-        data = read_json(manifest, None)
+        data = _read_json_file(manifest, None)
         if not isinstance(data, dict):
-            print(f"Warning: skipping {folder.name} — unreadable lesson.json", file=sys.stderr)
+            log.warning("skipping %s — unreadable lesson.json", folder.name)
             continue
         data["id"] = folder.name
-        data.setdefault("title",   folder.name)
-        data.setdefault("subject", "General")
-        data.setdefault("type",    "interactive")
-        data.setdefault("order",   999)
-        data.setdefault("quiz",    [])
+        data.setdefault("title",    folder.name)
+        data.setdefault("subject",  "General")
+        data.setdefault("type",     "interactive")
+        data.setdefault("order",    999)
+        data.setdefault("quiz",     [])
         data.setdefault("examples", [])
-        data.setdefault("thumb",   f"lessons/{folder.name}")
+        data.setdefault("thumb",    f"lessons/{folder.name}")
         found.append(data)
 
     return sorted(found, key=lambda l: (l["order"], l["id"]))
 
 
+def refresh_catalog() -> None:
+    """Re-read every content file.  Called at boot and by --reload-catalog."""
+    lessons = _build_lessons()
+    with _catalog_lock:
+        _catalog["lessons"] = lessons
+        _catalog["by_id"] = {l["id"]: l for l in lessons}
+        _catalog["question_counts"] = {l["id"]: len(l.get("quiz", [])) for l in lessons}
+        # Two parallel lists of every (lesson, question) pair still in the
+        # catalog.  Postgres unnests them to filter answers to questions
+        # that actually exist — see db.unresolved_counts().
+        pairs = [(l["id"], q["id"]) for l in lessons for q in l.get("quiz", [])]
+        _catalog["valid_pairs"] = ([p[0] for p in pairs], [p[1] for p in pairs])
+        _catalog["items"] = _read_json_file(ITEMS_FILE, {})
+        _catalog["classroom"] = _read_json_file(
+            CLASSROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
+
+
+def load_lessons() -> list[dict]:
+    return _catalog["lessons"]
+
+
 def get_lesson(lesson_id: str) -> dict | None:
-    return next((l for l in load_lessons() if l["id"] == lesson_id), None)
+    return _catalog["by_id"].get(lesson_id)
+
+
+def load_items() -> dict:
+    return _catalog["items"]
+
+
+def load_classroom() -> dict:
+    return _catalog["classroom"]
+
+
+def assigned_lessons(student_id: int, catalog: list[dict]) -> list[dict]:
+    """
+    A teacher or parent can narrow a student's lesson menu (see
+    /grownup/student/<username>/assign).  No assignment row means nothing
+    has been restricted yet, so everything is available.
+    """
+    assigned = db.assigned_lesson_ids(student_id)
+    if assigned is None:
+        return catalog
+    allowed = set(assigned)
+    return [l for l in catalog if l["id"] in allowed]
+
+
+# ── Static asset routes ─────────────────────────────────────────────────────────
+
+def _cached(response):
+    """Content-addressed enough for a long max-age; it only changes on deploy."""
+    response.headers["Cache-Control"] = f"public, max-age={cfg.STATIC_MAX_AGE}"
+    return response
 
 
 @app.route("/kit/<path:filename>")
@@ -202,7 +267,7 @@ def kit_asset(filename: str):
         <link rel="stylesheet" href="/kit/lesson-kit.css">
         <script src="/kit/lesson-kit.js"></script>
     """
-    return send_from_directory(BASE_DIR / "static" / "kit", filename)
+    return _cached(send_from_directory(BASE_DIR / "static" / "kit", filename))
 
 
 @app.route("/lessons/<lesson_id>/<path:filename>")
@@ -211,44 +276,10 @@ def lesson_asset(lesson_id: str, filename: str):
     Serve a lesson package's own files.  Each lesson is sandboxed to its
     own folder, so one lesson cannot reach into another's assets.
     """
-    folder = LESSONS_DIR / lesson_id
-    if not (folder / "lesson.json").is_file():
+    if not get_lesson(lesson_id):
         abort(404)
-    return send_from_directory(folder, filename)
+    return _cached(send_from_directory(LESSONS_DIR / lesson_id, filename))
 
-
-# ── First-run setup ─────────────────────────────────────────────────────────────
-
-def seed_users() -> None:
-    if USERS_FILE.exists():
-        return
-    users = {}
-    for username, info in SEED_USERS.items():
-        entry = {
-            "password_hash": generate_password_hash(info["password"]),
-            "role":          info["role"],
-            "name":          info["name"],
-            "avatar":        info["avatar"],
-        }
-        if "children" in info:
-            entry["children"] = info["children"]
-        users[username] = entry
-    write_json(USERS_FILE, users)
-    print(f"  Seeded {len(users)} account(s) → {USERS_FILE.relative_to(BASE_DIR)}")
-    for username, info in SEED_USERS.items():
-        print(f"    {info['role']:8} {username} / {info['password']}")
-
-
-def load_secret_key() -> str:
-    if SECRET_FILE.exists():
-        return SECRET_FILE.read_text(encoding="utf-8").strip()
-    key = secrets.token_hex(32)
-    SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SECRET_FILE.write_text(key, encoding="utf-8")
-    return key
-
-
-# ── Art resolution (one shared namespace for every lesson) ──────────────────────
 
 def find_art(name: str) -> str | None:
     for ext in ART_EXTS:
@@ -257,10 +288,17 @@ def find_art(name: str) -> str | None:
     return None
 
 
+def static_url(filename: str) -> str:
+    """Route static files through the CDN when one is configured."""
+    if cfg.CDN_URL:
+        return f"{cfg.CDN_URL}/static/{filename}"
+    return url_for("static", filename=filename)
+
+
 def art(name: str) -> str:
     found = find_art(name)
     if found:
-        return url_for("static", filename=found)
+        return static_url(found)
     return url_for("art_placeholder", name=name)
 
 
@@ -275,7 +313,8 @@ def media(source: str) -> str:
 
 
 app.jinja_env.globals.update(
-    art=art, art_exists=art_exists, media=media,
+    art=art, art_exists=art_exists, media=media, static_url=static_url,
+    csrf_token=security.csrf_token,
     STAGE_W=STAGE_W, STAGE_H=STAGE_H,
 )
 
@@ -291,7 +330,7 @@ def art_url(name: str):
     """
     found = find_art(name)
     if found:
-        return redirect(url_for("static", filename=found))
+        return redirect(static_url(found))
     return redirect(url_for("art_placeholder", name=name))
 
 
@@ -319,7 +358,8 @@ def art_placeholder(name: str):
     .webp .png .jpg .gif or .svg — any of these work
   </text>
 </svg>"""
-    return app.response_class(svg, mimetype="image/svg+xml")
+    response = app.response_class(svg, mimetype="image/svg+xml")
+    return _cached(response)
 
 
 # ── Reading content (shared with make_epub.py) ──────────────────────────────────
@@ -346,37 +386,92 @@ def render_content(source: str) -> str:
     return markdown.markdown(raw, extensions=["extra", "tables"])
 
 
+# ── Request lifecycle ───────────────────────────────────────────────────────────
+
+@app.before_request
+def _guard():
+    security.check_csrf()
+
+
+@app.after_request
+def _headers(response):
+    return security.apply_headers(response, cfg)
+
+
+@app.teardown_appcontext
+def _teardown(exception=None):
+    g.pop("_user", None)
+
+
+@app.route("/healthz")
+def healthz():
+    """
+    Liveness plus readiness.  A load balancer that only checks whether the
+    port answers will happily route traffic to a process that has lost its
+    database, so this actually round-trips a query.
+    """
+    ok = db.healthy()
+    return jsonify({"status": "ok" if ok else "degraded", "database": ok}), (200 if ok else 503)
+
+
 # ── Auth ────────────────────────────────────────────────────────────────────────
 
 def current_user() -> dict | None:
-    username = session.get("username")
-    if not username:
-        return None
-    user = load_users().get(username)
-    if not user:
-        session.clear()
-        return None
-    return {**user, "username": username}
+    """
+    The signed-in account, or None.
+
+    The session carries the user id and the session epoch it was issued
+    under.  Changing a password bumps the epoch in the database, which
+    retroactively invalidates every cookie issued before it — so a
+    password reset actually kicks an attacker out instead of leaving their
+    stolen cookie valid for a fortnight.
+    """
+    if "_user" in g:
+        return g._user
+
+    g._user = None
+    uid = session.get("uid")
+    if uid:
+        try:
+            user = db.user_by_id(uid)
+        except Exception:
+            log.exception("could not load session user")
+            return None
+        if user and user["session_epoch"] == session.get("epoch"):
+            g._user = user
+        else:
+            session.clear()
+    return g._user
+
+
+def start_session(user: dict) -> None:
+    session.clear()
+    session["uid"] = user["id"]
+    session["epoch"] = user["session_epoch"]
+    session.permanent = True
+    security.rotate_csrf_token()
 
 
 def login_required(*roles: str):
     """Require a session, and optionally membership of one of `roles`."""
     def decorator(fn):
+        @functools.wraps(fn)
         def wrapper(*fargs, **fkwargs):
             user = current_user()
             if not user:
-                return redirect(url_for("login", next=request.path))
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Not signed in."}), 401
+                return redirect(url_for("login", next=request.full_path.rstrip("?")))
             if roles and user["role"] not in roles:
                 return redirect(url_for("home"))
             return fn(*fargs, **fkwargs)
-        wrapper.__name__ = fn.__name__
         return wrapper
     return decorator
 
 
 @app.context_processor
 def inject_user():
-    return {"user": current_user()}
+    return {"user": current_user(), "config": cfg}
 
 
 @app.route("/")
@@ -391,124 +486,268 @@ def home():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        user     = load_users().get(username)
+    if request.method != "POST":
+        if current_user():
+            return redirect(url_for("home"))
+        return render_template("login.html", role_tab=request.args.get("role", "student"))
 
-        if not user or not check_password_hash(user["password_hash"], password):
-            flash("That username and password don't match.", "error")
-            return render_template("login.html",
-                                   role_tab=request.form.get("role_tab", "student"),
-                                   username=username)
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    role_tab = request.form.get("role_tab", "student")
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-        session["username"] = username
-        nxt = request.args.get("next")
-        if nxt and nxt.startswith("/"):
-            return redirect(nxt)
-        return redirect(url_for("home"))
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        return render_template("login.html", role_tab=role_tab, username=username), status
 
-    if current_user():
-        return redirect(url_for("home"))
-    return render_template("login.html", role_tab=request.args.get("role", "student"))
+    # Two independent buckets: one stops a single account being ground
+    # down, the other stops one host spraying many accounts.
+    if (security.over_limit("login_user", username, cfg.RL_LOGIN_USER, cfg.RL_WINDOW)
+            or security.over_limit("login_ip", ip, cfg.RL_LOGIN_IP, cfg.RL_WINDOW)):
+        log.warning("login rate limited", extra={"username": username})
+        return refuse("Too many attempts. Wait a few minutes and try again.", 429)
+
+    user = db.user_by_username(username)
+
+    # The password is checked even when the username is unknown, against a
+    # throwaway hash, so a wrong username and a wrong password take the
+    # same time and the response cannot be used to enumerate accounts.
+    stored = user["password_hash"] if user else _DUMMY_HASH
+    ok = check_password_hash(stored, password)
+
+    if not user or not ok:
+        security.record_attempt("login_user", username)
+        security.record_attempt("login_ip", ip)
+        log.info("login failed", extra={"username": username})
+        return refuse("That username and password don't match.")
+
+    if cfg.REQUIRE_EMAIL_VERIFICATION and not user["email_verified"]:
+        return refuse("Confirm your email address first — check your inbox "
+                      "for the link, or request a new one below.")
+
+    security.clear_attempts("login_user", username)
+    start_session(user)
+    db.touch_login(user["id"])
+    log.info("login ok", extra={"username": user["username"], "role": user["role"]})
+    return redirect(security.safe_next(request.args.get("next"), url_for("home")))
 
 
-@app.route("/logout")
+# Compared against when the username does not exist, purely so the timing
+# of a failed login does not reveal which of the two was wrong.
+_DUMMY_HASH = generate_password_hash("timing-equalizer-not-a-real-password")
+
+
+@app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
 
-# ── Progress ────────────────────────────────────────────────────────────────────
+# ── Signup ──────────────────────────────────────────────────────────────────────
 
-def blank_record() -> dict:
-    return {"items": [], "lessons": {}}
-
-
-def student_progress(username: str) -> dict:
-    return {**blank_record(), **load_progress().get(username, {})}
-
-
-def _save_record(username: str, record: dict) -> None:
-    progress = load_progress()
-    progress[username] = record
-    write_json(PROGRESS_FILE, progress)
-
-
-def set_lesson_status(username: str, lesson_id: str, status: str,
-                      score: int | None = None,
-                      quiz_seconds: int | None = None) -> dict:
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
     """
-    Record lesson status. The reward item is granted once. quiz_seconds is
-    logged for the grown-up view only — it is never sent back to the quiz
-    itself, so the student never sees a timer or knows it's being kept.
+    Self-serve registration for all three roles.
+
+    A teacher signing up creates an organisation and receives its join
+    code.  Students and parents must present that code, so an account
+    cannot appear inside a school nobody invited it to.
     """
-    record = student_progress(username)
-    entry  = record["lessons"].get(lesson_id, {})
+    role = (request.values.get("role") or "student").strip().lower()
+    if role not in ("student", "parent", "teacher"):
+        role = "student"
 
-    was_complete = entry.get("status") == "completed"
-    entry["status"]  = status
-    entry["updated"] = datetime.now().isoformat(timespec="seconds")
-    if score is not None:
-        entry["score"] = max(int(score), int(entry.get("score", 0)))
-    if quiz_seconds is not None:
-        entry["quiz_seconds"] = quiz_seconds
+    if request.method != "POST":
+        if current_user():
+            return redirect(url_for("home"))
+        return render_template("signup.html", role=role, form={})
 
-    if status == "completed" and not was_complete:
-        lesson = get_lesson(lesson_id)
-        if lesson:
-            reward = lesson.get("reward")
-            if reward and reward not in record["items"]:
-                record["items"].append(reward)
+    form = {k: request.form.get(k, "").strip() for k in
+            ("name", "username", "email", "join_code", "org_name")}
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-    record["lessons"][lesson_id] = entry
-    _save_record(username, record)
-    return record
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        return render_template("signup.html", role=role, form=form), status
+
+    if security.over_limit("signup_ip", ip, cfg.RL_SIGNUP_IP, cfg.RL_WINDOW):
+        return refuse("Too many sign-ups from this connection. Try again later.", 429)
+
+    if not form["name"]:
+        return refuse("Enter the name you'd like shown.")
+    for problem in (security.username_problem(form["username"]),
+                    security.email_problem(form["email"]),
+                    security.password_problem(password, confirm)):
+        if problem:
+            return refuse(problem)
+
+    # The age gate. Under 13, US COPPA applies to a service collecting
+    # this kind of data and this app is not built to meet it — see
+    # DEPLOY.md. The attestation and its timestamp are what we keep.
+    if role == "student" and not request.form.get("age_ok"):
+        return refuse(f"Confirm you are {cfg.MIN_AGE} or older to create a student account.")
+    if not request.form.get("terms_ok"):
+        return refuse("Accept the terms to continue.")
+
+    if role == "teacher":
+        if not form["org_name"]:
+            return refuse("Name your school, club or class.")
+        org = None
+    else:
+        org = db.org_by_join_code(form["join_code"])
+        if not org:
+            return refuse("That join code doesn't match any class. Check it with your teacher.")
+
+    # Checked up front for a friendly message; the unique indexes below are
+    # what actually prevent a duplicate when two people race.
+    if db.username_taken(form["username"]):
+        return refuse("That username is taken.")
+    if db.email_taken(form["email"]):
+        return refuse("There's already an account with that email. Try signing in.")
+
+    verified = not cfg.REQUIRE_EMAIL_VERIFICATION
+    try:
+        with db.write() as cur:
+            if role == "teacher":
+                org = db.create_org(cur, form["org_name"])
+            user = db.create_user(
+                cur,
+                org_id=org["id"],
+                username=form["username"],
+                email=form["email"],
+                password_hash=generate_password_hash(password),
+                role=role,
+                name=form["name"],
+                avatar=f"characters/avatar-{role}",
+                email_verified=verified,
+                age_confirmed=(role == "student"),
+                terms_accepted=True,
+            )
+            raw_token, token_hash = security.new_token()
+            db.store_token(cur, token_hash, user["id"], "verify", cfg.TOKEN_HOURS)
+    except psycopg.errors.UniqueViolation:
+        return refuse("That username or email was just taken. Try another.")
+
+    security.record_attempt("signup_ip", ip)
+    emailer.send_verification(
+        cfg, form["email"], form["name"],
+        f"{cfg.BASE_URL}{url_for('verify_email', token=raw_token)}")
+    log.info("signup", extra={"username": user["username"], "role": role, "org_id": org["id"]})
+
+    if role == "teacher":
+        flash(f"Class created. Your join code is {org['join_code']} — "
+              "students and parents need it to sign up.", "success")
+
+    if cfg.REQUIRE_EMAIL_VERIFICATION:
+        flash("Check your email for a confirmation link.", "success")
+        return redirect(url_for("login", role=role))
+
+    start_session(user)
+    return redirect(url_for("home"))
 
 
-def record_answer(username: str, lesson_id: str, question_id: str,
-                  chosen: int, correct: bool) -> dict:
-    """
-    Store one quiz answer.  Every attempt is kept, because "what did they
-    get wrong, and how many tries did it take" is the question a parent
-    actually wants answered.
-    """
-    record = student_progress(username)
-    entry  = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
-    quiz   = entry.setdefault("quiz", {})
-    q      = quiz.setdefault(question_id, {"tries": 0, "correct": False})
+@app.route("/verify/<token>")
+def verify_email(token: str):
+    user = db.consume_token(security.hash_token(token), "verify")
+    if not user:
+        flash("That confirmation link has expired or already been used.", "error")
+        return redirect(url_for("login"))
 
-    q["tries"]   = q.get("tries", 0) + 1
-    q["chosen"]  = chosen
-    q["correct"] = bool(correct)
-    if correct and "first_try" not in q:
-        q["first_try"] = q["tries"] == 1
+    with db.write() as cur:
+        db.mark_verified(cur, user["id"])
 
-    entry["updated"] = datetime.now().isoformat(timespec="seconds")
-    _save_record(username, record)
-    return record
+    start_session(user)
+    flash("Email confirmed — you're all set.", "success")
+    return redirect(url_for("home"))
 
 
-def record_example(username: str, lesson_id: str, example_id: str,
-                    chosen: int, correct: bool) -> None:
-    """
-    Store one practice-example attempt. Unlike record_answer(), this is
-    never graded back to the student — see /api/example. It exists purely
-    so a teacher or parent can see how practice is actually going.
-    """
-    record = student_progress(username)
-    entry    = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
-    examples = entry.setdefault("examples", {})
+@app.route("/verify/resend", methods=["POST"])
+def resend_verification():
+    email = request.form.get("email", "").strip()
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-    examples[example_id] = {
-        "chosen":  chosen,
-        "correct": bool(correct),
-        "tries":   examples.get(example_id, {}).get("tries", 0) + 1,
-        "updated": datetime.now().isoformat(timespec="seconds"),
-    }
-    entry["updated"] = examples[example_id]["updated"]
-    _save_record(username, record)
+    if not security.over_limit("resend_ip", ip, cfg.RL_RESET_IP, cfg.RL_WINDOW):
+        security.record_attempt("resend_ip", ip)
+        user = db.user_by_email(email)
+        if user and not user["email_verified"]:
+            with db.write() as cur:
+                db.invalidate_tokens(cur, user["id"], "verify")
+                raw_token, token_hash = security.new_token()
+                db.store_token(cur, token_hash, user["id"], "verify", cfg.TOKEN_HOURS)
+            emailer.send_verification(
+                cfg, user["email"], user["name"],
+                f"{cfg.BASE_URL}{url_for('verify_email', token=raw_token)}")
 
+    # Same answer either way — see forgot_password().
+    flash("If that address needs confirming, a new link is on its way.", "success")
+    return redirect(url_for("login"))
+
+
+# ── Password reset ──────────────────────────────────────────────────────────────
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    if request.method != "POST":
+        return render_template("forgot.html")
+
+    email = request.form.get("email", "").strip()
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
+
+    if not security.over_limit("reset_ip", ip, cfg.RL_RESET_IP, cfg.RL_WINDOW):
+        security.record_attempt("reset_ip", ip)
+        user = db.user_by_email(email)
+        if user:
+            with db.write() as cur:
+                # Asking again retires the previous link, so a forwarded or
+                # cached old email cannot be used later.
+                db.invalidate_tokens(cur, user["id"], "reset")
+                raw_token, token_hash = security.new_token()
+                db.store_token(cur, token_hash, user["id"], "reset", cfg.TOKEN_HOURS)
+            emailer.send_reset(
+                cfg, user["email"], user["name"],
+                f"{cfg.BASE_URL}{url_for('reset_password', token=raw_token)}")
+            log.info("password reset requested", extra={"username": user["username"]})
+
+    # Deliberately identical whether or not the address exists: a
+    # different message here turns this form into a way to test which
+    # email addresses have accounts.
+    flash("If that address has an account, a reset link is on its way.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token: str):
+    if request.method != "POST":
+        # Not consumed yet — that happens on submit, so landing on the page
+        # (or a mail client prefetching it) does not burn the link.
+        return render_template("reset.html", token=token)
+
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    problem = security.password_problem(password, confirm)
+    if problem:
+        flash(problem, "error")
+        return render_template("reset.html", token=token)
+
+    user = db.consume_token(security.hash_token(token), "reset")
+    if not user:
+        flash("That reset link has expired or already been used. Ask for a new one.", "error")
+        return redirect(url_for("forgot_password"))
+
+    # Bumps session_epoch, so every existing session for this account —
+    # including whoever prompted the reset — stops working immediately.
+    db.set_password(user["id"], generate_password_hash(password))
+    security.clear_attempts("login_user", user["username"])
+    log.info("password reset completed", extra={"username": user["username"]})
+
+    flash("Password updated. Sign in with your new one.", "success")
+    return redirect(url_for("login"))
+
+
+# ── Progress helpers ────────────────────────────────────────────────────────────
 
 def quiz_score(lesson: dict, entry: dict) -> int | None:
     """Percent of questions answered correctly on the first try."""
@@ -522,48 +761,40 @@ def quiz_score(lesson: dict, entry: dict) -> int | None:
     return round(first_try / len(questions) * 100)
 
 
-def summarise(username: str) -> dict:
+def summarise(student_id: int) -> dict:
+    """One student's headline numbers."""
+    return summarise_many([student_id])[student_id]
+
+
+def summarise_many(student_ids: list[int]) -> dict[int, dict]:
+    """
+    Headline numbers for any number of students in a fixed number of
+    queries.  The dashboard used to call a per-student function that
+    re-read the whole progress file, several times over, per student.
+    """
     lessons = load_lessons()
-    record  = student_progress(username)
-    entries = record.get("lessons", {})
-    done    = sum(1 for e in entries.values() if e.get("status") == "completed")
-    active  = sum(1 for e in entries.values() if e.get("status") == "in_progress")
-    stamps  = [e["updated"] for e in entries.values() if e.get("updated")]
+    total = len(lessons)
+    rows = db.summaries_for(student_ids, _catalog["question_counts"])
 
-    scores = [s for s in (quiz_score(l, entries.get(l["id"], {})) for l in lessons)
-              if s is not None]
-
-    return {
-        # Named "trinkets", not "items": in Jinja, `summary.items` resolves
-        # to the dict's .items() method rather than this key.
-        "trinkets":    record.get("items", []),
-        "completed":   done,
-        "in_progress": active,
-        "total":       len(lessons),
-        "percent":     round(done / len(lessons) * 100) if lessons else 0,
-        "last_active": max(stamps) if stamps else None,
-        "avg_score":   round(sum(scores) / len(scores)) if scores else None,
-    }
+    for row in rows.values():
+        row["total"] = total
+        row["percent"] = round(row["completed"] / total * 100) if total else 0
+    return rows
 
 
-# ── Plain-language reporting (the grown-up view) ────────────────────────────────
-
-def days_since(stamp: str | None) -> int | None:
+def days_since(stamp: datetime | None) -> int | None:
     if not stamp:
         return None
-    try:
-        return (datetime.now() - datetime.fromisoformat(stamp)).days
-    except ValueError:
-        return None
+    return (datetime.now(timezone.utc) - stamp).days
 
 
-def sticking_points(username: str) -> list[dict]:
+def sticking_points(student_id: int, entries: dict[str, dict] | None = None) -> list[dict]:
     """
     Questions this student got wrong, newest first, with the topic and the
     right answer spelled out.  This is what a parent reads instead of
     interpreting a score.
     """
-    entries = student_progress(username).get("lessons", {})
+    entries = entries if entries is not None else db.lesson_entries(student_id)
     out: list[dict] = []
 
     for lesson in load_lessons():
@@ -578,7 +809,7 @@ def sticking_points(username: str) -> list[dict]:
             if not missed:
                 continue
             choices = question.get("choices", [])
-            chosen  = a.get("chosen")
+            chosen = a.get("chosen")
             out.append({
                 "lesson":       lesson["title"],
                 "lesson_id":    lesson["id"],
@@ -594,13 +825,13 @@ def sticking_points(username: str) -> list[dict]:
     return sorted(out, key=lambda s: (s["resolved"], -s["tries"]))
 
 
-def practice_examples(username: str) -> list[dict]:
+def practice_examples(student_id: int, entries: dict[str, dict] | None = None) -> list[dict]:
     """
     Every practice example a student has answered, right or wrong. These
     are never graded back to the student — see /api/example — so this
     grown-up view is the only place the right answer ever surfaces.
     """
-    entries = student_progress(username).get("lessons", {})
+    entries = entries if entries is not None else db.lesson_entries(student_id)
     out: list[dict] = []
 
     for lesson in load_lessons():
@@ -612,27 +843,28 @@ def practice_examples(username: str) -> list[dict]:
             if not a:
                 continue
             choices = example.get("choices", [])
-            chosen  = a.get("chosen")
+            chosen = a.get("chosen")
             out.append({
                 "lesson":       lesson["title"],
                 "prompt":       example["prompt"],
                 "their_answer": choices[chosen] if isinstance(chosen, int) and 0 <= chosen < len(choices) else "—",
                 "right_answer": choices[example["answer"]] if choices else "—",
                 "correct":      bool(a.get("correct")),
-                "updated":      a.get("updated", ""),
+                "updated":      a.get("updated") or "",
             })
 
     return sorted(out, key=lambda r: r["updated"], reverse=True)
 
 
-def headline(username: str) -> dict:
+def headline(summary: dict, stuck: int) -> dict:
     """
     One sentence a parent can read in two seconds, plus a tone for colour.
     Ordered by what most needs saying.
+
+    Takes the numbers rather than fetching them, so a dashboard of 200
+    students computes them once instead of once per card.
     """
-    summary = summarise(username)
-    quiet   = days_since(summary["last_active"])
-    stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+    quiet = days_since(summary["last_active"])
 
     if summary["completed"] == 0 and summary["in_progress"] == 0:
         return {"tone": "idle", "icon": "🌱",
@@ -643,9 +875,8 @@ def headline(username: str) -> dict:
                 "text": f"No practice in {quiet} days — a nudge would help."}
 
     if stuck:
-        topic = stuck[0]["subject"] or stuck[0]["lesson"]
         return {"tone": "warn", "icon": "🤔",
-                "text": f"Stuck on {topic} — {len(stuck)} question{'' if len(stuck) == 1 else 's'} still wrong."}
+                "text": f"Stuck on {stuck} question{'' if stuck == 1 else 's'} — worth a look."}
 
     if summary["completed"] == summary["total"] and summary["total"]:
         return {"tone": "good", "icon": "🎉",
@@ -659,9 +890,8 @@ def headline(username: str) -> dict:
             "text": f"On track — {summary['completed']} of {summary['total']} lessons done."}
 
 
-def recent_activity(username: str, limit: int = 8) -> list[dict]:
+def recent_activity(entries: dict[str, dict], limit: int = 8) -> list[dict]:
     """Newest-first timeline of what actually happened."""
-    entries = student_progress(username).get("lessons", {})
     rows = []
     for lesson in load_lessons():
         e = entries.get(lesson["id"])
@@ -674,15 +904,6 @@ def recent_activity(username: str, limit: int = 8) -> list[dict]:
             "score":  quiz_score(lesson, e),
         })
     return sorted(rows, key=lambda r: r["when"], reverse=True)[:limit]
-
-
-def visible_students(user: dict) -> list[str]:
-    """Teachers see every student; parents see only their own children."""
-    students = [u for u, d in load_users().items() if d["role"] == "student"]
-    if user["role"] == "parent":
-        children = user.get("children", [])
-        return [u for u in students if u in children]
-    return students
 
 
 # ── Student screens ─────────────────────────────────────────────────────────────
@@ -710,65 +931,64 @@ def classroom():
     user = current_user()
     return render_template("classroom.html",
                            layout=load_classroom(),
-                           summary=summarise(user["username"]),
+                           summary=summarise(user["id"]),
                            dude_line=random.choice(DUDE_LINES))
 
 
 @app.route("/lessons")
 @login_required("student")
 def lessons():
-    user    = current_user()
-    entries = student_progress(user["username"]).get("lessons", {})
+    user = current_user()
+    entries = db.lesson_entries(user["id"])
     catalog = [{**l, "progress": entries.get(l["id"], {"status": "not_started"})}
-               for l in assigned_lessons(user["username"], load_lessons())]
+               for l in assigned_lessons(user["id"], load_lessons())]
 
     # Grouped by subject, in the order each subject first appears in the
     # (already order-sorted) catalog — so a lesson's own "order" in its
     # manifest decides both its place in its category and which category
     # shows up first. No separate category config to keep in sync.
     categories: dict[str, list] = {}
-    for lesson in catalog:
-        categories.setdefault(lesson.get("subject", "General"), []).append(lesson)
+    for item in catalog:
+        categories.setdefault(item.get("subject", "General"), []).append(item)
 
     return render_template("lessons.html", categories=categories,
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["id"]))
 
 
 @app.route("/lesson/<lesson_id>")
 @login_required("student")
 def lesson(lesson_id: str):
-    user   = current_user()
-    lesson = get_lesson(lesson_id)
-    if not lesson:
+    user = current_user()
+    found = get_lesson(lesson_id)
+    if not found:
         abort(404)
-    assigned = load_assignments().get(user["username"])
+    assigned = db.assigned_lesson_ids(user["id"])
     if assigned is not None and lesson_id not in assigned:
         abort(403)
 
-    entry = student_progress(user["username"])["lessons"].get(lesson_id, {})
+    entry = db.lesson_entries(user["id"]).get(lesson_id, {})
     if entry.get("status") != "completed":
-        set_lesson_status(user["username"], lesson_id, "in_progress")
+        db.set_lesson_status(user["id"], lesson_id, "in_progress")
 
-    body = render_content(lesson["content"]) if lesson["type"] == "reading" else None
+    body = render_content(found["content"]) if found["type"] == "reading" else None
 
     # Never ship the answer key to the client — questions are stripped and
     # answers checked server-side in /api/quiz.
     quiz = [{"id": q["id"], "prompt": q["prompt"], "choices": q.get("choices", []),
-              "diagram": q.get("diagram")}
-            for q in lesson.get("quiz", [])]
+             "diagram": q.get("diagram")}
+            for q in found.get("quiz", [])]
 
-    return render_template("lesson.html", lesson=lesson, entry=entry,
+    return render_template("lesson.html", lesson=found, entry=entry,
                            body=body, quiz=quiz,
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["id"]))
 
 
 @app.route("/satchel")
 @login_required("student")
 def satchel():
-    user    = current_user()
-    record  = student_progress(user["username"])
+    user = current_user()
     catalog = load_items()
-    earned  = set(record.get("items", []))
+    earned = set(db.inventory(user["id"]))
 
     items = [{**info, "id": iid, "earned": iid in earned}
              for iid, info in catalog.items()]
@@ -776,7 +996,7 @@ def satchel():
 
     return render_template("satchel.html", items=items,
                            earned_count=len(earned & set(catalog)),
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["id"]))
 
 
 # ── Student APIs ────────────────────────────────────────────────────────────────
@@ -789,16 +1009,22 @@ def api_progress():
     body = request.get_json(silent=True) or {}
 
     lesson_id = body.get("lesson_id")
-    status    = body.get("status", "in_progress")
-    score     = body.get("score")
+    status = body.get("status", "in_progress")
+    found = get_lesson(lesson_id) if lesson_id else None
 
-    if not lesson_id or not get_lesson(lesson_id):
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
     if status not in ("in_progress", "completed"):
         return jsonify({"error": "Invalid status."}), 400
 
-    set_lesson_status(user["username"], lesson_id, status, score)
-    return jsonify({"ok": True, "summary": summarise(user["username"])})
+    try:
+        score = None if body.get("score") is None else max(0, min(int(body["score"]), 100))
+    except (TypeError, ValueError):
+        score = None
+
+    db.set_lesson_status(user["id"], lesson_id, status, score,
+                         reward=found.get("reward"))
+    return jsonify({"ok": True, "summary": summarise(user["id"])})
 
 
 @app.route("/api/quiz", methods=["POST"])
@@ -811,11 +1037,11 @@ def api_quiz():
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
 
-    question = next((q for q in lesson.get("quiz", []) if q["id"] == body.get("question_id")), None)
+    question = next((q for q in found.get("quiz", []) if q["id"] == body.get("question_id")), None)
     if not question:
         return jsonify({"error": "Unknown question."}), 400
 
@@ -825,7 +1051,7 @@ def api_quiz():
         return jsonify({"error": "No answer given."}), 400
 
     correct = chosen == question["answer"]
-    record_answer(user["username"], lesson["id"], question["id"], chosen, correct)
+    db.record_answer(user["id"], found["id"], question["id"], chosen, correct)
 
     return jsonify({
         "correct": correct,
@@ -842,11 +1068,11 @@ def api_examples(lesson_id: str):
     stripped — the same treatment the quiz gets. A lesson's own iframe
     fetches this to render its practice questions.
     """
-    lesson = get_lesson(lesson_id)
-    if not lesson:
+    found = get_lesson(lesson_id)
+    if not found:
         abort(404)
     stripped = [{"id": e["id"], "prompt": e["prompt"], "choices": e.get("choices", [])}
-                for e in lesson.get("examples", [])]
+                for e in found.get("examples", [])]
     return jsonify(stripped)
 
 
@@ -862,11 +1088,11 @@ def api_example():
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
 
-    example = next((e for e in lesson.get("examples", []) if e["id"] == body.get("example_id")), None)
+    example = next((e for e in found.get("examples", []) if e["id"] == body.get("example_id")), None)
     if not example:
         return jsonify({"error": "Unknown example."}), 400
 
@@ -876,7 +1102,7 @@ def api_example():
         return jsonify({"error": "No answer given."}), 400
 
     correct = chosen == example["answer"]
-    record_example(user["username"], lesson["id"], example["id"], chosen, correct)
+    db.record_example(user["id"], found["id"], example["id"], chosen, correct)
 
     return jsonify({
         "correct": correct,
@@ -892,23 +1118,22 @@ def api_quiz_finish():
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
 
-    before = set(student_progress(user["username"]).get("items", []))
-    entry  = student_progress(user["username"])["lessons"].get(lesson["id"], {})
-    score  = quiz_score(lesson, entry)
+    entry = db.lesson_entries(user["id"]).get(found["id"], {})
+    score = quiz_score(found, entry)
 
     try:
         quiz_seconds = max(0, min(int(body.get("quiz_seconds")), 4 * 3600))
     except (TypeError, ValueError):
         quiz_seconds = None
 
-    set_lesson_status(user["username"], lesson["id"], "completed", score, quiz_seconds)
-
-    after   = set(student_progress(user["username"]).get("items", []))
-    new_ids = after - before
+    # The insert itself reports which items were newly granted, so there is
+    # no read-compare-read around it and a double submit cannot award twice.
+    new_ids = db.set_lesson_status(user["id"], found["id"], "completed",
+                                   score, quiz_seconds, reward=found.get("reward"))
     catalog = load_items()
     rewards = [{**catalog[i], "id": i} for i in new_ids if i in catalog]
 
@@ -916,7 +1141,7 @@ def api_quiz_finish():
         "ok":      True,
         "score":   score,
         "rewards": rewards,
-        "summary": summarise(user["username"]),
+        "summary": summarise(user["id"]),
     })
 
 
@@ -928,21 +1153,27 @@ def grownup_home():
     """
     Answers "is my kid doing the work?" without any digging: a headline
     per student, and anything needing attention pulled to the top.
+
+    Every number on this page comes from a fixed number of queries no
+    matter how many students there are.
     """
-    user     = current_user()
-    users    = load_users()
-    students = visible_students(user)
+    user = current_user()
+    students = db.visible_students(user)
+    ids = [s["id"] for s in students]
+
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
 
     cards = []
-    for username in students:
-        summary = summarise(username)
-        stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+    for student in students:
+        summary = summaries[student["id"]]
+        stuck = stuck_counts.get(student["id"], 0)
         cards.append({
-            "username": username,
-            "name":     users[username]["name"],
-            "avatar":   users[username].get("avatar", ""),
-            "headline": headline(username),
-            "stuck":    len(stuck),
+            "username": student["username"],
+            "name":     student["name"],
+            "avatar":   student["avatar"],
+            "headline": headline(summary, stuck),
+            "stuck":    stuck,
             "quiet":    days_since(summary["last_active"]),
             **summary,
         })
@@ -951,46 +1182,63 @@ def grownup_home():
     cards.sort(key=lambda c: (order.get(c["headline"]["tone"], 9), c["name"].lower()))
     needs_attention = [c for c in cards if c["headline"]["tone"] in ("warn", "idle")]
 
+    org = db.org_by_id(user["org_id"])
     return render_template("grownup.html",
                            cards=cards,
                            needs_attention=needs_attention,
                            is_teacher=user["role"] == "teacher",
+                           org=org,
                            lesson_count=len(load_lessons()))
+
+
+def _visible_student_or_404(user: dict, username: str) -> dict:
+    """
+    Resolve a username from the URL to a student this account may see.
+
+    Ordering matters: an account that is not visible gets 404, not 403, so
+    the response cannot be used to discover which usernames exist in
+    another organisation.
+    """
+    student = db.user_by_username(username)
+    if not student or student["role"] != "student":
+        abort(404)
+    if not db.can_see_student(user, student["id"]):
+        abort(404)
+    return student
 
 
 @app.route("/grownup/student/<username>")
 @login_required("teacher", "parent")
 def student_detail(username: str):
-    user    = current_user()
-    users   = load_users()
-    student = users.get(username)
+    user = current_user()
+    student = _visible_student_or_404(user, username)
 
-    if not student or student["role"] != "student":
-        abort(404)
-    if username not in visible_students(user):
-        abort(403)
+    entries = db.lesson_entries(student["id"])
+    assigned_ids = db.assigned_lesson_ids(student["id"])
+    summary = summarise(student["id"])
 
-    entries      = student_progress(username).get("lessons", {})
-    assigned_ids = load_assignments().get(username)
-    rows         = []
-    for lesson in load_lessons():
-        entry = entries.get(lesson["id"], {"status": "not_started"})
+    rows = []
+    for item in load_lessons():
+        entry = entries.get(item["id"], {"status": "not_started"})
         rows.append({
-            **lesson,
+            **item,
             "progress": entry,
-            "score":    quiz_score(lesson, entry),
-            "assigned": assigned_ids is None or lesson["id"] in assigned_ids,
+            "score":    quiz_score(item, entry),
+            "assigned": assigned_ids is None or item["id"] in assigned_ids,
         })
 
+    sticking = sticking_points(student["id"], entries)
+    unresolved = len([s for s in sticking if not s["resolved"]])
+
     return render_template("student.html",
-                           student={**student, "username": username},
+                           student=student,
                            rows=rows,
-                           summary=summarise(username),
-                           headline=headline(username),
-                           sticking=sticking_points(username),
-                           practice=practice_examples(username),
-                           activity=recent_activity(username),
-                           quiet=days_since(summarise(username)["last_active"]),
+                           summary=summary,
+                           headline=headline(summary, unresolved),
+                           sticking=sticking,
+                           practice=practice_examples(student["id"], entries),
+                           activity=recent_activity(entries),
+                           quiet=days_since(summary["last_active"]),
                            is_teacher=user["role"] == "teacher",
                            custom_assignment=assigned_ids is not None)
 
@@ -999,28 +1247,40 @@ def student_detail(username: str):
 @login_required("teacher", "parent")
 def student_assign(username: str):
     """Narrow (or re-widen) which lessons show up on one student's menu."""
-    user    = current_user()
-    student = load_users().get(username)
-
-    if not student or student["role"] != "student":
-        abort(404)
-    if username not in visible_students(user):
-        abort(403)
+    user = current_user()
+    student = _visible_student_or_404(user, username)
 
     valid_ids = {l["id"] for l in load_lessons()}
-    checked   = [i for i in request.form.getlist("lesson_id") if i in valid_ids]
+    checked = [i for i in request.form.getlist("lesson_id") if i in valid_ids]
 
-    assignments = load_assignments()
-    if len(checked) == len(valid_ids):
-        # Everything is checked — that's the unrestricted default, so drop
-        # the entry rather than storing a list that just says "all of them".
-        assignments.pop(username, None)
-    else:
-        assignments[username] = checked
-    write_json(ASSIGNMENTS_FILE, assignments)
+    # Everything is checked — that's the unrestricted default, so drop the
+    # row rather than storing a list that just says "all of them".
+    db.set_assignment(student["id"],
+                      None if len(checked) == len(valid_ids) else checked,
+                      user["id"])
 
     flash(f"Updated {student['name']}'s lesson menu.", "success")
     return redirect(url_for("student_detail", username=username))
+
+
+@app.route("/grownup/link", methods=["POST"])
+@login_required("parent")
+def link_child():
+    """
+    A parent attaches themselves to a student with the student's link
+    code.  The code is scoped to the parent's own organisation, so a
+    guessed code cannot reach across schools.
+    """
+    user = current_user()
+    student = db.student_by_link_code(request.form.get("link_code", ""))
+
+    if not student or student["org_id"] != user["org_id"]:
+        flash("That student code didn't match anyone in your class.", "error")
+        return redirect(url_for("grownup_home"))
+
+    db.link_parent(user["id"], student["id"])
+    flash(f"Linked to {student['name']}.", "success")
+    return redirect(url_for("grownup_home"))
 
 
 # ── Groups (teacher only) ───────────────────────────────────────────────────────
@@ -1028,22 +1288,30 @@ def student_assign(username: str):
 @app.route("/groups")
 @login_required("teacher")
 def groups_home():
-    groups   = load_groups()
-    students = {u: d for u, d in load_users().items() if d["role"] == "student"}
+    user = current_user()
+    students = db.visible_students(user)
+    rows = db.group_summary_rows(user["org_id"])
+
+    # One pass over every student in the org, then group membership is
+    # matched against it in memory — rather than a query per group.
+    ids = [s["id"] for s in students]
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
 
     cards = []
-    for gid, group in groups.items():
-        members = [m for m in group.get("members", []) if m in students]
-        stats   = [summarise(m) for m in members]
-        stuck   = sum(len([s for s in sticking_points(m) if not s["resolved"]]) for m in members)
+    for row in rows:
+        members = [m["id"] for m in db.group_members(row["id"])]
+        stats = [summaries[m] for m in members if m in summaries]
         cards.append({
-            "id": gid, "name": group["name"], "members": len(members),
-            "avg": round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
-            "stuck": stuck,
+            "id":      row["id"],
+            "name":    row["name"],
+            "members": len(members),
+            "avg":     round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
+            "stuck":   sum(stuck_counts.get(m, 0) for m in members),
         })
 
     return render_template("groups.html",
-                           groups=sorted(cards, key=lambda c: c["name"].lower()),
+                           groups=cards,
                            student_count=len(students),
                            lesson_count=len(load_lessons()))
 
@@ -1051,100 +1319,133 @@ def groups_home():
 @app.route("/groups/new", methods=["POST"])
 @login_required("teacher")
 def group_create():
+    user = current_user()
     name = request.form.get("name", "").strip()
     if not name:
         flash("Give the group a name.", "error")
         return redirect(url_for("groups_home"))
 
-    groups = load_groups()
-    gid    = f"g{max((int(k[1:]) for k in groups if k[1:].isdigit()), default=0) + 1}"
-    groups[gid] = {"name": name, "members": [],
-                   "created": datetime.now().isoformat(timespec="seconds")}
-    write_json(GROUPS_FILE, groups)
+    gid = db.create_group(user["org_id"], name[:120], user["id"])
     flash(f"Created “{name}”.", "success")
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/groups/<gid>")
-@login_required("teacher")
-def group_detail(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
+def _group_or_404(user: dict, gid: int) -> dict:
+    group = db.group_in_org(gid, user["org_id"])
     if not group:
         abort(404)
+    return group
 
-    users    = load_users()
-    students = {u: d for u, d in users.items() if d["role"] == "student"}
-    members  = []
-    for username in group.get("members", []):
-        if username not in students:
-            continue
+
+@app.route("/groups/<int:gid>")
+@login_required("teacher")
+def group_detail(gid: int):
+    user = current_user()
+    group = _group_or_404(user, gid)
+
+    member_rows = db.group_members(gid)
+    ids = [m["id"] for m in member_rows]
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
+
+    members = []
+    for row in member_rows:
+        summary = summaries[row["id"]]
         members.append({
-            "username": username,
-            "name":     students[username]["name"],
-            "headline": headline(username),
-            "stuck":    len([s for s in sticking_points(username) if not s["resolved"]]),
-            **summarise(username),
+            "username": row["username"],
+            "name":     row["name"],
+            "headline": headline(summary, stuck_counts.get(row["id"], 0)),
+            "stuck":    stuck_counts.get(row["id"], 0),
+            **summary,
         })
 
-    available = [{"username": u, "name": d["name"]}
-                 for u, d in sorted(students.items())
-                 if u not in group.get("members", [])]
+    in_group = set(ids)
+    available = [{"username": s["username"], "name": s["name"]}
+                 for s in db.visible_students(user) if s["id"] not in in_group]
 
     return render_template("group.html", gid=gid, group=group,
-                           members=sorted(members, key=lambda m: m["name"].lower()),
-                           available=available)
+                           members=members, available=available)
 
 
-@app.route("/groups/<gid>/add", methods=["POST"])
+@app.route("/groups/<int:gid>/add", methods=["POST"])
 @login_required("teacher")
-def group_add_member(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
-    if not group:
-        abort(404)
+def group_add_member(gid: int):
+    user = current_user()
+    _group_or_404(user, gid)
+    student = _visible_student_or_404(user, request.form.get("username", ""))
 
-    username = request.form.get("username", "").strip()
-    users    = load_users()
-    if users.get(username, {}).get("role") != "student":
-        flash("That isn't a student account.", "error")
-        return redirect(url_for("group_detail", gid=gid))
-
-    if username not in group["members"]:
-        group["members"].append(username)
-        write_json(GROUPS_FILE, groups)
-        flash(f"Added {users[username]['name']}.", "success")
+    db.add_group_member(gid, student["id"])
+    flash(f"Added {student['name']}.", "success")
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/groups/<gid>/remove", methods=["POST"])
+@app.route("/groups/<int:gid>/remove", methods=["POST"])
 @login_required("teacher")
-def group_remove_member(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
-    if not group:
-        abort(404)
+def group_remove_member(gid: int):
+    user = current_user()
+    _group_or_404(user, gid)
+    student = _visible_student_or_404(user, request.form.get("username", ""))
 
-    username = request.form.get("username", "").strip()
-    if username in group["members"]:
-        group["members"].remove(username)
-        write_json(GROUPS_FILE, groups)
-        flash("Removed from group.", "success")
+    db.remove_group_member(gid, student["id"])
+    flash("Removed from group.", "success")
     return redirect(url_for("group_detail", gid=gid))
 
 
-@app.route("/groups/<gid>/delete", methods=["POST"])
+@app.route("/groups/<int:gid>/delete", methods=["POST"])
 @login_required("teacher")
-def group_delete(gid: str):
-    groups = load_groups()
-    group  = groups.pop(gid, None)
-    if group:
-        write_json(GROUPS_FILE, groups)
-        flash(f"Deleted “{group['name']}”.", "success")
+def group_delete(gid: int):
+    user = current_user()
+    name = db.delete_group(gid, user["org_id"])
+    if name:
+        flash(f"Deleted “{name}”.", "success")
     return redirect(url_for("groups_home"))
 
 
-# ── Main ────────────────────────────────────────────────────────────────────────
+# ── Errors ──────────────────────────────────────────────────────────────────────
+
+@app.errorhandler(HTTPException)
+def _http_error(err):
+    """
+    Every deliberate HTTP status — 404, 405, 413, 415, 429 and the rest.
+
+    This has to be registered separately from the catch-all below:
+    a handler for Exception also catches HTTPException, which turned an
+    ordinary 405 into a 500 with a stack trace in the log.
+    """
+    if request.path.startswith("/api/"):
+        return jsonify({"error": err.description or "Request rejected."}), err.code
+    return render_template("error.html", code=err.code,
+                           message=err.description or ""), err.code
+
+
+@app.errorhandler(Exception)
+def _server_error(err):
+    # Genuinely unexpected. Never let a stack trace or a database message
+    # reach a browser.
+    log.exception("unhandled error on %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Something went wrong."}), 500
+    return render_template("error.html", code=500, message=""), 500
+
+
+# ── Boot ────────────────────────────────────────────────────────────────────────
+
+def init_app() -> None:
+    """
+    Prepare this process to serve.  Called once per gunicorn worker and
+    once by the development server.
+
+    Migrations take a Postgres advisory lock, so several workers or
+    containers starting at the same moment cannot apply them twice.
+    """
+    db.init_pool(cfg)
+    if os.environ.get("RUN_MIGRATIONS", "1") == "1":
+        applied = db.migrate()
+        if applied:
+            log.info("applied %d migration(s)", applied)
+    refresh_catalog()
+    log.info("catalog loaded: %d lesson(s)", len(load_lessons()))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -1155,17 +1456,22 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5000, help="Port (default: 5000)")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug reloader.")
+    parser.add_argument("--migrate-only", action="store_true",
+                        help="Apply database migrations and exit.")
     args = parser.parse_args()
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    seed_users()
-    app.secret_key = load_secret_key()
+    if args.migrate_only:
+        db.init_pool(cfg)
+        applied = db.migrate()
+        print(f"  Migrations applied: {applied}")
+        db.close_pool()
+        return
 
-    found = load_lessons()
-    print(f"  Lessons discovered: {len(found)}")
-    for lesson in found:
-        quiz_n = len(lesson.get("quiz", []))
-        print(f"    {lesson['id']:16} {lesson['type']:12} {quiz_n} question(s)")
+    init_app()
+
+    print(f"  Lessons discovered: {len(load_lessons())}")
+    for item in load_lessons():
+        print(f"    {item['id']:16} {item['type']:12} {len(item.get('quiz', []))} question(s)")
 
     if not art_exists("backgrounds/classroom"):
         print("  Classroom art not found — placeholder will be shown:")

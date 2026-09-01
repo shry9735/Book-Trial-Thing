@@ -5,27 +5,65 @@ and work through lessons; teachers and parents create groups and track progress.
 
 ## Run it
 
+Needs a Postgres database. Everything else is `pip install`.
+
 ```bash
 pip install -r ../requirements.txt
+
+createdb ignite
+export DATABASE_URL='postgresql://localhost:5432/ignite'
 python app.py
 # → http://127.0.0.1:5000
 ```
 
-First run seeds `data/users.json` and prints the accounts.
+The schema is created on first start. Open `/signup?role=teacher` and make
+the first account: a teacher sign-up creates an **organisation** and prints
+its **join code**, which students and parents need in order to sign up.
 
-| Role | Username | Password | Lands on |
-|---|---|---|---|
-| Student | `student` | `spark123` | Classroom |
-| Student | `student2` | `spark123` | Classroom |
-| Teacher | `teacher` | `ignite123` | All students |
-| Parent | `parent` | `ignite123` | Their own children only |
+There are no default accounts. There used to be four with published
+passwords; they are gone, along with the JSON files they lived in.
 
-Passwords are hashed with Werkzeug. To change them, delete `data/users.json`
-and edit `SEED_USERS` in `app.py`, or add rows to the JSON directly.
+| Role | Signs up with | Sees |
+|---|---|---|
+| Teacher | Organisation name | Every student in their own organisation |
+| Student | Class join code, plus 13+ attestation | Their own lessons |
+| Parent | Class join code, then a student code | Only the children they linked |
+
+A parent links to a child with the six-character **student code** shown on
+that student's page in the teacher view.
 
 The login screen has Student and Teacher tabs, but they only restyle the panel —
 the account's own role decides where you land, so a kid picking the wrong tab
 still gets to the classroom.
+
+### Configuration
+
+Read from the environment; see [`../DEPLOY.md`](../DEPLOY.md) and
+[`../.env.example`](../.env.example). In development the only one you need
+is `DATABASE_URL`. `SECRET_KEY` is generated per-process if unset, which
+means sessions do not survive a restart — fine locally, refused in
+production.
+
+### Tests
+
+```bash
+createdb ignite_test
+DATABASE_URL=postgresql://localhost/ignite_test python selftest.py
+```
+
+Runs against a real database and wipes it, so point it at a scratch one.
+
+## Where state lives
+
+Postgres. Nothing durable is written to local disk, which is what lets the
+app run several workers and survive a container being replaced.
+
+`data/items.json` and `data/classroom.json` are still files, because they
+are *content*: they ship with the code and change on deploy, not at
+runtime. Same for the lesson manifests. All of it is read once at start-up
+and cached — see `refresh_catalog()`.
+
+Upgrading a box that ran the old JSON store? See `migrate_json.py`.
 
 ## Graphics
 
@@ -120,8 +158,12 @@ Built so a busy parent gets the answer without digging:
 - **Worked Through These** — questions they got wrong then fixed, so effort
   shows up as well as failure.
 
-Parents see only accounts listed in their `children` array; teachers see
-everyone and also get group management.
+Parents see only the children they have linked to themselves. Teachers see
+the students in their own organisation — not every student on the server —
+and also get group management. That boundary is enforced in one place,
+`db.visible_students()` and `db.can_see_student()`; a student outside it
+returns 404 rather than 403, so the response cannot be used to discover
+which usernames exist elsewhere.
 
 ## Book ↔ web crossover
 
@@ -160,7 +202,6 @@ game/
 ├── data/
 │   ├── items.json            Trinket catalog (committed)
 │   ├── classroom.json        Hotspot layout (committed)
-│   ├── users.json            Accounts — seeded on first run (gitignored)
 │   ├── groups.json           Teacher groups (gitignored)
 │   └── progress.json         Student progress (gitignored)
 ├── static/

@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""
+security.py — the request-level guards.
+
+Four separate concerns that all have to be right before this is on the
+open internet:
+
+  CSRF        A signed session cookie alone means any site can make the
+              browser POST to us with the user's credentials attached.
+  RATE LIMIT  Login is a slow (deliberately slow) password check, so an
+              unthrottled login endpoint is both a brute-force target and
+              a cheap way to exhaust the worker pool.
+  REDIRECTS   ?next= is user input and has to be proven local.
+  HEADERS     Clickjacking, MIME sniffing and referrer leakage.
+
+The rate-limit counters live in Postgres (see db.rate_events) because
+they must be shared across gunicorn workers and containers.  An
+in-process counter resets on deploy and is sidestepped by landing on a
+different worker.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import logging
+import re
+import secrets
+from urllib.parse import urlparse
+
+from flask import abort, request, session
+
+import db
+
+log = logging.getLogger("ignite.security")
+
+CSRF_SESSION_KEY = "_csrf"
+CSRF_FORM_FIELD = "csrf_token"
+CSRF_HEADER = "X-CSRF-Token"
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
+# ── CSRF ────────────────────────────────────────────────────────────────────────
+
+def csrf_token() -> str:
+    """The per-session token.  Exposed to Jinja as csrf_token()."""
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+def rotate_csrf_token() -> str:
+    """Issue a fresh token — called on login and logout."""
+    session[CSRF_SESSION_KEY] = secrets.token_urlsafe(32)
+    return session[CSRF_SESSION_KEY]
+
+
+def _submitted_token() -> str:
+    return (request.form.get(CSRF_FORM_FIELD)
+            or request.headers.get(CSRF_HEADER)
+            or "")
+
+
+def check_csrf() -> None:
+    """
+    Reject any unsafe request that cannot prove it came from our own page.
+
+    HTML forms carry a token.  JSON endpoints are held to a different but
+    equally strict test: they must be sent as application/json, which a
+    cross-origin page cannot do without a CORS preflight that we never
+    answer.  That closes the gap without every lesson's iframe having to
+    learn about tokens.
+
+    SameSite=Lax on the session cookie is the belt to this pair of braces:
+    a cross-site POST does not get the cookie in the first place.
+    """
+    if request.method in SAFE_METHODS:
+        return
+
+    if request.path.startswith("/api/"):
+        if not request.is_json:
+            log.warning("api rejected: content-type %r", request.content_type)
+            abort(415, "API requests must be sent as application/json.")
+        return
+
+    expected = session.get(CSRF_SESSION_KEY)
+    supplied = _submitted_token()
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        log.warning("csrf rejected on %s", request.path)
+        abort(400, "Your session expired. Go back, reload the page and try again.")
+
+
+# ── Client identity ─────────────────────────────────────────────────────────────
+
+def client_ip(trusted_proxies: int) -> str:
+    """
+    The caller's address, honouring X-Forwarded-For only as far as we
+    actually trust it.
+
+    With one proxy in front, the last entry is the one our proxy wrote and
+    every entry before it is client-supplied and forgeable.  Reading the
+    leftmost value — the common mistake — would let anyone set their own
+    rate-limit bucket with a header.
+    """
+    if trusted_proxies > 0:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if len(parts) >= trusted_proxies:
+            return parts[-trusted_proxies]
+    return request.remote_addr or "unknown"
+
+
+# ── Rate limiting ───────────────────────────────────────────────────────────────
+
+def _bucket(kind: str, value: str) -> str:
+    # Hashed so the table never holds a raw username or address.
+    digest = hashlib.sha256(value.lower().encode("utf-8")).hexdigest()[:32]
+    return f"{kind}:{digest}"
+
+
+def over_limit(kind: str, value: str, limit: int, window: int) -> bool:
+    try:
+        return db.rate_count(_bucket(kind, value), window) >= limit
+    except Exception:
+        # A rate-limit lookup that fails should not take the site down;
+        # log it and let the request through.
+        log.exception("rate limit check failed for %s", kind)
+        return False
+
+
+def record_attempt(kind: str, value: str) -> None:
+    try:
+        db.rate_hit(_bucket(kind, value))
+    except Exception:
+        log.exception("rate limit record failed for %s", kind)
+
+
+def clear_attempts(kind: str, value: str) -> None:
+    try:
+        db.rate_clear(_bucket(kind, value))
+    except Exception:
+        log.exception("rate limit clear failed for %s", kind)
+
+
+# ── Redirects ───────────────────────────────────────────────────────────────────
+
+def safe_next(target: str | None, fallback: str = "/") -> str:
+    """
+    Only ever redirect somewhere on this site.
+
+    `target.startswith("/")` is not enough on its own: "//evil.example.com"
+    starts with a slash and browsers read it as a protocol-relative URL to
+    another host, which is an open redirect and a ready-made phishing step.
+    """
+    if not target:
+        return fallback
+    if not target.startswith("/") or target.startswith("//") or target.startswith("/\\"):
+        return fallback
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    return target
+
+
+# ── Response headers ────────────────────────────────────────────────────────────
+
+def apply_headers(response, cfg):
+    """
+    Defaults for every response.
+
+    frame-ancestors 'self' rather than a blanket DENY: lessons are
+    deliberately rendered in same-origin iframes, and that is the whole
+    isolation model, so it has to keep working while still blocking any
+    other site from framing us.
+    """
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+    )
+    if cfg.IS_PROD:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+# ── Input rules ─────────────────────────────────────────────────────────────────
+
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{3,32}$")
+# Deliberately permissive. Real validation is "we sent mail and they
+# clicked the link"; a clever regex only rejects valid addresses.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+MIN_PASSWORD = 10
+
+
+def username_problem(username: str) -> str | None:
+    if not username:
+        return "Pick a username."
+    if not USERNAME_RE.match(username):
+        return ("Usernames are 3–32 characters, letters and numbers plus "
+                "dot, dash or underscore.")
+    return None
+
+
+def email_problem(email: str, required: bool = True) -> str | None:
+    if not email:
+        return "Enter an email address." if required else None
+    if len(email) > 254 or not EMAIL_RE.match(email):
+        return "That doesn't look like an email address."
+    return None
+
+
+def password_problem(password: str, confirm: str | None = None) -> str | None:
+    """
+    Length over character classes.  Composition rules push people toward
+    "Password1!" and NIST stopped recommending them years ago.
+    """
+    if len(password) < MIN_PASSWORD:
+        return f"Passwords need at least {MIN_PASSWORD} characters."
+    if len(password) > 256:
+        return "That password is too long."
+    if confirm is not None and password != confirm:
+        return "The two passwords don't match."
+    if password.lower() in COMMON_PASSWORDS:
+        return "That password is too common — pick something else."
+    return None
+
+
+COMMON_PASSWORDS = {
+    "password", "password1", "password123", "1234567890", "12345678910",
+    "qwertyuiop", "letmein123", "iloveyou1", "welcome123", "admin12345",
+    "abc123456", "spark12345", "ignite1234", "changeme123", "passw0rd123",
+}
+
+
+# ── Tokens ──────────────────────────────────────────────────────────────────────
+
+def new_token() -> tuple[str, str]:
+    """
+    Return (token_for_the_link, hash_for_the_database).
+
+    Only the hash is stored, so a database leak does not hand over working
+    password-reset links.
+    """
+    raw = secrets.token_urlsafe(32)
+    return raw, hash_token(raw)
+
+
+def hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()

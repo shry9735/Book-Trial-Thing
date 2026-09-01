@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create an Account — Ignite Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body>
+
+<div class="login-stage">
+  <div class="login-box">
+
+    <div class="login-crest">
+      {% if art_exists('ui/logo') %}
+        <img src="{{ art('ui/logo') }}" alt="Ignite Academy" style="max-width:220px;margin-bottom:10px" />
+      {% else %}
+        <div class="mark">🔥</div>
+      {% endif %}
+      <div class="title">Ignite Academy</div>
+      <div class="tagline">Inspire &amp; Grow New Innovation</div>
+    </div>
+
+    {# A teacher's sign-up creates the class and its join code. Students and
+       parents need that code, so nobody lands in a class uninvited. #}
+    <div class="role-tabs">
+      <a class="role-tab {% if role == 'student' %}active{% endif %}"
+         href="{{ url_for('signup', role='student') }}">🎒 Student</a>
+      <a class="role-tab {% if role == 'parent' %}active{% endif %}"
+         href="{{ url_for('signup', role='parent') }}">👪 Parent</a>
+      <a class="role-tab {% if role == 'teacher' %}active{% endif %}"
+         href="{{ url_for('signup', role='teacher') }}">📋 Teacher</a>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head {% if role != 'student' %}teal{% endif %}">
+        {% if role == 'teacher' %}Start a New Class
+        {% elif role == 'parent' %}Follow Your Child's Progress
+        {% else %}Join Your Class{% endif %}
+      </div>
+
+      <form class="login-form" method="POST" action="{{ url_for('signup', role=role) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+        <p class="login-blurb">
+          {% if role == 'teacher' %}
+            You'll get a join code to hand out to students and parents.
+          {% elif role == 'parent' %}
+            You'll need the class join code, plus your child's student code.
+          {% else %}
+            Ask your teacher for the class join code.
+          {% endif %}
+        </p>
+
+        {% with msgs = get_flashed_messages(with_categories=true) %}
+          {% if msgs %}
+            <div class="flashes">
+              {% for category, message in msgs %}
+                <div class="flash-msg {{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <div class="field">
+          <label for="name">Your name</label>
+          <input type="text" id="name" name="name" value="{{ form.name or '' }}"
+                 autocomplete="name" maxlength="80" autofocus required />
+        </div>
+
+        {% if role == 'teacher' %}
+          <div class="field">
+            <label for="org_name">School, club or class name</label>
+            <input type="text" id="org_name" name="org_name" value="{{ form.org_name or '' }}"
+                   maxlength="120" required />
+          </div>
+        {% else %}
+          <div class="field">
+            <label for="join_code">Class join code</label>
+            <input type="text" id="join_code" name="join_code" value="{{ form.join_code or '' }}"
+                   maxlength="8" style="text-transform:uppercase" required />
+          </div>
+        {% endif %}
+
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" value="{{ form.username or '' }}"
+                 autocomplete="username" minlength="3" maxlength="32" required />
+        </div>
+
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" value="{{ form.email or '' }}"
+                 autocomplete="email" maxlength="254" required />
+          <small class="field-note">Used to confirm the account and reset a forgotten password.</small>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password"
+                 autocomplete="new-password" minlength="10" required />
+          <small class="field-note">At least 10 characters. Length beats punctuation.</small>
+        </div>
+
+        <div class="field">
+          <label for="password_confirm">Confirm password</label>
+          <input type="password" id="password_confirm" name="password_confirm"
+                 autocomplete="new-password" minlength="10" required />
+        </div>
+
+        {% if role == 'student' %}
+          <label class="check-row">
+            <input type="checkbox" name="age_ok" value="1" required />
+            <span>I am {{ config.MIN_AGE }} years old or older.</span>
+          </label>
+        {% endif %}
+
+        <label class="check-row">
+          <input type="checkbox" name="terms_ok" value="1" required />
+          <span>I agree to the terms and the privacy notice.</span>
+        </label>
+
+        <button type="submit" class="btn block lg {% if role != 'student' %}teal{% endif %}">
+          Create Account
+        </button>
+
+        <div class="hint-card">
+          Already have an account? <a href="{{ url_for('login') }}">Sign in</a>.
+        </div>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

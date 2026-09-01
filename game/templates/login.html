@@ -42,6 +42,7 @@
       </div>
 
       <form class="login-form" method="POST" action="{{ url_for('login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <input type="hidden" name="role_tab" id="roleTab" value="{{ role_tab }}" />
 
         <p class="login-blurb" id="blurb">
@@ -77,12 +78,28 @@
         <button type="submit" class="btn block lg" id="submitBtn">Sign In</button>
 
         <div class="hint-card">
-          <b>Demo accounts</b><br />
-          Student — <code>student</code> / <code>spark123</code><br />
-          Teacher — <code>teacher</code> / <code>ignite123</code><br />
-          Parent &nbsp;— <code>parent</code> / <code>ignite123</code>
+          No account yet?
+          <a href="{{ url_for('signup', role='student') }}">Join a class</a> or
+          <a href="{{ url_for('signup', role='teacher') }}">start one</a>.<br />
+          <a href="{{ url_for('forgot_password') }}">Forgot your password?</a>
         </div>
       </form>
+
+      {# Separate form: a resend has to be reachable from the error the
+         unverified sign-in attempt just produced. #}
+      {% if config.REQUIRE_EMAIL_VERIFICATION %}
+        <form class="login-form resend-form" method="POST" action="{{ url_for('resend_verification') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <details>
+            <summary class="resend-toggle">Need a new confirmation email?</summary>
+            <div class="field">
+              <label for="resend_email">Email</label>
+              <input type="email" id="resend_email" name="email" autocomplete="email" required />
+            </div>
+            <button type="submit" class="btn block sm ghost">Resend Confirmation</button>
+          </details>
+        </form>
+      {% endif %}
     </div>
 
   </div>

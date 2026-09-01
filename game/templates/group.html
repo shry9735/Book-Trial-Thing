@@ -10,6 +10,7 @@
   </div>
   <form method="POST" action="{{ url_for('group_delete', gid=gid) }}"
         onsubmit="return confirm('Delete “{{ group.name }}”? Student accounts and their progress are not affected.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <button type="submit" class="btn sm ghost">Delete Group</button>
   </form>
 </div>
@@ -19,6 +20,7 @@
     <div class="panel-head teal">Add a Student</div>
     <div style="padding:16px">
       <form class="inline-form" method="POST" action="{{ url_for('group_add_member', gid=gid) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <select name="username" required>
           <option value="">Choose a student…</option>
           {% for s in available %}
@@ -70,6 +72,7 @@
             </td>
             <td style="text-align:right">
               <form method="POST" action="{{ url_for('group_remove_member', gid=gid) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input type="hidden" name="username" value="{{ m.username }}" />
                 <button type="submit" class="btn sm ghost">Remove</button>
               </form>

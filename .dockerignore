@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+qdrant_storage/
+books/
+Book1/
+Book2/
+webserver/
+.ingest_manifest.json
+game/data/*.json
+!game/data/items.json
+!game/data/classroom.json
+*.epub
+.env
