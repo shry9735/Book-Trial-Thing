@@ -62,3 +62,4 @@ jobs:
         run: |
           python game/selftest.py
           python game/selftest_billing.py
+          python game/selftest_classrooms.py

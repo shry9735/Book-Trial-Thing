@@ -104,6 +104,7 @@ thing.
 createdb ignite_test
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_classrooms.py
 ```
 
 They wipe the database they point at, so aim them at a scratch one. Both

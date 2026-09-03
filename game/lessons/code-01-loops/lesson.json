@@ -1,20 +1,24 @@
 {
   "title": "Your First Loop",
   "subject": "Code",
+  "track": "code",
   "type": "reading",
   "content": "02-loops.md",
   "order": 40,
   "duration_min": 7,
   "reward": "badge-loop",
   "description": "Make the computer do the boring part for you.",
-
   "quiz": [
     {
       "id": "q1",
       "prompt": "How many times does this run?  for (int i = 0; i < 5; i++)",
-      "choices": ["Four times", "Five times", "Six times"],
+      "choices": [
+        "Four times",
+        "Five times",
+        "Six times"
+      ],
       "answer": 1,
-      "explain": "i takes the values 0, 1, 2, 3, 4 — that's five passes. It stops the moment i reaches 5."
+      "explain": "i takes the values 0, 1, 2, 3, 4 \u2014 that's five passes. It stops the moment i reaches 5."
     },
     {
       "id": "q2",
@@ -32,7 +36,7 @@
       "prompt": "A while loop checks the sensor, but you forgot to re-read it inside the loop. What happens?",
       "choices": [
         "It runs once and stops",
-        "It never ends — the condition can never change",
+        "It never ends \u2014 the condition can never change",
         "The Arduino restarts"
       ],
       "answer": 1,

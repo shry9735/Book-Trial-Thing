@@ -1,17 +1,21 @@
 {
   "title": "Resistor Color Challenge",
   "subject": "Basic Electricity",
+  "track": "basic-electricity",
   "type": "interactive",
   "order": 30,
   "duration_min": 10,
   "reward": "trinket-resistor",
   "description": "Read the color bands before the timer runs out.",
-
   "quiz": [
     {
       "id": "q1",
       "prompt": "A resistor reads brown, black, red. What is its value?",
-      "choices": ["100 ohms", "1,000 ohms", "10,000 ohms"],
+      "choices": [
+        "100 ohms",
+        "1,000 ohms",
+        "10,000 ohms"
+      ],
       "answer": 1,
       "explain": "Brown=1, black=0, so the digits are 10. Red means add two zeros: 1,000 ohms, or 1k."
     },
@@ -24,7 +28,7 @@
         "How hot it can get"
       ],
       "answer": 1,
-      "explain": "The first two bands are digits, and the third is the multiplier — the number of zeros to write after them."
+      "explain": "The first two bands are digits, and the third is the multiplier \u2014 the number of zeros to write after them."
     },
     {
       "id": "q3",

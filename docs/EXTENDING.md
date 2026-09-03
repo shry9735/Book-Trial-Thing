@@ -7,6 +7,8 @@ files to touch, in order, and the mistake that is easy to make.
 - [Add a lesson](#add-a-lesson)
 - [Charge for a lesson](#charge-for-a-lesson)
 - [Flag a lesson as having a kit](#flag-a-lesson-as-having-a-kit)
+- [Add or stage a track](#add-or-stage-a-track)
+- [Add a classroom feature](#add-a-classroom-feature)
 - [Re-skin it](#re-skin-it)
 - [Add a page](#add-a-page)
 - [Add a JSON endpoint](#add-a-json-endpoint)
@@ -163,6 +165,80 @@ storefront). With neither, it shows the note and no link.
 
 Kits and access tiers are independent: a lesson can be free with a kit,
 paid with a kit, or either without.
+
+---
+
+## Add or stage a track
+
+A track is an ordered run of lessons. Drop a folder into `game/tracks/`:
+
+```json
+// game/tracks/robotics/track.json
+{
+  "title": "Robotics",
+  "description": "Making something move on purpose.",
+  "order": 40,
+  "sequential": true
+}
+```
+
+Lessons join by naming it:
+
+```json
+{ "track": "robotics", "order": 10 }
+```
+
+`order` is the position **within** the track.
+
+`"sequential": true` releases lessons one at a time — the next opens when
+the one before it is finished. Three things it deliberately does not do,
+each of which was a bug waiting to happen:
+
+- It never re-locks a lesson a student has already started or finished.
+  Reordering a track must not shut someone out of work in progress.
+- It only counts lessons on that student's own menu, so a teacher
+  narrowing an assignment cannot leave an impassable gate mid-track.
+- It has nothing to do with subscriptions. `tracks.gate()` and
+  `billing.lesson_access()` are separate gates with separate messages,
+  because "you haven't got there yet" and "this needs a subscription"
+  have completely different remedies.
+
+**You do not have to create a track.** A lesson with no `track` falls back
+to a slug of its `subject`, and a track with no `track.json` is
+synthesised from that id — so existing lessons land somewhere sensible
+untouched.
+
+Enforcement lives in `app.prerequisite_block()`, called from the lesson
+page *and* every API route. The menu only hides cards; a bookmarked URL
+does not pass through the menu.
+
+---
+
+## Add a classroom feature
+
+A classroom is the roster a teacher is assigned to, and it decides which
+students that teacher can see anywhere in the app.
+
+| Who | Sees | Can change rosters |
+|---|---|---|
+| Org admin | Every student in the org, including unplaced ones | Yes |
+| Teacher | Only students in their own classrooms | No |
+| Parent | Only their linked children | n/a |
+
+The whole boundary is two functions, `db.visible_students()` and
+`db.can_see_student()`. **Change both or neither** — a difference between
+them is a hole, and `selftest_classrooms.py` checks the full cross product
+of every account against every student to prove they agree.
+
+Roster changes are admin-only on purpose: a teacher who could add any
+student to their own classroom could see any student by adding them,
+which is exactly the boundary classrooms exist to draw. Relaxing that is a
+product decision, not a small one.
+
+Any route taking a classroom id from a URL goes through
+`_classroom_or_404()`, which scopes by organisation and then by
+assignment, and returns 404 rather than 403 so the response cannot be used
+to discover which classrooms exist elsewhere.
 
 ---
 
@@ -431,6 +507,7 @@ tenancy bugs get in.
 createdb ignite_test
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_classrooms.py
 
 # Refresh generated docs if routes or imports changed
 .venv/bin/python scripts/callgraph.py

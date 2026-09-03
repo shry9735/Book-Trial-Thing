@@ -22,15 +22,29 @@ Usage:
 See ../DEPLOY.md for a real deployment.
 
 ──────────────────────────────────────────────────────
-ORGANISATIONS ARE THE PRIVACY BOUNDARY
+ORGANISATIONS AND CLASSROOMS ARE THE PRIVACY BOUNDARY
 ──────────────────────────────────────────────────────
-Every account belongs to exactly one organisation.  A teacher sees the
-students in their own organisation; a parent sees only the children
-linked to them by link code.  No screen ever enumerates across that line
-— see db.visible_students(), which is the single place the rule lives.
+Every account belongs to exactly one organisation, and within it a
+teacher is assigned to classrooms.  Three answers to "who can this
+account see", all decided in db.visible_students() and its single-student
+twin db.can_see_student():
 
-Signing up as a teacher creates an organisation and a join code.
-Students and parents join an existing one with that code.
+    org admin   every student in the organisation, including any nobody
+                has placed in a classroom yet
+    teacher     only the students in the classrooms they are assigned to
+    parent      only the children linked to them by link code
+
+No screen ever enumerates across those lines.  Signing up as a teacher
+creates an organisation and a join code; students and parents join an
+existing one with that code, and an admin then places them.
+
+LESSONS ARE STAGED BY TRACK
+──────────────────────────────────────────────────────
+A track is an ordered run of lessons (see tracks.py).  A track marked
+sequential releases them one at a time — the next opens when the one
+before it is finished.  That gate is pedagogy and is kept entirely
+separate from the subscription gate in billing.py, because "you haven't
+got there yet" and "this needs a subscription" have different remedies.
 
 ──────────────────────────────────────────────────────
 LESSONS ARE SELF-CONTAINED PACKAGES
@@ -106,6 +120,7 @@ import billing
 import db
 import emailer
 import security
+import tracks
 from config import validate as load_config
 from logsetup import configure_logging
 
@@ -113,11 +128,14 @@ from logsetup import configure_logging
 BASE_DIR    = Path(__file__).parent
 ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
+TRACKS_DIR  = BASE_DIR / "tracks"     # one folder per track
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
 DATA_DIR    = BASE_DIR / "data"       # content only: item and classroom catalogs
 
 ITEMS_FILE     = DATA_DIR / "items.json"
-CLASSROOM_FILE = DATA_DIR / "classroom.json"
+# The student's game room layout, not a class roster — see /classrooms
+# for those. Same word, two different things.
+ROOM_FILE      = DATA_DIR / "classroom.json"
 
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
@@ -223,8 +241,15 @@ def refresh_catalog() -> None:
         pairs = [(l["id"], q["id"]) for l in lessons for q in l.get("quiz", [])]
         _catalog["valid_pairs"] = ([p[0] for p in pairs], [p[1] for p in pairs])
         _catalog["items"] = _read_json_file(ITEMS_FILE, {})
-        _catalog["classroom"] = _read_json_file(
-            CLASSROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
+        _catalog["room"] = _read_json_file(
+            ROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
+        # Tracks are content too: built once here from the lesson catalog
+        # plus tracks/*/track.json, never queried per request.
+        built = tracks.build(TRACKS_DIR, lessons)
+        _catalog["tracks"] = built
+        _catalog["track_by_id"] = {t["id"]: t for t in built}
+        _catalog["track_of_lesson"] = {
+            lesson_id: t for t in built for lesson_id in t["lesson_ids"]}
 
 
 def load_lessons() -> list[dict]:
@@ -239,8 +264,46 @@ def load_items() -> dict:
     return _catalog["items"]
 
 
-def load_classroom() -> dict:
-    return _catalog["classroom"]
+def load_room() -> dict:
+    """The student's game-room layout. Not a class roster — see /classrooms."""
+    return _catalog["room"]
+
+
+def load_tracks() -> list[dict]:
+    return _catalog["tracks"]
+
+
+def track_of(lesson_id: str) -> dict | None:
+    return _catalog["track_of_lesson"].get(lesson_id)
+
+
+def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
+    """
+    The lesson standing between this student and the one they asked for, or
+    None if nothing is.
+
+    Staging is per-student, so this reads their progress and their own
+    assigned menu. Every route that opens a lesson goes through here — the
+    menu hides locked cards, but a bookmark or a guessed URL does not pass
+    through the menu.
+    """
+    track = track_of(lesson["id"])
+    if not track or not track.get("sequential"):
+        return None
+
+    # Only this track's statuses, not the student's whole history: this runs
+    # on /api/quiz, once per answered question.
+    statuses = db.lesson_statuses(student_id, track["lesson_ids"])
+    entries = {lesson_id: {"status": status} for lesson_id, status in statuses.items()}
+
+    assigned = db.assigned_lesson_ids(student_id)
+    available_ids = (set(track["lesson_ids"]) if assigned is None
+                     else set(track["lesson_ids"]) & set(assigned))
+
+    state = tracks.gate(track, entries, available_ids).get(lesson["id"])
+    if not state or not state["locked"]:
+        return None
+    return {"track": track, "after": state["after"]}
 
 
 def assigned_lessons(student_id: int, catalog: list[dict]) -> list[dict]:
@@ -461,6 +524,14 @@ def current_user() -> dict | None:
 
 
 def start_session(user: dict) -> None:
+    """Sign this account in.
+
+    Clears anything already in the session first, then records the user id
+    together with the session epoch it was issued under, which is what
+    lets a password change invalidate every existing cookie. Rotates the
+    CSRF token so a token issued before sign-in cannot be replayed after
+    it.
+    """
     session.clear()
     session["uid"] = user["id"]
     session["epoch"] = user["session_epoch"]
@@ -528,6 +599,12 @@ def entitlement() -> dict:
 @app.route("/pending")
 @login_required()
 def pending():
+    """Holding page for a member an admin has not let in yet.
+
+    They have a real account and can sign in; they just cannot reach a
+    classroom. Bouncing them here rather than showing a 403 makes it clear
+    nothing is broken and somebody just has to approve them.
+    """
     user = current_user()
     if user["membership_status"] != "pending":
         return redirect(url_for("home"))
@@ -548,6 +625,13 @@ def inject_user():
 
 @app.route("/")
 def home():
+    """Send each role to the screen it actually wants.
+
+    Students land in the classroom, grown-ups on the progress dashboard.
+    The login form has role tabs, but they only restyle the panel — this
+    is what decides where you end up, so picking the wrong tab is
+    harmless.
+    """
     user = current_user()
     if not user:
         return redirect(url_for("login"))
@@ -1015,7 +1099,7 @@ DUDE_LINES = [
 def classroom():
     user = current_user()
     return render_template("classroom.html",
-                           layout=load_classroom(),
+                           layout=load_room(),
                            summary=summarise(user["id"]),
                            dude_line=random.choice(DUDE_LINES))
 
@@ -1024,27 +1108,53 @@ def classroom():
 @login_required("student")
 @membership_required
 def lessons():
+    """
+    The lesson menu, organised by track.
+
+    Two independent gates decide whether a card is open, and they are kept
+    apart all the way to the template because they mean different things to
+    a student. A paywalled lesson needs a grown-up to buy something; a
+    prerequisite-locked one just needs the lesson before it finishing.
+    """
     user = current_user()
     entries = db.lesson_entries(user["id"])
     paid_ok = entitlement()["active"]
-    catalog = [{**l,
-                "progress": entries.get(l["id"], {"status": "not_started"}),
-                "locked": not (billing.lesson_is_free(l) or paid_ok)}
-               for l in assigned_lessons(user["id"], load_lessons())]
 
-    # Kits are informational and never gate anything, so this is only a
-    # count for the "some of these have kits" note on the menu.
-    kit_count = sum(1 for l in catalog if l.get("kit"))
+    available = assigned_lessons(user["id"], load_lessons())
+    available_ids = {l["id"] for l in available}
 
-    # Grouped by subject, in the order each subject first appears in the
-    # (already order-sorted) catalog — so a lesson's own "order" in its
-    # manifest decides both its place in its category and which category
-    # shows up first. No separate category config to keep in sync.
-    categories: dict[str, list] = {}
-    for item in catalog:
-        categories.setdefault(item.get("subject", "General"), []).append(item)
+    rows = []
+    for track in load_tracks():
+        # gate() is given the student's own menu, so a lesson a teacher has
+        # hidden cannot become an impassable gate mid-track.
+        gates = tracks.gate(track, entries, available_ids)
 
-    return render_template("lessons.html", categories=categories,
+        cards = []
+        for lesson in track["lessons"]:
+            if lesson["id"] not in available_ids:
+                continue
+            prereq = gates.get(lesson["id"], {"locked": False, "after": None})
+            cards.append({
+                **lesson,
+                "progress":     entries.get(lesson["id"], {"status": "not_started"}),
+                "locked":       not (billing.lesson_is_free(lesson) or paid_ok),
+                "prereq_locked": prereq["locked"],
+                "prereq_after":  prereq["after"],
+            })
+
+        if not cards:
+            continue
+        rows.append({
+            **track,
+            "cards":    cards,
+            "progress": tracks.progress({**track, "lessons": [c for c in cards]}, entries),
+        })
+
+    # Kits are informational and never gate anything, so this is only the
+    # count behind the "some of these have kits" note.
+    kit_count = sum(1 for t in rows for c in t["cards"] if c.get("kit"))
+
+    return render_template("lessons.html", tracks=rows,
                            kit_count=kit_count,
                            summary=summarise(user["id"]))
 
@@ -1053,6 +1163,18 @@ def lessons():
 @login_required("student")
 @membership_required
 def lesson(lesson_id: str):
+    """Open one lesson, if this student may.
+
+    Four checks, in order, each with its own remedy:
+
+      unknown lesson      404
+      not assigned        403 — a teacher narrowed this student's menu
+      needs a subscription  -> /locked, which explains who can buy one
+      not reached yet     -> /locked, which names the lesson that opens it
+
+    The menu hides cards that fail these, but the menu can be skipped
+    entirely, so this is the check that counts.
+    """
     user = current_user()
     found = get_lesson(lesson_id)
     if not found:
@@ -1065,7 +1187,13 @@ def lesson(lesson_id: str):
     # parent's. Free lessons stay open, so a lapsed account still has
     # something to come back to.
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
-        return redirect(url_for("locked", lesson_id=lesson_id))
+        return redirect(url_for("locked", lesson_id=lesson_id, why="subscription"))
+
+    # Staged tracks release their lessons in order. Checked here as well as
+    # on the menu, because a bookmarked or guessed URL skips the menu.
+    blocked_by = prerequisite_block(user["id"], found)
+    if blocked_by:
+        return redirect(url_for("locked", lesson_id=lesson_id, why="prerequisite"))
 
     entry = db.lesson_entries(user["id"]).get(lesson_id, {})
     if entry.get("status") != "completed":
@@ -1088,6 +1216,11 @@ def lesson(lesson_id: str):
 @login_required("student")
 @membership_required
 def satchel():
+    """The student's trinket collection.
+
+    Shows the whole catalogue with the earned ones marked, rather than
+    only what they have — the empty slots are the point.
+    """
     user = current_user()
     catalog = load_items()
     earned = set(db.inventory(user["id"]))
@@ -1120,6 +1253,8 @@ def api_progress():
         return jsonify({"error": "Invalid status."}), 400
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
         return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
     try:
         score = None if body.get("score") is None else max(0, min(int(body["score"]), 100))
@@ -1146,6 +1281,8 @@ def api_quiz():
         return jsonify({"error": "Unknown lesson."}), 400
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
         return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
     question = next((q for q in found.get("quiz", []) if q["id"] == body.get("question_id")), None)
     if not question:
@@ -1179,6 +1316,8 @@ def api_examples(lesson_id: str):
         abort(404)
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
         return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(current_user()["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
     stripped = [{"id": e["id"], "prompt": e["prompt"], "choices": e.get("choices", [])}
                 for e in found.get("examples", [])]
     return jsonify(stripped)
@@ -1201,6 +1340,8 @@ def api_example():
         return jsonify({"error": "Unknown lesson."}), 400
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
         return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
     example = next((e for e in found.get("examples", []) if e["id"] == body.get("example_id")), None)
     if not example:
@@ -1233,6 +1374,8 @@ def api_quiz_finish():
         return jsonify({"error": "Unknown lesson."}), 400
     if not billing.lesson_is_free(found) and not entitlement()["active"]:
         return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
     entry = db.lesson_entries(user["id"]).get(found["id"], {})
     score = quiz_score(found, entry)
@@ -1323,6 +1466,13 @@ def _visible_student_or_404(user: dict, username: str) -> dict:
 @app.route("/grownup/student/<username>")
 @login_required("teacher", "parent")
 def student_detail(username: str):
+    """One student's full progress, for a grown-up.
+
+    _visible_student_or_404() is the gate: a teacher only reaches students
+    in their own classrooms, a parent only their linked children, and
+    anyone else gets a 404 rather than a 403 so the response cannot be
+    used to discover which usernames exist.
+    """
     user = current_user()
     student = _visible_student_or_404(user, username)
 
@@ -1396,122 +1546,252 @@ def link_child():
     return redirect(url_for("grownup_home"))
 
 
-# ── Groups (teacher only) ───────────────────────────────────────────────────────
+# ── Classrooms ──────────────────────────────────────────────────────────────────
+#
+# A classroom is the roster a teacher is assigned to, and it is what decides
+# which students that teacher can see anywhere in the app.
+#
+# Who may do what, and why:
+#
+#   org admin   creates classrooms, assigns teachers, moves students in and
+#               out. They see the whole organisation already.
+#   teacher     sees the classrooms they run and the students in them, and
+#               nothing else.
+#
+# Roster changes are admin-only on purpose. If an ordinary teacher could add
+# any student in the organisation to their own classroom, they could see any
+# student by adding them — which is exactly the boundary classrooms exist to
+# draw. Relaxing that is a deliberate decision, not an oversight.
 
-@app.route("/groups")
+@app.route("/classrooms")
 @login_required("teacher")
-def groups_home():
-    user = current_user()
-    students = db.visible_students(user)
-    rows = db.group_summary_rows(user["org_id"])
+@membership_required
+def classrooms_home():
+    """Every classroom this account may see.
 
-    # One pass over every student in the org, then group membership is
-    # matched against it in memory — rather than a query per group.
+    An admin gets the whole organisation, plus the students nobody has
+    placed in a classroom yet — those are invisible to ordinary teachers,
+    so if the admin does not see them, nobody will.
+
+    A teacher gets the classrooms they are assigned to, and an explanation
+    rather than a blank page when that is none of them.
+    """
+    user = current_user()
+    is_admin = bool(user["org_admin"])
+
+    # An admin sees every classroom in the organisation; a teacher sees the
+    # ones they actually run.
+    rows = db.classroom_rows(user["org_id"], None if is_admin else user["id"])
+
+    students = db.visible_students(user)
     ids = [s["id"] for s in students]
     summaries = summarise_many(ids)
     stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
 
+    # One query for the whole organisation's memberships, then matched in
+    # memory — rather than a query per classroom card.
+    membership = db.classroom_membership(user["org_id"])
+
     cards = []
     for row in rows:
-        members = [m["id"] for m in db.group_members(row["id"])]
+        members = membership.get(row["id"], [])
         stats = [summaries[m] for m in members if m in summaries]
         cards.append({
-            "id":      row["id"],
-            "name":    row["name"],
-            "members": len(members),
-            "avg":     round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
-            "stuck":   sum(stuck_counts.get(m, 0) for m in members),
+            "id":       row["id"],
+            "name":     row["name"],
+            "students": row["students"],
+            "teachers": row["teachers"],
+            "avg":      round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
+            "stuck":    sum(stuck_counts.get(m, 0) for m in members),
         })
 
-    return render_template("groups.html",
-                           groups=cards,
+    return render_template("classrooms.html",
+                           classrooms=cards,
+                           is_admin=is_admin,
+                           unplaced=db.unplaced_students(user["org_id"]) if is_admin else [],
                            student_count=len(students),
                            lesson_count=len(load_lessons()))
 
 
-@app.route("/groups/new", methods=["POST"])
-@login_required("teacher")
-def group_create():
+def _classroom_or_404(user: dict, classroom_id: int) -> dict:
+    """
+    Resolve a classroom this account may open.
+
+    Scoped by org first, then by assignment for a non-admin. 404 rather than
+    403 throughout, so the response cannot be used to discover which
+    classrooms exist elsewhere.
+    """
+    classroom = db.classroom_in_org(classroom_id, user["org_id"])
+    if not classroom:
+        abort(404)
+    if not user["org_admin"] and not db.teaches_classroom(user["id"], classroom_id):
+        abort(404)
+    return classroom
+
+
+@app.route("/classrooms/new", methods=["POST"])
+@org_admin_required
+def classroom_create():
+    """Create a classroom and put its creator in it.
+
+    The admin who makes a classroom is assigned to it straight away.
+    Without that a brand new classroom belongs to nobody, and would drop
+    off the list of every teacher including the one who just made it.
+    """
     user = current_user()
     name = request.form.get("name", "").strip()
     if not name:
-        flash("Give the group a name.", "error")
-        return redirect(url_for("groups_home"))
+        flash("Give the classroom a name.", "error")
+        return redirect(url_for("classrooms_home"))
 
-    gid = db.create_group(user["org_id"], name[:120], user["id"])
+    classroom_id = db.create_classroom(user["org_id"], name[:120], user["id"])
+    # The admin who made it is its first teacher; otherwise a brand new
+    # classroom belongs to nobody and drops off every teacher's screen.
+    db.add_classroom_teacher(classroom_id, user["id"])
+
     flash(f"Created “{name}”.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
 
 
-def _group_or_404(user: dict, gid: int) -> dict:
-    group = db.group_in_org(gid, user["org_id"])
-    if not group:
-        abort(404)
-    return group
-
-
-@app.route("/groups/<int:gid>")
+@app.route("/classrooms/<int:classroom_id>")
 @login_required("teacher")
-def group_detail(gid: int):
-    user = current_user()
-    group = _group_or_404(user, gid)
+@membership_required
+def classroom_detail(classroom_id: int):
+    """One classroom: who teaches it, who is in it, how they are doing.
 
-    member_rows = db.group_members(gid)
-    ids = [m["id"] for m in member_rows]
+    Reachable by an admin, or by a teacher assigned to this classroom —
+    _classroom_or_404() enforces both, in that order. The add/remove
+    controls are only rendered for an admin, and separately refused
+    server-side; a hidden form is not a permission check.
+    """
+    user = current_user()
+    classroom = _classroom_or_404(user, classroom_id)
+
+    roster = db.classroom_students(classroom_id)
+    ids = [m["id"] for m in roster]
     summaries = summarise_many(ids)
     stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
 
-    members = []
-    for row in member_rows:
+    students = []
+    for row in roster:
         summary = summaries[row["id"]]
-        members.append({
+        students.append({
+            "id":       row["id"],
             "username": row["username"],
             "name":     row["name"],
+            "link_code": row["link_code"],
             "headline": headline(summary, stuck_counts.get(row["id"], 0)),
             "stuck":    stuck_counts.get(row["id"], 0),
             **summary,
         })
 
-    in_group = set(ids)
-    available = [{"username": s["username"], "name": s["name"]}
-                 for s in db.visible_students(user) if s["id"] not in in_group]
+    # Only an admin can change the roster, so only an admin needs the lists
+    # of who could be added.
+    in_class = set(ids)
+    addable, addable_teachers = [], []
+    if user["org_admin"]:
+        addable = [{"id": s["id"], "username": s["username"], "name": s["name"]}
+                   for s in db.visible_students(user) if s["id"] not in in_class]
+        assigned = {t["id"] for t in db.classroom_teachers(classroom_id)}
+        addable_teachers = [t for t in db.org_teachers(user["org_id"])
+                            if t["id"] not in assigned]
 
-    return render_template("group.html", gid=gid, group=group,
-                           members=members, available=available)
+    return render_template("classroom_detail.html",
+                           classroom=classroom,
+                           students=students,
+                           teachers=db.classroom_teachers(classroom_id),
+                           addable=addable,
+                           addable_teachers=addable_teachers,
+                           is_admin=bool(user["org_admin"]))
 
 
-@app.route("/groups/<int:gid>/add", methods=["POST"])
-@login_required("teacher")
-def group_add_member(gid: int):
+@app.route("/classrooms/<int:classroom_id>/students/add", methods=["POST"])
+@org_admin_required
+def classroom_add_student(classroom_id: int):
+    """Put a student in a classroom, which is what lets its teachers see them.
+
+    Admin-only, and the student is resolved through
+    _visible_student_or_404() so an id from another organisation cannot be
+    posted in.
+    """
     user = current_user()
-    _group_or_404(user, gid)
+    _classroom_or_404(user, classroom_id)
     student = _visible_student_or_404(user, request.form.get("username", ""))
 
-    db.add_group_member(gid, student["id"])
+    db.add_classroom_student(classroom_id, student["id"])
     flash(f"Added {student['name']}.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
 
 
-@app.route("/groups/<int:gid>/remove", methods=["POST"])
-@login_required("teacher")
-def group_remove_member(gid: int):
+@app.route("/classrooms/<int:classroom_id>/students/remove", methods=["POST"])
+@org_admin_required
+def classroom_remove_student(classroom_id: int):
+    """Take a student out of a classroom.
+
+    Their work is untouched — only the membership goes, and with it the
+    classroom's teachers' sight of them.
+    """
     user = current_user()
-    _group_or_404(user, gid)
+    _classroom_or_404(user, classroom_id)
     student = _visible_student_or_404(user, request.form.get("username", ""))
 
-    db.remove_group_member(gid, student["id"])
-    flash("Removed from group.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    db.remove_classroom_student(classroom_id, student["id"])
+    flash(f"Removed {student['name']} from this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
 
 
-@app.route("/groups/<int:gid>/delete", methods=["POST"])
-@login_required("teacher")
-def group_delete(gid: int):
+@app.route("/classrooms/<int:classroom_id>/teachers/add", methods=["POST"])
+@org_admin_required
+def classroom_add_teacher(classroom_id: int):
+    """Assign a teacher to a classroom.
+
+    This is the grant that gives them sight of its students, so it is
+    admin-only and the account is resolved within the organisation first.
+    Students cannot be assigned: being a teacher of a classroom means
+    seeing other people's children.
+    """
     user = current_user()
-    name = db.delete_group(gid, user["org_id"])
+    _classroom_or_404(user, classroom_id)
+    teacher = _member_or_404(user, request.form.get("teacher_id", ""))
+    if teacher["role"] != "teacher":
+        abort(404)
+
+    db.add_classroom_teacher(classroom_id, teacher["id"])
+    flash(f"{teacher['name']} now teaches this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+
+@app.route("/classrooms/<int:classroom_id>/teachers/remove", methods=["POST"])
+@org_admin_required
+def classroom_remove_teacher(classroom_id: int):
+    """Unassign a teacher, revoking their sight of that classroom's students.
+
+    Removing the last teacher is allowed and leaves the classroom visible
+    only to admins. The screen says so rather than silently stranding it.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+    teacher = _member_or_404(user, request.form.get("teacher_id", ""))
+
+    db.remove_classroom_teacher(classroom_id, teacher["id"])
+    flash(f"{teacher['name']} no longer teaches this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+
+@app.route("/classrooms/<int:classroom_id>/delete", methods=["POST"])
+@org_admin_required
+def classroom_delete(classroom_id: int):
+    """Delete a classroom.
+
+    The students stay in the organisation and keep every bit of their
+    work; only the roster and its teacher assignments go.
+    """
+    user = current_user()
+    name = db.delete_classroom(classroom_id, user["org_id"])
     if name:
-        flash(f"Deleted “{name}”.", "success")
-    return redirect(url_for("groups_home"))
+        flash(f"Deleted “{name}”. The students are still in the class.", "success")
+    return redirect(url_for("classrooms_home"))
+
 
 
 # ── Locked lesson ───────────────────────────────────────────────────────────────
@@ -1520,14 +1800,33 @@ def group_delete(gid: int):
 @login_required()
 def locked():
     """
-    Where a student lands on a lesson their account does not cover.
+    Where a student lands on a lesson that will not open.
 
-    Deliberately not a 402 page with a Buy button: a 13-year-old is not
-    the payer, so this tells them who to ask rather than selling to them.
+    Two quite different situations share this page, and it says which:
+
+      prerequisite  the track is staged and they have not reached this one.
+                    Nothing to buy; go and finish the lesson before it.
+      subscription  nobody is paying for their account.
+
+    Deliberately not a 402 with a Buy button: a 13-year-old is not the
+    payer, so this tells them who to ask rather than selling to them.
     """
+    user = current_user()
     lesson = get_lesson(request.args.get("lesson_id", "")) or None
-    return render_template("locked.html", lesson=lesson,
-                           entitlement=entitlement()), 402
+    why = request.args.get("why", "subscription")
+
+    blocked = None
+    if lesson and user["role"] == "student":
+        blocked = prerequisite_block(user["id"], lesson)
+    # Trust the recomputed answer over the query string, which a student
+    # can type anything into.
+    if blocked:
+        why = "prerequisite"
+    elif why == "prerequisite":
+        why = "subscription"
+
+    return render_template("locked.html", lesson=lesson, why=why, blocked=blocked,
+                           entitlement=entitlement()), (403 if why == "prerequisite" else 402)
 
 
 # ── Org administration (admin teachers only) ────────────────────────────────────
@@ -1969,7 +2268,8 @@ def main() -> None:
 
     init_app()
 
-    print(f"  Lessons discovered: {len(load_lessons())}")
+    print(f"  Lessons discovered: {len(load_lessons())} "
+          f"across {len(load_tracks())} track(s)")
     for item in load_lessons():
         print(f"    {item['id']:16} {item['type']:12} {len(item.get('quiz', []))} question(s)")
 

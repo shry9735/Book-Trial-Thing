@@ -1,7 +1,8 @@
 # Ignite Academy — Game
 
 A Flash-era style browser game for STEM lessons. Students land in a classroom
-and work through lessons; teachers and parents create groups and track progress.
+and work through lessons; teachers and parents follow their progress in plain
+language.
 
 ## Run it
 
@@ -196,12 +197,16 @@ Built so a busy parent gets the answer without digging:
 - **Worked Through These** — questions they got wrong then fixed, so effort
   shows up as well as failure.
 
-Parents see only the children they have linked to themselves. Teachers see
-the students in their own organisation — not every student on the server —
-and also get group management. That boundary is enforced in one place,
-`db.visible_students()` and `db.can_see_student()`; a student outside it
-returns 404 rather than 403, so the response cannot be used to discover
-which usernames exist elsewhere.
+Parents see only the children they have linked to themselves. A teacher sees
+only the students in the classrooms they are assigned to — not every student
+in the school, and certainly not every student on the server. An org admin
+sees the whole school, because they are the one who assigns teachers to
+classrooms and pays the bill.
+
+That boundary is enforced in exactly two places, `db.visible_students()` and
+`db.can_see_student()`, which are kept deliberately in step; a student
+outside it returns 404 rather than 403, so the response cannot be used to
+discover which usernames exist elsewhere.
 
 ## Book ↔ web crossover
 
@@ -232,16 +237,21 @@ game/
 ├── content/                  Lesson prose (Markdown) — also make_epub.py input
 │   ├── 01-breadboard.md
 │   └── 02-loops.md
+├── db.py                     Every SQL statement, and the schema migrations
+├── billing.py                Stripe, and "is this account paid up?"
+├── tracks.py                 Lessons in order, and which ones a student has reached
+├── security.py               CSRF, rate limiting, redirect safety, headers
 ├── lessons/                  One folder per lesson — drop-in, iframe-isolated
 │   ├── README.md             How to write one
 │   └── circuits-03-resistor/
-│       ├── lesson.json       Manifest + quiz
+│       ├── lesson.json       Manifest + quiz + track membership
 │       └── index.html        Sandboxed lesson code
+├── tracks/                   One folder per track — ordering and staging
+│   ├── README.md             How to write one
+│   └── circuits/track.json
 ├── data/
 │   ├── items.json            Trinket catalog (committed)
-│   ├── classroom.json        Hotspot layout (committed)
-│   ├── groups.json           Teacher groups (gitignored)
-│   └── progress.json         Student progress (gitignored)
+│   └── classroom.json        Game-room hotspot layout (committed)
 ├── static/
 │   ├── art/                  All graphics — drop files in, see its README
 │   ├── kit/                  Shared lesson styles + postMessage bridge
@@ -255,8 +265,10 @@ game/
     ├── satchel.html          Trinket inventory
     ├── teacher_base.html     Grown-up chrome (normal scrolling page)
     ├── grownup.html          Parent/teacher home — plain-language status
-    ├── groups.html           Groups dashboard (teacher only)
-    ├── group.html            Roster + progress table
+    ├── classrooms.html       Classroom list (admins see the whole school)
+    ├── classroom_detail.html Roster, assigned teachers, progress table
+    ├── org.html              Members, join policy, admin controls
+    ├── billing.html          Subscription, invoices, purchase orders
     └── student.html          Per-student detail — what they got wrong
 ```
 
@@ -267,8 +279,12 @@ readable.
 
 ## Notes
 
-- `data/*.json` for users, groups, and progress are runtime state and gitignored.
-  `items.json` and `classroom.json` are content you edit, so they're committed.
-- Accounts are static by design for now. The store is a plain JSON dict, so
-  swapping in a real database later means replacing the `load_*`/`write_json`
-  helpers in `app.py` and nothing else.
+- **All state is in Postgres.** Accounts, progress, classrooms, subscriptions.
+  Nothing durable is written to local disk, which is what lets the app run
+  several workers and survive a container being replaced.
+- `data/items.json` and `data/classroom.json` are *content* — they ship with
+  the code and change on deploy, so they stay committed. Same for lesson and
+  track manifests. All of it is read once at start-up and cached; see
+  `refresh_catalog()`.
+- Upgrading a box that ran the old JSON store? `migrate_json.py` imports it,
+  idempotently.

@@ -381,6 +381,46 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         """,
         "CREATE INDEX invoices_subscription_idx ON invoices (subscription_id, created_at DESC)",
     ]),
+    (3, [
+        # ── Groups become classrooms ────────────────────────────────────────
+        # A "group" was an arbitrary bag of students that any teacher could
+        # create, and it carried no authority. A classroom is the roster a
+        # teacher is assigned to, and it decides which students that teacher
+        # can see at all. Same shape, so this is a rename that keeps every
+        # existing row rather than a second near-identical concept sitting
+        # beside the first.
+        "ALTER TABLE groups RENAME TO classrooms",
+        "ALTER TABLE group_members RENAME TO classroom_students",
+        "ALTER TABLE classroom_students RENAME COLUMN group_id TO classroom_id",
+        "ALTER INDEX groups_org_idx RENAME TO classrooms_org_idx",
+
+        # Which teachers run which classroom. Many-to-many in both
+        # directions: classes are often co-taught, and a teacher almost
+        # always has more than one.
+        """
+        CREATE TABLE classroom_teachers (
+            classroom_id bigint NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+            teacher_id   bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_at  timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY (classroom_id, teacher_id)
+        )
+        """,
+        # The hot query is "which classrooms does this teacher run", which
+        # reads the second column first.
+        "CREATE INDEX classroom_teachers_teacher_idx ON classroom_teachers (teacher_id)",
+
+        # Whoever created a group was in practice its teacher, so carry that
+        # across. Without this every existing group would survive the
+        # migration with nobody able to see it.
+        """
+        INSERT INTO classroom_teachers (classroom_id, teacher_id)
+        SELECT c.id, c.created_by
+        FROM classrooms c
+        JOIN users u ON u.id = c.created_by AND u.role = 'teacher'
+        WHERE c.created_by IS NOT NULL
+        ON CONFLICT DO NOTHING
+        """,
+    ]),
 ]
 
 
@@ -622,19 +662,42 @@ def visible_students(user: dict) -> list[dict]:
     """
     The authorization boundary for every grown-up screen.
 
-    A teacher sees the students in their own organisation and nobody
-    else's; a parent sees only the children explicitly linked to them.
-    The previous implementation returned every student in the system to
-    any teacher, which across two schools on one instance is a
-    disclosure, not a convenience.
+    Three answers, and the middle one is the whole point of classrooms:
+
+      org admin   every student in the organisation. They assign teachers to
+                  classrooms and pay the bill, so they need the full roll —
+                  including students nobody has placed yet.
+      teacher     only students in the classrooms they are assigned to. The
+                  teacher down the hall has their own kids and cannot see
+                  this one's.
+      parent      only the children explicitly linked to them.
+
+    A teacher with no classroom sees nobody. That is correct rather than
+    broken, and the screens say so in as many words.
     """
     with query() as cur:
-        if user["role"] == "teacher":
+        if user["role"] == "teacher" and user.get("org_admin"):
             cur.execute(
                 "SELECT id, username, name, avatar, link_code FROM users "
                 "WHERE org_id = %s AND role = 'student' AND is_active "
                 "AND membership_status = 'active' ORDER BY name",
                 (user["org_id"],),
+            )
+        elif user["role"] == "teacher":
+            # DISTINCT because co-teaching and multi-class students both make
+            # it easy for one student to arrive down two different paths.
+            cur.execute(
+                """
+                SELECT DISTINCT u.id, u.username, u.name, u.avatar, u.link_code
+                FROM users u
+                JOIN classroom_students cs ON cs.student_id = u.id
+                JOIN classroom_teachers ct ON ct.classroom_id = cs.classroom_id
+                WHERE ct.teacher_id = %s AND u.org_id = %s
+                  AND u.role = 'student' AND u.is_active
+                  AND u.membership_status = 'active'
+                ORDER BY u.name
+                """,
+                (user["id"], user["org_id"]),
             )
         elif user["role"] == "parent":
             cur.execute(
@@ -654,14 +717,38 @@ def visible_students(user: dict) -> list[dict]:
 
 
 def can_see_student(user: dict, student_id: int) -> bool:
+    """
+    The same rule as visible_students(), asked about one student.
+
+    Kept deliberately in step with it: together these two are the entire
+    authorization boundary, and any difference between them is a hole. Every
+    route that takes a student id out of a URL goes through this.
+    """
     if user["role"] == "teacher":
         with query() as cur:
-            cur.execute(
-                "SELECT 1 FROM users WHERE id = %s AND org_id = %s "
-                "AND role = 'student' AND is_active AND membership_status = 'active'",
-                (student_id, user["org_id"]),
-            )
+            if user.get("org_admin"):
+                cur.execute(
+                    "SELECT 1 FROM users WHERE id = %s AND org_id = %s "
+                    "AND role = 'student' AND is_active "
+                    "AND membership_status = 'active'",
+                    (student_id, user["org_id"]),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM classroom_students cs
+                    JOIN classroom_teachers ct ON ct.classroom_id = cs.classroom_id
+                    JOIN users u ON u.id = cs.student_id
+                    WHERE cs.student_id = %s AND ct.teacher_id = %s
+                      AND u.org_id = %s AND u.is_active
+                      AND u.membership_status = 'active'
+                    LIMIT 1
+                    """,
+                    (student_id, user["id"], user["org_id"]),
+                )
             return cur.fetchone() is not None
+
     if user["role"] == "parent":
         with query() as cur:
             cur.execute("SELECT 1 FROM parent_links WHERE parent_id = %s AND student_id = %s",
@@ -751,6 +838,12 @@ def record_answer(student_id: int, lesson_id: str, question_id: str,
 
 def record_example(student_id: int, lesson_id: str, example_id: str,
                    chosen: int, correct: bool) -> None:
+    """Record one practice attempt.
+
+    Practice is never graded back to the student, so unlike record_answer()
+    there is no first_try to protect — the row simply reflects the latest
+    attempt and a running count.
+    """
     with write() as cur:
         cur.execute(
             """
@@ -842,6 +935,26 @@ def lesson_entries(student_id: int) -> dict[str, dict]:
             }
 
     return entries
+
+
+def lesson_statuses(student_id: int, lesson_ids: list[str]) -> dict[str, str]:
+    """
+    Just the status of the named lessons — nothing else.
+
+    lesson_entries() loads a student's whole history across three queries,
+    which is the right shape for a report screen and far too much for a
+    gate check on /api/quiz, where it runs once per answered question. This
+    is one indexed lookup returning one column.
+    """
+    if not lesson_ids:
+        return {}
+    with query() as cur:
+        cur.execute(
+            "SELECT lesson_id, status FROM lesson_progress "
+            "WHERE student_id = %s AND lesson_id = ANY(%s)",
+            (student_id, lesson_ids),
+        )
+        return {r["lesson_id"]: r["status"] for r in cur.fetchall()}
 
 
 def inventory(student_id: int) -> list[str]:
@@ -955,21 +1068,33 @@ def unresolved_counts(student_ids: list[int],
     return out
 
 
-def group_summary_rows(org_id: int) -> list[dict]:
-    """Every group in one org with its member count, in one query."""
+def classroom_rows(org_id: int, teacher_id: int | None = None) -> list[dict]:
+    """
+    Classrooms with their headcounts, in one query.
+
+    teacher_id narrows to the classrooms that teacher runs; None means the
+    whole organisation, which is the org-admin view.
+    """
     with query() as cur:
         cur.execute(
             """
-            SELECT g.id, g.name, g.created_at,
-                   count(gm.student_id) AS members
-            FROM groups g
-            LEFT JOIN group_members gm ON gm.group_id = g.id
-            LEFT JOIN users u ON u.id = gm.student_id AND u.is_active
-            WHERE g.org_id = %s
-            GROUP BY g.id
-            ORDER BY lower(g.name)
+            SELECT c.id, c.name, c.created_at,
+                   count(DISTINCT cs.student_id) FILTER (
+                       WHERE su.is_active AND su.membership_status = 'active'
+                   ) AS students,
+                   count(DISTINCT ct.teacher_id) AS teachers
+            FROM classrooms c
+            LEFT JOIN classroom_students cs ON cs.classroom_id = c.id
+            LEFT JOIN users su ON su.id = cs.student_id
+            LEFT JOIN classroom_teachers ct ON ct.classroom_id = c.id
+            WHERE c.org_id = %s
+              AND (%s::bigint IS NULL OR EXISTS (
+                    SELECT 1 FROM classroom_teachers m
+                    WHERE m.classroom_id = c.id AND m.teacher_id = %s::bigint))
+            GROUP BY c.id
+            ORDER BY lower(c.name)
             """,
-            (org_id,),
+            (org_id, teacher_id, teacher_id),
         )
         return cur.fetchall()
 
@@ -985,6 +1110,18 @@ def assigned_lesson_ids(student_id: int) -> list[str] | None:
 
 
 def set_assignment(student_id: int, lesson_ids: list[str] | None, by_user_id: int) -> None:
+    """Narrow (or re-widen) which lessons a student can see.
+
+    Three distinct states, and the middle one is easy to lose:
+
+        None   no row  -> every lesson is available (the default)
+        []     a row with an empty array -> nothing is assigned
+        [...]  a row -> exactly these lessons
+
+    Passing None deletes the row rather than storing an empty list,
+    because "unrestricted" and "assigned nothing" must stay tellable
+    apart.
+    """
     with write() as cur:
         if lesson_ids is None:
             cur.execute("DELETE FROM assignments WHERE student_id = %s", (student_id,))
@@ -1002,60 +1139,206 @@ def set_assignment(student_id: int, lesson_ids: list[str] | None, by_user_id: in
             )
 
 
-# ── Groups ──────────────────────────────────────────────────────────────────────
+# ── Classrooms ──────────────────────────────────────────────────────────────────
+#
+# A classroom is the roster a teacher is assigned to, and it is what decides
+# which students that teacher can see — see visible_students(). Every function
+# here is scoped by org_id, so one organisation's admin can never reach
+# another's rosters.
 
-def create_group(org_id: int, name: str, by_user_id: int) -> int:
+def create_classroom(org_id: int, name: str, by_user_id: int) -> int:
     with write() as cur:
         cur.execute(
-            "INSERT INTO groups (org_id, name, created_by) VALUES (%s, %s, %s) RETURNING id",
+            "INSERT INTO classrooms (org_id, name, created_by) VALUES (%s, %s, %s) RETURNING id",
             (org_id, name, by_user_id),
         )
         return cur.fetchone()["id"]
 
 
-def group_in_org(group_id: int, org_id: int) -> dict | None:
+def classroom_in_org(classroom_id: int, org_id: int) -> dict | None:
     with query() as cur:
-        cur.execute("SELECT id, name, created_at FROM groups WHERE id = %s AND org_id = %s",
-                    (group_id, org_id))
+        cur.execute("SELECT id, name, created_at FROM classrooms WHERE id = %s AND org_id = %s",
+                    (classroom_id, org_id))
         return cur.fetchone()
 
 
-def group_members(group_id: int) -> list[dict]:
+def teaches_classroom(teacher_id: int, classroom_id: int) -> bool:
+    """Whether this teacher is assigned to this classroom.
+
+    The check behind every non-admin classroom route. Deliberately not
+    scoped by organisation: callers resolve the classroom through
+    classroom_in_org() first, so the org check has already happened.
+    """
+    with query() as cur:
+        cur.execute(
+            "SELECT 1 FROM classroom_teachers WHERE teacher_id = %s AND classroom_id = %s",
+            (teacher_id, classroom_id),
+        )
+        return cur.fetchone() is not None
+
+
+def classroom_students(classroom_id: int) -> list[dict]:
+    """Active students in one classroom, for the roster screen.
+
+    Filters on is_active and membership_status so a removed or pending
+    account stops appearing the moment its status changes, without anyone
+    having to clean up the membership rows.
+    """
     with query() as cur:
         cur.execute(
             """
-            SELECT u.id, u.username, u.name, u.avatar
-            FROM group_members gm
-            JOIN users u ON u.id = gm.student_id
-            WHERE gm.group_id = %s AND u.is_active
+            SELECT u.id, u.username, u.name, u.avatar, u.link_code
+            FROM classroom_students cs
+            JOIN users u ON u.id = cs.student_id
+            WHERE cs.classroom_id = %s AND u.is_active
+              AND u.membership_status = 'active'
             ORDER BY lower(u.name)
             """,
-            (group_id,),
+            (classroom_id,),
         )
         return cur.fetchall()
 
 
-def add_group_member(group_id: int, student_id: int) -> None:
+def classroom_teachers(classroom_id: int) -> list[dict]:
+    """Teachers assigned to one classroom.
+
+    Same active-only filtering as the student roster. A classroom whose
+    only teacher is deactivated comes back empty, which is what the screen
+    warns about — nobody can see those students.
+    """
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT u.id, u.username, u.name, u.org_admin
+            FROM classroom_teachers ct
+            JOIN users u ON u.id = ct.teacher_id
+            WHERE ct.classroom_id = %s AND u.is_active
+              AND u.membership_status = 'active'
+            ORDER BY lower(u.name)
+            """,
+            (classroom_id,),
+        )
+        return cur.fetchall()
+
+
+def classrooms_of_student(student_id: int) -> list[dict]:
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT c.id, c.name
+            FROM classroom_students cs
+            JOIN classrooms c ON c.id = cs.classroom_id
+            WHERE cs.student_id = %s
+            ORDER BY lower(c.name)
+            """,
+            (student_id,),
+        )
+        return cur.fetchall()
+
+
+def classroom_membership(org_id: int) -> dict[int, list[int]]:
+    """
+    Every classroom's student ids for one organisation, in a single query.
+
+    The listing page needs member ids for each classroom to average their
+    progress. Asking per classroom is a query per card — the same N+1 the
+    grown-up dashboard was fixed for once already.
+    """
+    out: dict[int, list[int]] = {}
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT cs.classroom_id, cs.student_id
+            FROM classroom_students cs
+            JOIN classrooms c ON c.id = cs.classroom_id
+            JOIN users u ON u.id = cs.student_id
+            WHERE c.org_id = %s AND u.is_active AND u.membership_status = 'active'
+            """,
+            (org_id,),
+        )
+        for row in cur.fetchall():
+            out.setdefault(row["classroom_id"], []).append(row["student_id"])
+    return out
+
+
+def add_classroom_student(classroom_id: int, student_id: int) -> None:
     with write() as cur:
         cur.execute(
-            "INSERT INTO group_members (group_id, student_id) VALUES (%s, %s) "
+            "INSERT INTO classroom_students (classroom_id, student_id) VALUES (%s, %s) "
             "ON CONFLICT DO NOTHING",
-            (group_id, student_id),
+            (classroom_id, student_id),
         )
 
 
-def remove_group_member(group_id: int, student_id: int) -> None:
+def remove_classroom_student(classroom_id: int, student_id: int) -> None:
     with write() as cur:
-        cur.execute("DELETE FROM group_members WHERE group_id = %s AND student_id = %s",
-                    (group_id, student_id))
+        cur.execute("DELETE FROM classroom_students WHERE classroom_id = %s AND student_id = %s",
+                    (classroom_id, student_id))
 
 
-def delete_group(group_id: int, org_id: int) -> str | None:
+def add_classroom_teacher(classroom_id: int, teacher_id: int) -> None:
     with write() as cur:
-        cur.execute("DELETE FROM groups WHERE id = %s AND org_id = %s RETURNING name",
-                    (group_id, org_id))
+        cur.execute(
+            "INSERT INTO classroom_teachers (classroom_id, teacher_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (classroom_id, teacher_id),
+        )
+
+
+def remove_classroom_teacher(classroom_id: int, teacher_id: int) -> None:
+    with write() as cur:
+        cur.execute("DELETE FROM classroom_teachers WHERE classroom_id = %s AND teacher_id = %s",
+                    (classroom_id, teacher_id))
+
+
+def delete_classroom(classroom_id: int, org_id: int) -> str | None:
+    """Delete one classroom, scoped to its organisation.
+
+    Returns the name it had, or None when nothing matched — which is also
+    how a cross-organisation attempt comes back, so callers cannot use the
+    result to tell "not yours" from "not there".
+
+    The students are untouched: only their membership rows go, by cascade.
+    """
+    with write() as cur:
+        cur.execute("DELETE FROM classrooms WHERE id = %s AND org_id = %s RETURNING name",
+                    (classroom_id, org_id))
         row = cur.fetchone()
         return row["name"] if row else None
+
+
+def unplaced_students(org_id: int) -> list[dict]:
+    """
+    Students in the organisation who are in no classroom at all.
+
+    They are invisible to every ordinary teacher until somebody places them,
+    so the admin screen surfaces them rather than letting them sit unnoticed
+    after signing up with the join code.
+    """
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT u.id, u.username, u.name, u.created_at
+            FROM users u
+            WHERE u.org_id = %s AND u.role = 'student' AND u.is_active
+              AND u.membership_status = 'active'
+              AND NOT EXISTS (SELECT 1 FROM classroom_students cs WHERE cs.student_id = u.id)
+            ORDER BY u.created_at
+            """,
+            (org_id,),
+        )
+        return cur.fetchall()
+
+
+def org_teachers(org_id: int) -> list[dict]:
+    with query() as cur:
+        cur.execute(
+            "SELECT id, username, name, org_admin FROM users "
+            "WHERE org_id = %s AND role = 'teacher' AND is_active "
+            "AND membership_status = 'active' ORDER BY lower(name)",
+            (org_id,),
+        )
+        return cur.fetchall()
 
 
 # ── Auth tokens ─────────────────────────────────────────────────────────────────
@@ -1469,6 +1752,13 @@ def upsert_invoice(*, stripe_invoice_id: str, subscription_id: int | None,
                    number: str | None, status: str, amount_due: int, amount_paid: int,
                    currency: str, due_date, hosted_invoice_url: str | None,
                    pdf_url: str | None) -> None:
+    """Store or refresh one Stripe invoice.
+
+    Keyed on the Stripe id so a replayed webhook converges instead of
+    duplicating. subscription_id is COALESCEd rather than overwritten: an
+    invoice can arrive before the subscription it belongs to is known, and
+    a later event must not blank the link back out.
+    """
     with write() as cur:
         cur.execute(
             """

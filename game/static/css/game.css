@@ -1399,3 +1399,49 @@ a.role-tab         { text-decoration: none; display: inline-flex;
 .kit-banner-text   { flex: 1; min-width: 0; line-height: 1.4; }
 .kit-banner-text b { display: block; font-size: 14px; color: var(--ink); }
 .kit-banner-text span { font-size: 12px; color: var(--ink-mid); }
+
+
+/* ── Tracks ────────────────────────────────────────────────────────────────
+   A track heading carries more than the old subject string did: a blurb, a
+   count, and whether the track is staged. The "In order" pill is the only
+   warning a student gets that later cards will be shut, so it sits next to
+   the title rather than on the cards. */
+
+.track-head        { display: flex; align-items: flex-end; justify-content: space-between;
+                     gap: 16px; margin: 22px 0 10px; flex-wrap: wrap; }
+.track-head .category-head { margin: 0; }
+.track-blurb       { font-size: 13px; color: var(--ink-mid); line-height: 1.45;
+                     margin-top: 2px; max-width: 60ch; }
+.track-meta        { display: flex; align-items: center; gap: 8px; flex: none; }
+.track-count       { font-size: 12px; font-weight: bold; color: var(--ink-dim);
+                     letter-spacing: .04em; }
+
+/* A prerequisite lock is not a paywall, and the card says which. Both use
+   the same dimming, because to a student the practical difference is only
+   what they do next — which the card text spells out. */
+
+
+/* ── Teacher tables ────────────────────────────────────────────────────────
+   .t-table has been used by the org and student screens since they were
+   written and never actually had any rules, so every one of those tables
+   has been rendering with default browser spacing — columns touching, no
+   row separation. The classroom screens made that impossible to miss. */
+
+.t-table           { width: 100%; border-collapse: collapse; }
+.t-table th        { text-align: left; font-size: 11px; text-transform: uppercase;
+                     letter-spacing: .07em; color: var(--ink-dim); font-weight: 700;
+                     padding: 10px 14px; border-bottom: 2px solid var(--border); }
+.t-table td        { padding: 11px 14px; border-bottom: 1px solid var(--border-lt);
+                     vertical-align: middle; }
+.t-table tr:last-child td { border-bottom: none; }
+.t-table tbody tr:hover   { background: var(--brand-lt); }
+.t-table td.bad    { color: var(--bad); font-weight: bold; }
+.t-table code      { font-size: 12px; color: var(--ink-mid); }
+
+/* A form tucked under a table needs to sit inside the panel's padding
+   rather than flush against its edge. */
+.panel > .inline-form { padding: 12px 14px; border-top: 1px solid var(--border-lt); }
+
+/* .panel-head is a flex row, so float has never moved this. */
+.head-note         { margin-left: auto; font-weight: normal; opacity: .75;
+                     font-size: 12px; letter-spacing: 0; text-transform: none; }

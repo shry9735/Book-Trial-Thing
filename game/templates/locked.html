@@ -2,25 +2,52 @@
 {% block title %}Locked — Ignite Academy{% endblock %}
 
 {% block stage_content %}
-{# Aimed at a student, who is not the payer. It tells them who to ask
-   rather than trying to sell them anything. #}
+{# Two quite different reasons land here, and they have different remedies.
+   A staged lesson needs the one before it finishing — nothing to buy, and
+   nothing a grown-up has to do. A paywalled one is not the student's
+   problem to solve at all, so it tells them who to ask instead of selling
+   to them. #}
 <div class="panel locked-panel">
-  <div class="panel-head">This one's locked</div>
+  <div class="panel-head">
+    {% if why == 'prerequisite' %}Not yet{% else %}This one's locked{% endif %}
+  </div>
   <div class="locked-body">
-    <div class="locked-icon">🔒</div>
-    <h2 class="locked-title">
-      {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %} isn't unlocked yet
-    </h2>
-    <p class="locked-text">
-      {% if entitlement.status == 'none' %}
-        Your class or a grown-up at home needs to set up a subscription before
-        this one opens up.
-      {% else %}
-        There's a hold on the subscription that covers your account. A grown-up
-        can sort it out.
-      {% endif %}
-    </p>
-    <p class="locked-text dim">Plenty of free lessons are still open.</p>
+    <div class="locked-icon">{% if why == 'prerequisite' %}🔗{% else %}🔒{% endif %}</div>
+
+    {% if why == 'prerequisite' %}
+      <h2 class="locked-title">
+        {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %} opens a bit later
+      </h2>
+      <p class="locked-text">
+        {% if blocked and blocked.after %}
+          Finish <b>“{{ blocked.after }}”</b> first and this one unlocks.
+        {% else %}
+          Work through this track in order and this one will open up.
+        {% endif %}
+      </p>
+      <p class="locked-text dim">
+        {% if blocked and blocked.track %}
+          {{ blocked.track.title }} lessons are meant to be done in order — each
+          one builds on the last.
+        {% endif %}
+      </p>
+
+    {% else %}
+      <h2 class="locked-title">
+        {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %} isn't unlocked yet
+      </h2>
+      <p class="locked-text">
+        {% if entitlement.status == 'none' %}
+          Your class or a grown-up at home needs to set up a subscription before
+          this one opens up.
+        {% else %}
+          There's a hold on the subscription that covers your account. A grown-up
+          can sort it out.
+        {% endif %}
+      </p>
+      <p class="locked-text dim">Plenty of free lessons are still open.</p>
+    {% endif %}
+
     <a class="btn lg" href="{{ url_for('lessons') }}">← Back to lessons</a>
   </div>
 </div>

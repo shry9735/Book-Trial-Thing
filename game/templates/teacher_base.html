@@ -12,8 +12,11 @@
   <div class="mark">🔥</div>
   <a class="title" href="{{ url_for('grownup_home') }}">Ignite Academy</a>
   <div class="who">Signed in as <b>{{ user.name }}</b></div>
+  {% if user.role == 'teacher' %}
+    <a class="btn sm ghost" href="{{ url_for('classrooms_home') }}">Classrooms</a>
+  {% endif %}
   {% if user.role == 'teacher' and user.org_admin %}
-    <a class="btn sm ghost" href="{{ url_for('org_home') }}">Class</a>
+    <a class="btn sm ghost" href="{{ url_for('org_home') }}">Org</a>
   {% endif %}
   {% if user.role == 'parent' or (user.role == 'teacher' and user.org_admin) %}
     <a class="btn sm ghost" href="{{ url_for('billing_home') }}">Billing</a>

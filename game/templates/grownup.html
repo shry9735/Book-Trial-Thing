@@ -6,7 +6,7 @@
 <div class="t-heading">
   <h1>{% if is_teacher %}Your Students{% else %}Your Family{% endif %}</h1>
   {% if is_teacher %}
-    <a class="btn sm ghost" href="{{ url_for('groups_home') }}">Manage Groups</a>
+    <a class="btn sm ghost" href="{{ url_for('classrooms_home') }}">Classrooms</a>
   {% endif %}
 </div>
 
@@ -132,14 +132,26 @@
     {% endfor %}
   </div>
 {% else %}
+  {# An empty dashboard has three quite different causes and one of them —
+     a teacher in no classroom — is the system working as designed. Saying
+     which, and who fixes it, is the difference between an empty page and a
+     page that looks broken. #}
   <div class="panel empty">
     <div class="big">🎒</div>
-    {% if is_teacher %}
-      No student accounts yet.
+    {% if is_teacher and not user.org_admin %}
+      You're not assigned to a classroom yet, so there are no students to
+      show.<br />
+      An admin at your school can add you to one.
+    {% elif is_teacher %}
+      No students yet. Once they sign up with the join code above they'll
+      appear here —<br />
+      then put them in a
+      <a href="{{ url_for('classrooms_home') }}">classroom</a> so their
+      teacher can see them too.
     {% else %}
       No children linked to your account yet.<br />
-      Ask a teacher to link them, or add usernames to
-      <code>children</code> in <code>data/users.json</code>.
+      Ask their teacher for the six-character student code, then add it
+      above.
     {% endif %}
   </div>
 {% endif %}

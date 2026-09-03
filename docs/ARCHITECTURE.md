@@ -59,8 +59,10 @@ organisation.
 | `migrate_json.py` | entrypoint | One-way import from the old JSON store. |
 | `selftest.py` | entrypoint | Auth, tenancy, concurrency, web-surface tests. |
 | `selftest_billing.py` | entrypoint | Subscriptions, entitlement, org admin, webhooks. |
+| `selftest_classrooms.py` | entrypoint | Classroom isolation and track staging. |
 | `app.py` | web | Every route. Request lifecycle, template data, HTTP status. |
 | `billing.py` | service | Stripe, and the single answer to "is this account paid up?". |
+| `tracks.py` | service | Lessons in a deliberate order, and which ones a student has reached. |
 | `security.py` | service | CSRF, rate limiting, redirect safety, headers, input rules. |
 | `emailer.py` | service | Verification and reset mail. Console or SMTP. |
 | `db.py` | data | Schema migrations and every SQL statement in the system. |
@@ -275,6 +277,12 @@ A lesson may also declare a **kit** — a physical box of parts. That is
 purely informational and never affects access; it is a badge on the card
 and a banner on the lesson.
 
+A lesson in a **sequential track** has a second, independent gate: it stays
+shut until the lesson before it is finished. That is pedagogy rather than
+payment, and it is kept well away from the subscription check — a student
+needs to tell "you haven't got there yet" from "this needs a
+subscription", because the remedies are completely different.
+
 Gating is enforced on the lesson page **and** on every API route. The page
 can simply be skipped, so the API is the real boundary.
 
@@ -286,12 +294,12 @@ A distinction worth internalising, because it decides where a new thing
 belongs.
 
 **Content** ships with the code and changes on deploy. Lesson manifests,
-`data/items.json`, `data/classroom.json`, art. It lives in files, is read
+track manifests, `data/items.json`, `data/classroom.json`, art. It lives in files, is read
 once at start-up by `refresh_catalog()`, and is cached in memory. It used
 to be re-scanned and re-parsed on every request — once per answered quiz
 question, among others.
 
-**State** is created by users at runtime. Accounts, progress, groups,
+**State** is created by users at runtime. Accounts, progress, classrooms,
 subscriptions. It lives in Postgres, always.
 
 If you are adding something and cannot tell which it is, ask whether two
@@ -308,6 +316,7 @@ responsible:
 |---|---|
 | Is this account paid up? | `billing.entitlement_for()` |
 | Who can see this student? | `db.visible_students()`, `db.can_see_student()` |
+| Has the student reached this lesson? | `app.prerequisite_block()` → `tracks.gate()` |
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |

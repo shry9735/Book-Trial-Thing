@@ -186,11 +186,12 @@ def t_login():
 def t_csrf():
     c = client()
     login(c, "ms_chen")
-    res = c.post("/groups/new", data={"name": "No Token Group"})
+    res = c.post("/classrooms/new", data={"name": "No Token Class"})
     assert res.status_code == 400, f"expected 400, got {res.status_code}"
 
-    page = c.get("/groups").get_data(as_text=True)
-    res = c.post("/groups/new", data={"name": "Real Group", "csrf_token": token_from(page)})
+    page = c.get("/classrooms").get_data(as_text=True)
+    res = c.post("/classrooms/new", data={"name": "Real Class",
+                                          "csrf_token": token_from(page)})
     assert res.status_code in (302, 200), res.status_code
 
 
@@ -303,7 +304,7 @@ def t_parent_scope():
     c = client()
     login(c, "dana")
     assert c.get("/grownup/student/notyours").status_code == 404
-    assert c.get("/groups").status_code == 302, "parent reached teacher-only groups"
+    assert c.get("/classrooms").status_code == 302, "parent reached teacher-only classrooms"
 
 
 # ── Progress ────────────────────────────────────────────────────────────────────
@@ -530,7 +531,7 @@ def t_no_enumeration():
     assert "reset link is on its way" in unknown.get_data(as_text=True)
 
 
-# ── Assignments and groups ──────────────────────────────────────────────────────
+# ── Assignments and classrooms ──────────────────────────────────────────────────
 
 @check("assignment restrictions are enforced server-side")
 def t_assignments():
@@ -551,25 +552,27 @@ def t_assignments():
     assert c.get(f"/lesson/{blocked}").status_code == 200, "unrestricting did not work"
 
 
-@check("group membership cannot cross organisations")
-def t_group_tenancy():
+@check("classroom membership cannot cross organisations")
+def t_classroom_tenancy():
     teacher = db.user_by_username("ms_chen")
-    gid = db.create_group(teacher["org_id"], "Period 1", teacher["id"])
+    classroom_id = db.create_classroom(teacher["org_id"], "Period 1", teacher["id"])
+    db.add_classroom_teacher(classroom_id, teacher["id"])
 
     c = client()
     login(c, "ms_chen")
-    page = c.get(f"/groups/{gid}").get_data(as_text=True)
-    res = c.post(f"/groups/{gid}/add",
+    page = c.get(f"/classrooms/{classroom_id}").get_data(as_text=True)
+    res = c.post(f"/classrooms/{classroom_id}/students/add",
                  data={"csrf_token": token_from(page), "username": "notyours"})
-    assert res.status_code == 404, "added another org's student to a group"
+    assert res.status_code == 404, "added another org's student to a classroom"
 
-    res = c.post(f"/groups/{gid}/add",
+    res = c.post(f"/classrooms/{classroom_id}/students/add",
                  data={"csrf_token": token_from(page), "username": "alex"})
     assert res.status_code in (302, 200)
-    assert {m["username"] for m in db.group_members(gid)} == {"alex"}
+    assert {m["username"] for m in db.classroom_students(classroom_id)} == {"alex"}
 
     other = db.user_by_username("mr_other")
-    assert db.group_in_org(gid, other["org_id"]) is None, "group visible to another org"
+    assert db.classroom_in_org(classroom_id, other["org_id"]) is None, \
+        "classroom visible to another org"
 
 
 @check("HTTP errors keep their own status instead of becoming 500s")
@@ -644,12 +647,12 @@ def t_pages_render():
     teacher = client()
     login(teacher, "ms_chen")
     visit(teacher, "/grownup")
-    visit(teacher, "/groups")
+    visit(teacher, "/classrooms")
     chen = db.user_by_username("ms_chen")
     for row in db.visible_students(chen):
         visit(teacher, f"/grownup/student/{row['username']}")
-    for row in db.group_summary_rows(chen["org_id"]):
-        visit(teacher, f"/groups/{row['id']}")
+    for row in db.classroom_rows(chen["org_id"]):
+        visit(teacher, f"/classrooms/{row['id']}")
 
     parent = client()
     login(parent, "dana")
@@ -676,7 +679,7 @@ TESTS = [
     t_quiz_recording, t_reward_once, t_concurrent_writes, t_concurrent_same_row,
     t_dashboard_queries,
     t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
-    t_assignments, t_group_tenancy, t_http_error_codes, t_head_not_post, t_pages_render, t_health,
+    t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post, t_pages_render, t_health,
 ]
 
 

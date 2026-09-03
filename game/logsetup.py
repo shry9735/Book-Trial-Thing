@@ -43,6 +43,13 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging(cfg) -> None:
+    """Point the root logger at stdout, in the right format.
+
+    JSON in production because that is what a log shipper expects; readable
+    lines in development because that is what a person expects. Werkzeug's
+    per-request line is muted either way: the proxy already writes an
+    access log, and it is pure noise at INFO.
+    """
     handler = logging.StreamHandler(sys.stdout)
     if cfg.LOG_JSON:
         handler.setFormatter(JsonFormatter())

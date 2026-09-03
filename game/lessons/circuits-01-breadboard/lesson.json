@@ -1,18 +1,23 @@
 {
   "title": "Meet the Breadboard",
   "subject": "Circuits",
+  "track": "circuits",
   "type": "reading",
   "content": "01-breadboard.md",
   "order": 10,
   "duration_min": 6,
   "reward": "badge-breadboard",
   "description": "Where wires go, and why the holes are connected the way they are.",
-
   "quiz": [
     {
       "id": "q1",
       "prompt": "How many holes are connected together in one terminal strip row?",
-      "choices": ["Two", "Five", "Ten", "All of them"],
+      "choices": [
+        "Two",
+        "Five",
+        "Ten",
+        "All of them"
+      ],
       "answer": 1,
       "explain": "Each row connects five holes on one side of the center channel. The other five are a separate group."
     },
@@ -33,7 +38,7 @@
       "choices": [
         "The breadboard shows an error",
         "It sparks",
-        "Nothing tells you — the circuit just doesn't work"
+        "Nothing tells you \u2014 the circuit just doesn't work"
       ],
       "answer": 2,
       "explain": "This is why the tug test matters. A breadboard never warns you about a wrong connection, so you have to check it yourself."

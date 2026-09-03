@@ -1,44 +1,45 @@
 {
   "title": "Reading Resistors",
   "subject": "Basic Electricity",
+  "track": "basic-electricity",
   "type": "interactive",
   "order": 18,
   "duration_min": 8,
   "reward": "badge-resistor-code",
-  "description": "Spark decodes the stripes — what a resistor actually does, and the color code every one of them wears.",
+  "description": "Spark decodes the stripes \u2014 what a resistor actually does, and the color code every one of them wears.",
   "examples": [
     {
       "id": "p1",
       "prompt": "A resistor is banded orange, orange, red. What's its value?",
       "choices": [
-        "230 Ω",
-        "3,300 Ω",
-        "33,000 Ω"
+        "230 \u03a9",
+        "3,300 \u03a9",
+        "33,000 \u03a9"
       ],
       "answer": 1,
-      "explain": "Orange=3, orange=3, so 33 — red means add two zeros: 3,300 Ω, or 3.3k."
+      "explain": "Orange=3, orange=3, so 33 \u2014 red means add two zeros: 3,300 \u03a9, or 3.3k."
     },
     {
       "id": "p2",
       "prompt": "A resistor is banded red, red, red. What's its value?",
       "choices": [
-        "22 Ω",
-        "220 Ω",
-        "2,200 Ω"
+        "22 \u03a9",
+        "220 \u03a9",
+        "2,200 \u03a9"
       ],
       "answer": 2,
-      "explain": "Red=2, red=2, so 22 — the third red means add two zeros: 2,200 Ω, or 2.2k."
+      "explain": "Red=2, red=2, so 22 \u2014 the third red means add two zeros: 2,200 \u03a9, or 2.2k."
     },
     {
       "id": "p3",
       "prompt": "A resistor is banded green, blue, orange. What's its value?",
       "choices": [
-        "56 Ω",
-        "5,600 Ω",
-        "56,000 Ω"
+        "56 \u03a9",
+        "5,600 \u03a9",
+        "56,000 \u03a9"
       ],
       "answer": 2,
-      "explain": "Green=5, blue=6, so 56 — orange means add three zeros: 56,000 Ω, or 56k."
+      "explain": "Green=5, blue=6, so 56 \u2014 orange means add three zeros: 56,000 \u03a9, or 56k."
     }
   ],
   "quiz": [
@@ -46,12 +47,12 @@
       "id": "t1",
       "prompt": "What's a resistor's actual job in a circuit?",
       "choices": [
-        "It resists — limits — the current flowing through it",
+        "It resists \u2014 limits \u2014 the current flowing through it",
         "It stores charge for later",
         "It boosts the voltage of the battery"
       ],
       "answer": 0,
-      "explain": "That's the R in V = I × R. More resistance, less current, for the same voltage.",
+      "explain": "That's the R in V = I \u00d7 R. More resistance, less current, for the same voltage.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#ffffff\" stroke=\"#c8b090\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#ffffff\" stroke=\"#c8b090\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#ffffff\" stroke=\"#c8b090\" stroke-width=\"1\"/></svg>"
     },
     {
@@ -82,48 +83,48 @@
       "id": "m1",
       "prompt": "A resistor is banded brown, black, red. What's its value?",
       "choices": [
-        "10 Ω",
-        "100 Ω",
-        "1,000 Ω"
+        "10 \u03a9",
+        "100 \u03a9",
+        "1,000 \u03a9"
       ],
       "answer": 2,
-      "explain": "Brown=1, black=0, so 10 — red means add two zeros: 1,000 Ω, or 1k.",
+      "explain": "Brown=1, black=0, so 10 \u2014 red means add two zeros: 1,000 \u03a9, or 1k.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#6b3f1f\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#1a1a1a\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#c62828\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/></svg>"
     },
     {
       "id": "m2",
       "prompt": "A resistor is banded yellow, violet, brown. What's its value?",
       "choices": [
-        "47 Ω",
-        "470 Ω",
-        "4,700 Ω"
+        "47 \u03a9",
+        "470 \u03a9",
+        "4,700 \u03a9"
       ],
       "answer": 1,
-      "explain": "Yellow=4, violet=7, so 47 — brown means add one zero: 470 Ω.",
+      "explain": "Yellow=4, violet=7, so 47 \u2014 brown means add one zero: 470 \u03a9.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#f2c230\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#7a4b9e\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#6b3f1f\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/></svg>"
     },
     {
       "id": "m3",
       "prompt": "A resistor is banded green, brown, orange. What's its value?",
       "choices": [
-        "51 Ω",
-        "5,100 Ω",
-        "51,000 Ω"
+        "51 \u03a9",
+        "5,100 \u03a9",
+        "51,000 \u03a9"
       ],
       "answer": 2,
-      "explain": "Green=5, brown=1, so 51 — orange means add three zeros: 51,000 Ω, or 51k.",
+      "explain": "Green=5, brown=1, so 51 \u2014 orange means add three zeros: 51,000 \u03a9, or 51k.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#2e8b45\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#6b3f1f\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#e07b20\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/></svg>"
     },
     {
       "id": "m4",
       "prompt": "A resistor is banded violet, green, black. What's its value?",
       "choices": [
-        "75 Ω",
-        "750 Ω",
-        "7.5 Ω"
+        "75 \u03a9",
+        "750 \u03a9",
+        "7.5 \u03a9"
       ],
       "answer": 0,
-      "explain": "Violet=7, green=5, so 75 — black means add zero zeros: it stays 75 Ω.",
+      "explain": "Violet=7, green=5, so 75 \u2014 black means add zero zeros: it stays 75 \u03a9.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#7a4b9e\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#2e8b45\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#1a1a1a\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/></svg>"
     }
   ]

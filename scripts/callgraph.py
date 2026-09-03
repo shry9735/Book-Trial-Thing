@@ -39,9 +39,10 @@ PACKAGE = REPO / "game"
 # depend on anything in a LOWER layer, never a higher one — so db.py must
 # never import app.py, and billing.py must never reach for a request.
 LAYERS: list[tuple[str, list[str]]] = [
-    ("entrypoint", ["wsgi", "manage", "migrate_json", "selftest", "selftest_billing"]),
+    ("entrypoint", ["wsgi", "manage", "migrate_json", "import_assets",
+                    "selftest", "selftest_billing", "selftest_classrooms"]),
     ("web",        ["app"]),
-    ("service",    ["billing", "security", "emailer"]),
+    ("service",    ["billing", "security", "emailer", "tracks"]),
     ("data",       ["db"]),
     ("platform",   ["config", "logsetup"]),
 ]
@@ -208,6 +209,10 @@ def layer_violations(modules: dict[str, Module]) -> list[tuple[str, str]]:
     bad = []
     for name, module in modules.items():
         if name not in LAYER_OF:
+            # Not placed in a layer, so nothing can be checked about it.
+            # Reported rather than skipped: a new module quietly escaping
+            # the layering rules is exactly what this is here to prevent.
+            bad.append((name, "<unplaced: add it to LAYERS>"))
             continue
         for imported in module.imports & LOCAL_MODULES:
             if imported == name:
@@ -319,8 +324,10 @@ def render(modules: dict[str, Module]) -> str:
 
     if violations:
         out += ["### ⚠ Layering violations", ""]
-        out += [f"- `{source}.py` imports `{target}.py` "
-                f"({LAYER_NAME[LAYER_OF[source]]} → {LAYER_NAME[LAYER_OF[target]]})"
+        out += [(f"- `{source}.py` is not placed in a layer — add it to `LAYERS`"
+                 if target.startswith("<") else
+                 f"- `{source}.py` imports `{target}.py` "
+                 f"({LAYER_NAME[LAYER_OF[source]]} → {LAYER_NAME[LAYER_OF[target]]})")
                 for source, target in violations]
         out += [""]
     else:
@@ -414,6 +421,9 @@ def main() -> int:
     if args.check:
         violations = layer_violations(modules)
         for source, target in violations:
+            if target.startswith("<"):
+                print(f"  {source}.py is not placed in a layer {target}", file=sys.stderr)
+                continue
             print(f"  layering violation: {source}.py imports {target}.py "
                   f"({LAYER_NAME[LAYER_OF[source]]} → {LAYER_NAME[LAYER_OF[target]]})",
                   file=sys.stderr)

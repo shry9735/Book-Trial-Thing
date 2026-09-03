@@ -1,12 +1,12 @@
 {
   "title": "The Day of the Science Fair",
   "subject": "Code",
+  "track": "code",
   "type": "interactive",
   "order": 60,
   "duration_min": 20,
   "reward": "trinket-clipboard",
   "description": "Judging is in forty-eight minutes and the prototype just died. Every choice you make changes how this ends.",
-
   "examples": [
     {
       "id": "p1",
@@ -17,14 +17,14 @@
         "The batteries are flat"
       ],
       "answer": 1,
-      "explain": "A dead sensor reads 0 every single time. Readings that come back are a sensor that works — so the fault is between the sensor and the board."
+      "explain": "A dead sensor reads 0 every single time. Readings that come back are a sensor that works \u2014 so the fault is between the sensor and the board."
     },
     {
       "id": "p2",
       "prompt": "Your robot drives perfectly straight on the classroom carpet. Should you expect the same on the polished gym floor?",
       "choices": [
-        "Yes — straight is straight",
-        "No — the wheels grip differently, so it may drift"
+        "Yes \u2014 straight is straight",
+        "No \u2014 the wheels grip differently, so it may drift"
       ],
       "answer": 1,
       "explain": "Different surfaces mean different grip. A calibration tuned on carpet is a calibration for carpet. Test where it will actually run."
@@ -34,14 +34,13 @@
       "prompt": "Your board resets whenever the motors strain against something. What kind of problem is that usually?",
       "choices": [
         "A bug in the code",
-        "A power problem — the voltage dips below what the board needs",
+        "A power problem \u2014 the voltage dips below what the board needs",
         "A broken motor"
       ],
       "answer": 1,
       "explain": "Straining motors pull extra current. If the supply can't deliver it, voltage sags and the board reboots. Nothing is wrong with the code at all."
     }
   ],
-
   "quiz": [
     {
       "id": "t1",
@@ -52,7 +51,7 @@
         "Reflash the code to start from a clean slate"
       ],
       "answer": 1,
-      "explain": "Changing things before you understand the problem is guessing. The Serial Monitor shows you what is really going on — look before you touch."
+      "explain": "Changing things before you understand the problem is guessing. The Serial Monitor shows you what is really going on \u2014 look before you touch."
     },
     {
       "id": "t2",
@@ -69,7 +68,7 @@
       "id": "t3",
       "prompt": "Why does testing on the surface you'll actually demo on matter?",
       "choices": [
-        "It doesn't — a robot drives the same everywhere",
+        "It doesn't \u2014 a robot drives the same everywhere",
         "Different surfaces grip differently, so the robot moves differently",
         "The judges expect to see you practise"
       ],

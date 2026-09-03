@@ -4,7 +4,12 @@ migrate_json.py — one-way import of the old JSON store into Postgres.
 
 The files it reads (data/users.json, groups.json, progress.json,
 assignments.json) were gitignored runtime state, so this only matters if
-you have a box that has been running the old version.  If you are
+you have a box that has been running the old version.
+
+The old store's "groups" land in this schema as classrooms, and every
+imported teacher is assigned to each of them — the JSON store never
+recorded who owned a group, and a classroom with no teacher is one nobody
+can see.  If you are
 standing the app up fresh, you do not need this at all.
 
     python migrate_json.py --org "Rivera Middle" --dry-run
@@ -21,8 +26,8 @@ unverified — an account cannot reset its password until a real address is
 set, which is the honest outcome given the old store never collected one.
 
 Safe to re-run.  An org of the same name is reused rather than duplicated,
-groups are matched by name within it, and every row insert is ON CONFLICT
-DO NOTHING keyed on its natural key — so an import that died halfway can
+classrooms are matched by name within it, and every row insert is ON
+CONFLICT DO NOTHING keyed on its natural key — so an import that died halfway can
 just be run again.
 """
 
@@ -85,7 +90,7 @@ def main() -> int:
         return 0
 
     counts = {"users": 0, "lessons": 0, "answers": 0, "examples": 0,
-              "items": 0, "groups": 0, "members": 0, "assignments": 0}
+              "items": 0, "classrooms": 0, "members": 0, "assignments": 0}
 
     if args.dry_run:
         print(f"\nDry run — would import into a new org named {args.org!r}:")
@@ -94,7 +99,8 @@ def main() -> int:
             print(f"  {info.get('role', '?'):8} {username:16} "
                   f"{len(record.get('lessons', {}))} lesson(s), "
                   f"{len(record.get('items', []))} item(s)")
-        print(f"\n  {len(groups)} group(s), {len(assignments)} assignment(s)")
+        print(f"\n  {len(groups)} group(s) -> classrooms, "
+              f"{len(assignments)} assignment(s)")
         print("\nRe-run without --dry-run to apply.")
         return 0
 
@@ -211,28 +217,42 @@ def main() -> int:
                 )
                 counts["items"] += cur.rowcount
 
-        # ── Groups ──────────────────────────────────────────────────────────
+        # ── Groups become classrooms ────────────────────────────────────────
+        # The old store's "groups" are this schema's classrooms — see
+        # migration 3. The teacher who owned a group is assigned to the
+        # classroom it becomes, or nobody would be able to see it.
         for group in groups.values():
             name = group.get("name", "Group")
-            # Matched by name so a second run tops up the same group
+            # Matched by name so a second run tops up the same classroom
             # instead of creating another one beside it.
-            cur.execute("SELECT id FROM groups WHERE org_id = %s AND name = %s",
+            cur.execute("SELECT id FROM classrooms WHERE org_id = %s AND name = %s",
                         (org["id"], name))
             row = cur.fetchone()
             if row:
                 gid = row["id"]
             else:
                 cur.execute(
-                    "INSERT INTO groups (org_id, name, created_at) "
+                    "INSERT INTO classrooms (org_id, name, created_at) "
                     "VALUES (%s, %s, COALESCE(%s, now())) RETURNING id",
                     (org["id"], name, parse_stamp(group.get("created"))),
                 )
                 gid = cur.fetchone()["id"]
-                counts["groups"] += 1
+                counts["classrooms"] += 1
+
+            # Every teacher imported gets the classroom, because the old
+            # store never recorded who owned a group. Better that they can
+            # all see it than that nobody can.
+            for username, info in users.items():
+                if info.get("role") == "teacher" and username in ids:
+                    cur.execute(
+                        "INSERT INTO classroom_teachers (classroom_id, teacher_id) "
+                        "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (gid, ids[username]),
+                    )
             for member in group.get("members", []):
                 if member in ids:
                     cur.execute(
-                        "INSERT INTO group_members (group_id, student_id) VALUES (%s, %s) "
+                        "INSERT INTO classroom_students (classroom_id, student_id) VALUES (%s, %s) "
                         "ON CONFLICT DO NOTHING",
                         (gid, ids[member]),
                     )

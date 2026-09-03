@@ -22,7 +22,7 @@ together cannot race.
 ```mermaid
 erDiagram
     orgs ||--o{ users : "belong to"
-    orgs ||--o{ groups : has
+    orgs ||--o{ classrooms : has
     orgs ||--o| subscriptions : "may pay"
     users ||--o{ parent_links : "parent of"
     users ||--o{ lesson_progress : does
@@ -30,9 +30,11 @@ erDiagram
     users ||--o{ example_answers : practises
     users ||--o{ inventory : earns
     users ||--o| assignments : "restricted by"
-    users ||--o{ group_members : "member of"
+    users ||--o{ classroom_students : "enrolled in"
+    users ||--o{ classroom_teachers : teaches
     users ||--o| subscriptions : "may pay"
-    groups ||--o{ group_members : contains
+    classrooms ||--o{ classroom_students : contains
+    classrooms ||--o{ classroom_teachers : "staffed by"
     users ||--o{ auth_tokens : "verify / reset"
     subscriptions ||--o{ invoices : billed
 ```
@@ -150,10 +152,21 @@ around it.
 
 ## Teaching
 
-### `groups` / `group_members`
+### `classrooms` / `classroom_students` / `classroom_teachers`
 
-A teacher's arbitrary grouping of students within their org. `groups` is
-scoped by `org_id`; every membership operation checks it.
+The roster a teacher is assigned to — and the reason a teacher sees the
+students they see. `classrooms` is scoped by `org_id`, and every
+membership operation checks it.
+
+Both membership tables are many-to-many on purpose: classes are often
+co-taught, and a student can be in more than one. `visible_students()`
+selects `DISTINCT` for exactly that reason.
+
+These began life as `groups`, an arbitrary bag of students that carried no
+authority. Migration 3 renames rather than replaces, so existing rows
+survive, and backfills each old group's creator as its teacher — otherwise
+every existing group would have come through the upgrade with nobody able
+to see it.
 
 ### `assignments`
 
@@ -259,6 +272,7 @@ reintroduces a specific bug:
 | `stripe_events` PK | A retried webhook applied twice |
 | `quiz_answers` PK | Concurrent answers overwriting rather than counting |
 | `ON DELETE CASCADE` throughout | Orphaned rows after a deletion request |
+| `classroom_teachers` PK | One teacher assigned twice to a class |
 
 ---
 

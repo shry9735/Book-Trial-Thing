@@ -1,0 +1,135 @@
+{% extends "teacher_base.html" %}
+{% block title %}{{ classroom.name }} — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('classrooms_home') }}">← Classrooms</a></div>
+    <h1>{{ classroom.name }}</h1>
+  </div>
+  {% if is_admin %}
+    <form method="POST" action="{{ url_for('classroom_delete', classroom_id=classroom.id) }}"
+          onsubmit="return confirm('Delete “{{ classroom.name }}”? The students stay in the class and keep their work.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button type="submit" class="btn sm ghost danger">Delete classroom</button>
+    </form>
+  {% endif %}
+</div>
+
+{# ── Teachers ────────────────────────────────────────────────────────── #}
+<div class="panel">
+  <div class="panel-head">
+    Teachers
+    <span class="head-note">{{ teachers | length }}</span>
+  </div>
+  <table class="t-table">
+    <thead><tr><th>Name</th><th>Username</th><th></th></tr></thead>
+    <tbody>
+      {% for teacher in teachers %}
+        <tr>
+          <td>
+            <b>{{ teacher.name }}</b>
+            {% if teacher.org_admin %}<span class="pill">admin</span>{% endif %}
+          </td>
+          <td><code>{{ teacher.username }}</code></td>
+          <td class="row-actions">
+            {% if is_admin %}
+              <form method="POST"
+                    action="{{ url_for('classroom_remove_teacher', classroom_id=classroom.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <input type="hidden" name="teacher_id" value="{{ teacher.id }}" />
+                <button type="submit" class="btn sm ghost">Unassign</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="dim">
+          Nobody is assigned. No teacher can see these students yet.
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if is_admin and addable_teachers %}
+    <form class="inline-form" method="POST"
+          action="{{ url_for('classroom_add_teacher', classroom_id=classroom.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <select name="teacher_id" required>
+        <option value="">Assign a teacher…</option>
+        {% for teacher in addable_teachers %}
+          <option value="{{ teacher.id }}">{{ teacher.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn sm">Assign</button>
+    </form>
+  {% endif %}
+</div>
+
+{# ── Students ────────────────────────────────────────────────────────── #}
+<div class="panel">
+  <div class="panel-head">
+    Students
+    <span class="head-note">{{ students | length }}</span>
+  </div>
+
+  {% if students %}
+    <table class="t-table">
+      <thead>
+        <tr><th>Name</th><th>How it's going</th><th>Done</th><th>Stuck</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for student in students %}
+          <tr>
+            <td>
+              <a href="{{ url_for('student_detail', username=student.username) }}"
+                 style="font-weight:700;color:var(--brand)">{{ student.name }}</a>
+            </td>
+            <td>{{ student.headline.icon }} {{ student.headline.text }}</td>
+            <td>{{ student.completed }} / {{ student.total }}</td>
+            <td class="{% if student.stuck %}bad{% endif %}">{{ student.stuck }}</td>
+            <td class="row-actions">
+              {% if is_admin %}
+                <form method="POST"
+                      action="{{ url_for('classroom_remove_student', classroom_id=classroom.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="hidden" name="username" value="{{ student.username }}" />
+                  <button type="submit" class="btn sm ghost">Remove</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="billing-body">
+      <p class="login-blurb">No students in this classroom yet.</p>
+    </div>
+  {% endif %}
+
+  {% if is_admin %}
+    {% if addable %}
+      <form class="inline-form" method="POST"
+            action="{{ url_for('classroom_add_student', classroom_id=classroom.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <select name="username" required>
+          <option value="">Add a student…</option>
+          {% for student in addable %}
+            <option value="{{ student.username }}">{{ student.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn sm">Add</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <div class="billing-body">
+      <p class="dim small">
+        Only an admin can change who's in a classroom.
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}

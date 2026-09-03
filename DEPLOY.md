@@ -382,7 +382,7 @@ painful to retrofit:
 
 - A written retention and deletion policy, and a way to honour a deletion
   request. `ON DELETE CASCADE` is set throughout, so deleting a user row
-  removes their progress, answers, inventory and group memberships — but
+  removes their progress, answers, inventory and classroom memberships — but
   there is no interface for it yet.
 - If any school in the EU or UK is involved, GDPR applies, and a school is
   typically the data controller with you as processor. They will ask for a
@@ -418,6 +418,7 @@ the real database.
 createdb ignite_test
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
 DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_classrooms.py
 ```
 
 `selftest.py` covers auth, tenancy, concurrency and the web surface.
@@ -425,6 +426,11 @@ DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_b
 administration and webhook handling — it never calls Stripe, because the
 part that can be wrong is the code *around* Stripe, and it builds genuine
 Stripe-shaped payloads to prove it.
+
+`selftest_classrooms.py` covers classroom isolation and track staging. It
+checks the full cross product of every account against every student, so
+`visible_students()` and `can_see_student()` cannot drift apart without
+something failing.
 
 Both wipe the target database on each run, so point them at a scratch one.
 Both refuse to run with `APP_ENV=production`.

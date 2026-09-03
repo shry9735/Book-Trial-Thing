@@ -140,6 +140,14 @@ def _bucket(kind: str, value: str) -> str:
 
 
 def over_limit(kind: str, value: str, limit: int, window: int) -> bool:
+    """Whether this bucket has already used up its allowance.
+
+    Fails OPEN. If the rate-limit lookup itself errors, the request is let
+    through and the failure is logged — a database hiccup should not lock
+    every user out of signing in. That trade is deliberate: the limiter
+    protects against brute force, and brute force is a worse outcome than
+    a brief window of no limiting, but not worse than a total outage.
+    """
     try:
         return db.rate_count(_bucket(kind, value), window) >= limit
     except Exception:
@@ -150,6 +158,11 @@ def over_limit(kind: str, value: str, limit: int, window: int) -> bool:
 
 
 def record_attempt(kind: str, value: str) -> None:
+    """Count one attempt against a bucket.
+
+    Swallows its own errors for the same reason as over_limit(): failing to
+    record an attempt must not turn into a failed login for the user.
+    """
     try:
         db.rate_hit(_bucket(kind, value))
     except Exception:
@@ -157,6 +170,12 @@ def record_attempt(kind: str, value: str) -> None:
 
 
 def clear_attempts(kind: str, value: str) -> None:
+    """Empty a bucket, after a success.
+
+    One good login wipes the failure count, so a user who mistypes their
+    password four times and then gets it right is not still half-way to a
+    lockout.
+    """
     try:
         db.rate_clear(_bucket(kind, value))
     except Exception:
@@ -218,6 +237,11 @@ MIN_PASSWORD = 10
 
 
 def username_problem(username: str) -> str | None:
+    """Explain what is wrong with a username, or None if nothing is.
+
+    Returns the message rather than raising, so the caller can put it
+    straight in front of the person who typed it.
+    """
     if not username:
         return "Pick a username."
     if not USERNAME_RE.match(username):
@@ -227,6 +251,12 @@ def username_problem(username: str) -> str | None:
 
 
 def email_problem(email: str, required: bool = True) -> str | None:
+    """Explain what is wrong with an email address, or None if nothing is.
+
+    Deliberately permissive: the real validation is that we sent mail and
+    they clicked the link. A stricter regex only rejects valid addresses
+    belonging to real people.
+    """
     if not email:
         return "Enter an email address." if required else None
     if len(email) > 254 or not EMAIL_RE.match(email):

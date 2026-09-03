@@ -37,7 +37,7 @@
     <div class="panel">
       <div class="panel-head {% if role_tab == 'teacher' %}teal{% endif %}" id="panelHead">
         <span id="panelHeadText">
-          {% if role_tab == 'teacher' %}Group &amp; Progress Tools{% else %}Enter the Classroom{% endif %}
+          {% if role_tab == 'teacher' %}Class &amp; Progress Tools{% else %}Enter the Classroom{% endif %}
         </span>
       </div>
 
@@ -108,7 +108,7 @@
 <script>
   var COPY = {
     student: { head: 'Enter the Classroom',      blurb: 'Sign in to pick up your lessons where you left off.' },
-    teacher: { head: 'Group & Progress Tools',   blurb: 'Create groups, add students, and track who has finished what.' }
+    teacher: { head: 'Class & Progress Tools',   blurb: 'Create groups, add students, and track who has finished what.' }
   };
 
   function pickRole(role) {

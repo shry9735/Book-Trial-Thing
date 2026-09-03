@@ -463,6 +463,12 @@ def record_subscription(subscription) -> dict | None:
 
 
 def record_invoice(invoice) -> None:
+    """Persist one Stripe invoice against its subscription.
+
+    The link back to our own subscription row is looked up rather than
+    assumed, and left alone when it cannot be resolved — invoices can
+    arrive before we know about the subscription they belong to.
+    """
     invoice = _as_dict(invoice)
     subscription_id = None
     stripe_sub_id = invoice.get("subscription")

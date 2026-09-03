@@ -35,6 +35,12 @@ def _send_smtp(cfg, to: str, subject: str, body: str) -> None:
 
 
 def send(cfg, to: str, subject: str, body: str) -> bool:
+    """Deliver one message, or log why it could not be.
+
+    Always returns rather than raising. A signup must not 500 because the
+    mail provider is having a bad afternoon — the account already exists
+    and the person can ask for another link.
+    """
     if not to:
         return False
     try:
