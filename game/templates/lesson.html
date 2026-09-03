@@ -17,6 +17,26 @@
       </div>
     </div>
 
+    {% if lesson.kit %}
+      {# Tells you a kit exists; it is never a condition of starting. Worded
+         so a student without one does not think they are missing out on the
+         lesson itself. #}
+      <div class="kit-banner">
+        <span class="kit-banner-icon">🧰</span>
+        <div class="kit-banner-text">
+          <b>{{ lesson.kit.name or 'There\'s a kit for this one' }}</b>
+          <span>
+            {{ lesson.kit.note or 'Everything here works on screen — the kit is for building it for real.' }}
+          </span>
+        </div>
+        {% set kit_link = lesson.kit.url or store_url %}
+        {% if kit_link %}
+          <a class="btn sm ghost" href="{{ kit_link }}"
+             target="_blank" rel="noopener noreferrer">Take a look</a>
+        {% endif %}
+      </div>
+    {% endif %}
+
     {% if lesson.type == 'video' %}
       <div class="player-frame">
         <video id="player" controls preload="metadata"

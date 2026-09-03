@@ -14,6 +14,17 @@
     <span class="pill in_progress">{{ summary.completed }} of {{ summary.total }} done</span>
   </div>
 
+  {% if kit_count %}
+    <p class="kit-note">
+      🧰 {{ kit_count }} of these {{ 'has' if kit_count == 1 else 'have' }} a
+      hands-on kit you can build along with. You don't need one to do the
+      lesson{{ '' if kit_count == 1 else 's' }}.
+      {% if store_url %}
+        <a href="{{ store_url }}" target="_blank" rel="noopener noreferrer">See the kits →</a>
+      {% endif %}
+    </p>
+  {% endif %}
+
   {% for category, cat_lessons in categories.items() %}
     <div class="category-head">{{ category }}</div>
     <div class="lesson-grid">
@@ -46,6 +57,12 @@
             <div class="lesson-desc">{{ lesson.description }}</div>
             <div class="lesson-meta">
               <span>⏱ {{ lesson.duration_min }} min</span>
+              {% if lesson.kit %}
+                {# Informational only — a kit never stops anyone starting. #}
+                <span class="kit-tag" title="There's a hands-on kit for this one">
+                  🧰 Kit
+                </span>
+              {% endif %}
             </div>
           </div>
 

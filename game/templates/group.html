@@ -54,7 +54,7 @@
           <tr>
             <td>
               <a href="{{ url_for('student_detail', username=m.username) }}"
-                 style="font-weight:700;color:var(--orange)">{{ m.name }}</a>
+                 style="font-weight:700;color:var(--brand)">{{ m.name }}</a>
             </td>
             <td style="font-size:0.8rem;max-width:280px">
               {{ m.headline.icon }} {{ m.headline.text }}
@@ -67,7 +67,7 @@
             </td>
             <td>
               {% if m.avg_score is not none %}
-                <b style="color:{{ 'var(--good)' if m.avg_score >= 80 else 'var(--orange)' }}">{{ m.avg_score }}%</b>
+                <b style="color:{{ 'var(--good)' if m.avg_score >= 80 else 'var(--brand)' }}">{{ m.avg_score }}%</b>
               {% else %}—{% endif %}
             </td>
             <td style="text-align:right">

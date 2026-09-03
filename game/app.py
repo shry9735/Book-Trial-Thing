@@ -200,6 +200,11 @@ def _build_lessons() -> list[dict]:
         data.setdefault("quiz",     [])
         data.setdefault("examples", [])
         data.setdefault("thumb",    f"lessons/{folder.name}")
+        # Resolved once here rather than in each template: "access" carries
+        # the back-compat with the older "free" boolean, and "kit" gets
+        # normalised from either `true` or an object.
+        data["access"] = billing.lesson_access(data)
+        data["kit"] = billing.lesson_kit(data)
         found.append(data)
 
     return sorted(found, key=lambda l: (l["order"], l["id"]))
@@ -1020,6 +1025,10 @@ def lessons():
                 "locked": not (billing.lesson_is_free(l) or paid_ok)}
                for l in assigned_lessons(user["id"], load_lessons())]
 
+    # Kits are informational and never gate anything, so this is only a
+    # count for the "some of these have kits" note on the menu.
+    kit_count = sum(1 for l in catalog if l.get("kit"))
+
     # Grouped by subject, in the order each subject first appears in the
     # (already order-sorted) catalog — so a lesson's own "order" in its
     # manifest decides both its place in its category and which category
@@ -1029,6 +1038,7 @@ def lessons():
         categories.setdefault(item.get("subject", "General"), []).append(item)
 
     return render_template("lessons.html", categories=categories,
+                           kit_count=kit_count,
                            summary=summarise(user["id"]))
 
 

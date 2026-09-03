@@ -180,7 +180,7 @@
             </td>
             <td>
               {% if row.score is not none %}
-                <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--orange)' }}">{{ row.score }}%</b>
+                <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--brand)' }}">{{ row.score }}%</b>
               {% else %}—{% endif %}
             </td>
             <td style="color:var(--ink-dim);font-size:0.78rem">

@@ -1,0 +1,88 @@
+/* ==========================================================================
+   Ignite Academy — brand palette. THE single source of truth.
+
+   Loaded by both stylesheets:
+
+     static/css/game.css        the app itself
+     static/kit/lesson-kit.css  every lesson, inside its own iframe
+
+   Lessons render in same-origin iframes, which are separate documents and
+   do not inherit the host page's custom properties. Before this file the
+   palette was copy-pasted into both stylesheets, so re-skinning the app
+   left every lesson on the old colours. Change a value here and it lands
+   everywhere at once.
+
+   ── HOW TO RE-SKIN ────────────────────────────────────────────────────────
+   Edit the BRAND SEEDS block below and nothing else. Everything further
+   down is derived from it or is deliberately brand-independent (the green
+   that means "correct" should stay green whatever the logo looks like).
+   ========================================================================== */
+
+:root {
+
+  /* ── BRAND SEEDS — the only block you need to touch ──────────────────────
+     primary  : headings, primary buttons, the dominant colour
+     accent   : the secondary colour — teacher/parent chrome, "teal" role
+     Each needs a dark variant for gradients and pressed states, and a very
+     light one for tinted panel backgrounds. */
+
+  --brand:        #d4521a;
+  --brand-dk:     #b33d12;
+  --brand-lt:     #fdf0ea;
+  --brand-mid:    #e8873f;   /* gradient midpoint, hover lift */
+  --brand-pale:   #f0c8b4;   /* hairlines and disabled edges on brand fills */
+
+  --accent:       #1a8a82;
+  --accent-dk:    #126b64;
+  --accent-lt:    #e8f5f4;
+  --accent-pale:  #9dd4cf;
+
+  /* ── Neutrals ────────────────────────────────────────────────────────── */
+
+  --ink:          #1a1a2e;   /* body text */
+  --ink-mid:      #4a4a5e;   /* secondary text */
+  --ink-dim:      #8888a0;   /* labels, captions */
+  --paper:        #f8f5f0;   /* page background */
+  --surface:      #ffffff;   /* cards and panels */
+  --border:       #e0d5c8;
+  --border-lt:    #ede8e0;
+
+  /* ── Arcade chrome ───────────────────────────────────────────────────────
+     The Flash-era cabinet look: gold trim, dark wood frame, near-black
+     stage behind it. Brand-adjacent rather than brand — change these if the
+     new identity is flatter or cooler, leave them if you like the arcade. */
+
+  --gold:         #f0a830;
+  --gold-dk:      #c07a10;
+  --gold-lt:      #fff6e0;
+  --gold-deep:    #9a6a10;   /* text on a gold-tinted background */
+  --gold-pale:    #f0d8a0;   /* hairline on the same */
+  --wood:         #3a2418;
+  --wood-lt:      #5a3a24;
+  --stage-bg:     #14101c;
+  --stage-glow-1: #2a2038;
+  --stage-glow-2: #1e1828;
+
+  /* ── Status ──────────────────────────────────────────────────────────────
+     Deliberately NOT derived from the brand. Green means correct and red
+     means wrong to an eight-year-old regardless of the logo, and recolouring
+     these to match a palette costs more than it gains. */
+
+  --good:         #34b84a;
+  --good-dk:      #1a7a35;
+  --good-lt:      #eaf6ec;
+  --good-pale:    #b0ddb8;
+  --good-glow:    #7ee88a;
+  --good-deep:    #1c8a32;   /* foot of a "correct" gradient */
+
+  --warn:         #8a5216;
+  --warn-lt:      #fbe6cf;
+
+  --bad:          #b03030;
+  --bad-lt:       #fdeaea;
+  --bad-pale:     #e0b4b4;
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+
+  --font: "Trebuchet MS", "Arial Rounded MT Bold", Verdana, sans-serif;
+}

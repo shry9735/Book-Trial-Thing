@@ -293,8 +293,83 @@ def t_one_live_subscription():
 @check("lessons are free unless a manifest opts out")
 def t_free_by_default():
     assert billing.lesson_is_free({}) is True, "a lesson with no flag was treated as paid"
-    assert billing.lesson_is_free({"free": True}) is True
+    assert billing.lesson_is_free({"access": "free"}) is True
+    assert billing.lesson_is_free({"access": "subscriber"}) is False
+
+
+@check("access tiers resolve, and a typo fails open rather than shut")
+def t_access_tiers():
+    assert billing.lesson_access({}) == "free"
+    assert billing.lesson_access({"access": "free"}) == "free"
+    assert billing.lesson_access({"access": "subscriber"}) == "subscriber"
+
+    # A misspelled tier must not silently lock a lesson: too-available is a
+    # recoverable mistake, a locked classroom mid-term is not.
+    assert billing.lesson_access({"access": "subscribers"}) == "free"
+    assert billing.lesson_access({"access": ""}) == "free"
+
+
+@check("the older \"free\": false spelling still works")
+def t_access_back_compat():
+    assert billing.lesson_access({"free": False}) == "subscriber"
+    assert billing.lesson_access({"free": True}) == "free"
     assert billing.lesson_is_free({"free": False}) is False
+
+    # An explicit tier wins over the legacy boolean.
+    assert billing.lesson_access({"access": "free", "free": False}) == "free"
+
+
+@check("a kit is normalised and never gates a lesson")
+def t_kit_metadata():
+    assert billing.lesson_kit({}) is None
+    assert billing.lesson_kit({"kit": False}) is None
+
+    bare = billing.lesson_kit({"kit": True})
+    assert bare == {"name": "", "url": "", "note": ""}, bare
+
+    full = billing.lesson_kit({"kit": {
+        "name": "Breadboard Starter Kit",
+        "url": "https://example.test/kit",
+        "note": "Parts for the circuits track.",
+    }})
+    assert full["name"] == "Breadboard Starter Kit"
+    assert full["url"] == "https://example.test/kit"
+
+    # Malformed input is dropped, not raised on — a bad manifest should not
+    # take the lesson menu down.
+    assert billing.lesson_kit({"kit": "yes please"}) is None
+    assert billing.lesson_kit({"kit": 3}) is None
+
+    # The crucial property: having a kit changes nothing about access.
+    kitted = {"kit": True}
+    assert billing.lesson_is_free(kitted) is True, "a kit gated a free lesson"
+    paid_with_kit = {"access": "subscriber", "kit": True}
+    assert billing.lesson_access(paid_with_kit) == "subscriber"
+
+
+@check("a kit shows on the menu and the lesson without blocking either")
+def t_kit_rendered():
+    clear_subscriptions()
+    lesson = appmod.load_lessons()[0]
+    original = dict(lesson)
+    lesson["kit"] = {"name": "Breadboard Starter Kit",
+                     "url": "https://example.test/kit", "note": ""}
+    try:
+        c = client()
+        login(c, "alex")
+
+        menu = c.get("/lessons")
+        assert menu.status_code == 200
+        assert "Kit" in menu.get_data(as_text=True), "no kit badge on the menu"
+
+        page = c.get(f"/lesson/{lesson['id']}")
+        assert page.status_code == 200, f"a kit blocked the lesson ({page.status_code})"
+        body = page.get_data(as_text=True)
+        assert "Breadboard Starter Kit" in body, "kit name missing from the lesson"
+        assert "example.test/kit" in body, "kit link missing"
+    finally:
+        lesson.clear()
+        lesson.update(original)
 
 
 @check("a paid lesson is blocked in the page and in the API")
@@ -302,7 +377,7 @@ def t_paid_lesson_blocked():
     clear_subscriptions()
     lesson = appmod.load_lessons()[0]
     original = dict(lesson)
-    lesson["free"] = False
+    lesson["access"] = "subscriber"
     try:
         c = client()
         login(c, "alex")
@@ -327,7 +402,7 @@ def t_paid_lesson_blocked():
 def t_paid_lesson_unlocked():
     lesson = appmod.load_lessons()[0]
     original = dict(lesson)
-    lesson["free"] = False
+    lesson["access"] = "subscriber"
     try:
         clear_subscriptions()
         head = db.user_by_username("head")
@@ -770,7 +845,9 @@ def t_pages_render():
 TESTS = [
     t_no_subscription, t_org_covers_students, t_parent_covers_own_child,
     t_card_grace, t_invoice_grace, t_comp, t_one_live_subscription,
-    t_free_by_default, t_paid_lesson_blocked, t_paid_lesson_unlocked,
+    t_free_by_default, t_access_tiers, t_access_back_compat,
+    t_kit_metadata, t_kit_rendered,
+    t_paid_lesson_blocked, t_paid_lesson_unlocked,
     t_join_approval, t_approve_member, t_non_admin_blocked, t_cross_org_admin,
     t_last_admin_protected, t_students_cannot_be_admin, t_removed_member,
     t_seat_count,

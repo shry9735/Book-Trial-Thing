@@ -254,9 +254,9 @@ with 200 rather than a non-2xx that would make Stripe retry forever.
 
 ```mermaid
 graph TD
-    Start["student opens a lesson"] --> Free{"manifest says<br/>free: false?"}
-    Free -->|no| Open["opens"]
-    Free -->|yes| Ent["billing.entitlement_for"]
+    Start["student opens a lesson"] --> Free{"access tier?"}
+    Free -->|free| Open["opens"]
+    Free -->|subscriber| Ent["billing.entitlement_for"]
     Ent --> Org{"org subscription<br/>live?"}
     Org -->|yes| Open
     Org -->|no| Par{"any linked parent<br/>subscribed?"}
@@ -266,9 +266,14 @@ graph TD
     Grace -->|no| Locked["/locked"]
 ```
 
-Lessons are free unless a manifest opts out with `"free": false` —
+Lessons are free unless a manifest sets `"access": "subscriber"` —
 defaulting the other way would have locked all existing content the moment
-a Stripe key appeared in the environment.
+a Stripe key appeared in the environment. An unrecognised tier also falls
+back to free, so a typo fails open rather than shut.
+
+A lesson may also declare a **kit** — a physical box of parts. That is
+purely informational and never affects access; it is a badge on the card
+and a banner on the lesson.
 
 Gating is enforced on the lesson page **and** on every API route. The page
 can simply be skipped, so the API is the real boundary.
@@ -305,7 +310,8 @@ responsible:
 | Who can see this student? | `db.visible_students()`, `db.can_see_student()` |
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
-| Is this lesson free? | `billing.lesson_is_free()` |
+| Is this lesson free? | `billing.lesson_access()` |
+| What colour is anything? | `static/kit/brand.css` |
 | What does the schema look like? | `db.MIGRATIONS` |
 | What can be configured? | `config.Config` |
 

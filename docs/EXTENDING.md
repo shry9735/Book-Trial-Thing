@@ -6,6 +6,8 @@ files to touch, in order, and the mistake that is easy to make.
 - [Before you start](#before-you-start)
 - [Add a lesson](#add-a-lesson)
 - [Charge for a lesson](#charge-for-a-lesson)
+- [Flag a lesson as having a kit](#flag-a-lesson-as-having-a-kit)
+- [Re-skin it](#re-skin-it)
 - [Add a page](#add-a-page)
 - [Add a JSON endpoint](#add-a-json-endpoint)
 - [Change the database](#change-the-database)
@@ -60,6 +62,8 @@ game/lessons/circuits-05-ohms-law/
   "type": "interactive",
   "description": "Volts, amps and the ratio between them.",
   "duration_min": 12,
+  "access": "free",
+  "kit": { "name": "Breadboard Starter Kit", "url": "https://amazon.com/..." },
   "reward": "badge-ohm",
   "quiz": [
     {
@@ -95,18 +99,112 @@ as `.webp` updates every lesson without touching one.
 
 ## Charge for a lesson
 
-Add one key to its manifest:
+Set its access tier:
 
 ```json
-{ "free": false }
+{ "access": "subscriber" }
 ```
 
-Lessons are free unless they opt out. Defaulting the other way would have
-locked every existing lesson the moment a Stripe key appeared in the
-environment.
+Two tiers today:
 
-Nothing else to do — `billing.lesson_is_free()` is consulted by the lesson
-page, the lesson menu, and every API route.
+| Tier | Means |
+|---|---|
+| `free` | Opens for anyone signed in. **The default.** |
+| `subscriber` | Needs a live subscription — the school's or a linked parent's |
+
+Lessons are free unless they say otherwise, and an unrecognised tier falls
+back to free. Both defaults point the same way on purpose: a typo in a
+manifest should make a lesson too available, which you notice and fix,
+rather than silently locking a classroom mid-term.
+
+There is deliberately **no per-lesson purchase tier**. Everything paid is
+covered by the one subscription. When that changes, add the tier to
+`billing.ACCESS_TIERS` and teach `lesson_access()` about it — the manifest
+field and the templates already have the right shape.
+
+The older spelling still works:
+
+```json
+{ "free": false }     // same as {"access": "subscriber"}
+```
+
+Nothing else to do. `billing.lesson_access()` is resolved once when the
+catalog is built, and consulted by the lesson page, the menu, and every
+API route.
+
+---
+
+## Flag a lesson as having a kit
+
+```json
+{ "kit": true }
+```
+
+or, with detail:
+
+```json
+{
+  "kit": {
+    "name": "Breadboard Starter Kit",
+    "url": "https://amazon.com/...",
+    "note": "The parts for the whole circuits track."
+  }
+}
+```
+
+**A kit never gates anything.** It is an informational badge on the lesson
+card and a banner on the lesson itself. A student whose parts have not
+arrived, or who is using the school's shared box, does the entire lesson
+either way — the wording is deliberately written so nobody thinks they are
+missing the lesson, only the option to build it for real.
+
+With no `url`, the banner falls back to `STORE_URL` (the Amazon
+storefront). With neither, it shows the note and no link.
+
+Kits and access tiers are independent: a lesson can be free with a kit,
+paid with a kit, or either without.
+
+---
+
+## Re-skin it
+
+The whole palette is `game/static/kit/brand.css`. Edit the **BRAND SEEDS**
+block at the top and nothing else:
+
+```css
+--brand:      #d4521a;   /* headings, primary buttons, the dominant colour */
+--brand-dk:   #b33d12;   /* gradients and pressed states */
+--brand-lt:   #fdf0ea;   /* tinted panel backgrounds */
+--accent:     #1a8a82;   /* secondary — teacher and parent chrome */
+```
+
+That one file is loaded by both stylesheets:
+
+```
+static/css/game.css        the app
+static/kit/lesson-kit.css  every lesson, inside its own iframe
+```
+
+Lesson iframes are separate documents and do not inherit the host page's
+custom properties, so the palette used to be copy-pasted into both — and a
+re-skin left every lesson on the old colours. Now there is one copy.
+
+Two things not to break:
+
+- **`@import` must stay the first rule** in both stylesheets. After any
+  other rule browsers silently ignore it, and the entire palette vanishes.
+- **Status colours are deliberately not brand-derived.** Green means
+  correct and red means wrong to an eight-year-old whatever the logo looks
+  like. Recolouring `--good` to match a palette costs more than it gains.
+
+Check your work with:
+
+```bash
+grep -oE '#[0-9a-fA-F]{6}' game/static/css/game.css game/static/kit/lesson-kit.css   | grep -viE '#(fff|000)'
+```
+
+Anything that comes back is a literal that a re-skin will miss. A handful
+of one-off tints are fine; a brand colour is not.
 
 ---
 

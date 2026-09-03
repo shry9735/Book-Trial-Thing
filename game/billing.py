@@ -177,14 +177,83 @@ def entitlement_for(cfg, user: dict) -> dict:
     return _evaluate(cfg, db.subscription_for_org(user["org_id"]), "org") or NO_ENTITLEMENT
 
 
+# What it takes to open a lesson. Ordered least to most restrictive.
+#
+# There is deliberately no per-lesson purchase tier yet: everything paid is
+# covered by one subscription. When that changes, add "purchase" here and
+# teach lesson_access() and the entitlement check about it — the manifest
+# field and the templates will not need to change shape.
+ACCESS_TIERS = ("free", "subscriber")
+DEFAULT_ACCESS = "free"
+
+
+def lesson_access(lesson: dict) -> str:
+    """
+    Which tier this lesson sits in: "free" or "subscriber".
+
+    Read from the manifest's "access" field. Lessons default to free, and
+    an unrecognised value falls back to free as well — a typo in a manifest
+    should make a lesson too available rather than silently lock it.
+
+    The older boolean spelling ("free": false) is still honoured, so
+    manifests written before tiers existed keep working.
+    """
+    declared = lesson.get("access")
+    if declared in ACCESS_TIERS:
+        return declared
+
+    if declared is not None:
+        log.warning("lesson %s: unknown access %r, treating as %s",
+                    lesson.get("id", "?"), declared, DEFAULT_ACCESS)
+        return DEFAULT_ACCESS
+
+    # Back-compat: "free": false used to be the only way to say this.
+    if lesson.get("free") is False:
+        return "subscriber"
+    return DEFAULT_ACCESS
+
+
 def lesson_is_free(lesson: dict) -> bool:
     """
-    Lessons are free unless a manifest opts out with "free": false.
+    Whether this lesson opens without a subscription.
 
-    Defaulting the other way would have silently locked every existing
-    lesson the moment a Stripe key appeared in the environment.
+    Defaulting to free matters: the other way round would have silently
+    locked every existing lesson the moment a Stripe key appeared in the
+    environment.
     """
-    return lesson.get("free", True) is not False
+    return lesson_access(lesson) == "free"
+
+
+def lesson_kit(lesson: dict) -> dict | None:
+    """
+    The physical kit that goes with this lesson, if there is one.
+
+    Purely informational — a kit NEVER gates a lesson. A student whose
+    parts have not arrived, or who is using a school's shared box, still
+    does the whole lesson; this only tells them what to get if they want
+    to build it for real.
+
+    Accepts either a bare `true` for "there is a kit, no details yet", or
+    an object:
+
+        "kit": {"name": "Breadboard Starter Kit", "url": "https://..."}
+
+    Returns a normalised dict, or None when the manifest says nothing.
+    """
+    declared = lesson.get("kit")
+    if not declared:
+        return None
+    if declared is True:
+        return {"name": "", "url": "", "note": ""}
+    if not isinstance(declared, dict):
+        log.warning("lesson %s: kit should be true or an object, got %r",
+                    lesson.get("id", "?"), type(declared).__name__)
+        return None
+    return {
+        "name": declared.get("name", ""),
+        "url":  declared.get("url", ""),
+        "note": declared.get("note", ""),
+    }
 
 
 # ── Customers ───────────────────────────────────────────────────────────────────

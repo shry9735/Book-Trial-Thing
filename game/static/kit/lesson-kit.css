@@ -10,31 +10,13 @@
    their own folder, isolated by the iframe.
    ========================================================================== */
 
+/* Palette: static/kit/brand.css — one file, shared with the lesson
+   iframes so a re-skin reaches inside them too. Must stay the first
+   rule in this file; @import after any other rule is ignored. */
+@import url("/kit/brand.css");
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  --orange:    #d4521a;
-  --orange-dk: #b33d12;
-  --orange-lt: #fdf0ea;
-  --teal:      #1a8a82;
-  --teal-dk:   #126b64;
-  --teal-lt:   #e8f5f4;
-  --ink:       #1a1a2e;
-  --ink-mid:   #4a4a5e;
-  --ink-dim:   #8888a0;
-  --paper:     #f8f5f0;
-  --surface:   #ffffff;
-  --border:    #e0d5c8;
-  --border-lt: #ede8e0;
-  --gold:      #f0a830;
-  --gold-dk:   #c07a10;
-  --wood:      #3a2418;
-  --wood-lt:   #5a3a24;
-  --good:      #34b84a;
-  --bad:       #d4521a;
-
-  --font: "Trebuchet MS", "Arial Rounded MT Bold", Verdana, sans-serif;
-}
 
 html, body { height: 100%; }
 
@@ -81,7 +63,7 @@ body {
 }
 
 .lk-panel-head {
-  background: linear-gradient(180deg, var(--orange) 0%, var(--orange-dk) 100%);
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-dk) 100%);
   color: #fff;
   padding: 8px 14px;
   font-size: 0.8rem;
@@ -93,7 +75,7 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .lk-panel-head.teal {
-  background: linear-gradient(180deg, var(--teal) 0%, var(--teal-dk) 100%);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dk) 100%);
 }
 .lk-panel-body { padding: 16px; }
 
@@ -110,7 +92,7 @@ body {
   letter-spacing: 0.03em;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  background: linear-gradient(180deg, #e8873f 0%, var(--orange) 45%, var(--orange-dk) 100%);
+  background: linear-gradient(180deg, var(--brand-mid) 0%, var(--brand) 45%, var(--brand-dk) 100%);
   border: 2px solid var(--wood);
   border-radius: 5px;
   padding: 10px 22px;
@@ -127,7 +109,7 @@ body {
   transform: translateY(3px);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 var(--wood-lt);
 }
-.lk-btn.teal  { background: linear-gradient(180deg, #37a89f 0%, var(--teal) 45%, var(--teal-dk) 100%); }
+.lk-btn.teal  { background: linear-gradient(180deg, var(--accent) 0%, var(--accent) 45%, var(--accent-dk) 100%); }
 .lk-btn.ghost { background: linear-gradient(180deg, #fff 0%, var(--paper) 100%); color: var(--ink); text-shadow: none; }
 .lk-btn.lg    { font-size: 1.05rem; padding: 13px 32px; }
 .lk-btn.sm    { font-size: 0.78rem; padding: 7px 15px; }
@@ -146,7 +128,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.11em;
-  color: var(--teal);
+  color: var(--accent);
 }
 .lk-text {
   font-size: 0.95rem;
@@ -165,8 +147,8 @@ body {
   border: 2px solid;
   animation: lk-pop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.lk-correct { background: #eaf6ec;        color: #1a7a35;         border-color: #b0ddb8; }
-.lk-wrong   { background: var(--orange-lt); color: var(--orange-dk); border-color: #f0c8b4; }
+.lk-correct { background: var(--good-lt);        color: var(--good-dk);         border-color: var(--good-pale); }
+.lk-wrong   { background: var(--brand-lt); color: var(--brand-dk); border-color: var(--brand-pale); }
 
 @keyframes lk-pop {
   0%   { transform: scale(0.9); opacity: 0; }
@@ -213,7 +195,7 @@ body {
   background: rgba(240, 168, 48, 0.14);
   transform: scale(1.04);
 }
-.lk-slot.filled { border-style: solid; border-color: var(--good); background: #eaf6ec; }
+.lk-slot.filled { border-style: solid; border-color: var(--good); background: var(--good-lt); }
 
 /* ── Progress ───────────────────────────────────────────────────────── */
 
@@ -227,7 +209,7 @@ body {
 }
 .lk-bar > div {
   height: 100%;
-  background: linear-gradient(180deg, #7ee88a 0%, #34b84a 55%, #1c8a32 100%);
+  background: linear-gradient(180deg, var(--good-glow) 0%, var(--good) 55%, var(--good-deep) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: width 0.35s ease;
 }
