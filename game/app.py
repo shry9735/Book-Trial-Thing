@@ -342,25 +342,32 @@ def art_url(name: str):
 
 @app.route("/art-placeholder/<path:name>")
 def art_placeholder(name: str):
-    """SVG placeholder naming the exact file path to create."""
+    """
+    SVG placeholder naming the exact file path to create.
+
+    Built server-side, so it cannot read the CSS custom properties. These
+    literals have to be kept in step with static/kit/brand.css by hand —
+    they are the only brand colours in the codebase that a re-skin will
+    not reach on its own.
+    """
     label = f"static/art/{name}.png"
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
   <defs>
     <pattern id="p" width="40" height="40" patternUnits="userSpaceOnUse">
-      <rect width="40" height="40" fill="#f2e8dc"/>
-      <path d="M0 40 L40 0" stroke="#e4d3c0" stroke-width="2"/>
+      <rect width="40" height="40" fill="#fdf1f7"/>
+      <path d="M0 40 L40 0" stroke="#f6d0e5" stroke-width="2"/>
     </pattern>
   </defs>
   <rect width="800" height="500" fill="url(#p)"/>
   <rect x="10" y="10" width="780" height="480" fill="none"
-        stroke="#d4521a" stroke-width="4" stroke-dasharray="14 10" rx="8"/>
+        stroke="#d81b84" stroke-width="4" stroke-dasharray="14 10" rx="8"/>
   <text x="400" y="228" text-anchor="middle"
         font-family="Trebuchet MS, Verdana, sans-serif" font-size="30"
-        font-weight="bold" fill="#d4521a">Drop a graphic here</text>
+        font-weight="bold" fill="#d81b84">Drop a graphic here</text>
   <text x="400" y="278" text-anchor="middle"
-        font-family="Consolas, Menlo, monospace" font-size="21" fill="#4a4a5e">{label}</text>
+        font-family="Consolas, Menlo, monospace" font-size="21" fill="#444c56">{label}</text>
   <text x="400" y="316" text-anchor="middle"
-        font-family="Trebuchet MS, Verdana, sans-serif" font-size="15" fill="#8888a0">
+        font-family="Trebuchet MS, Verdana, sans-serif" font-size="15" fill="#6b7684">
     .webp .png .jpg .gif or .svg — any of these work
   </text>
 </svg>"""

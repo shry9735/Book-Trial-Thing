@@ -172,11 +172,17 @@ The whole palette is `game/static/kit/brand.css`. Edit the **BRAND SEEDS**
 block at the top and nothing else:
 
 ```css
---brand:      #d4521a;   /* headings, primary buttons, the dominant colour */
---brand-dk:   #b33d12;   /* gradients and pressed states */
---brand-lt:   #fdf0ea;   /* tinted panel backgrounds */
---accent:     #1a8a82;   /* secondary — teacher and parent chrome */
+--brand:      #d81b84;   /* magenta — headings, primary fills */
+--brand-mid:  #f5921e;   /* orange — the other end of the gradient */
+--brand-dk:   #b01169;   /* pressed states */
+--brand-lt:   #fff7fb;   /* tinted panel backgrounds */
+--accent:     #1668c4;   /* the site's section-label blue */
+--frame:      #123a6d;   /* wordmark navy — the cabinet frame */
 ```
+
+The identity is a **two-colour gradient**, not one colour: `--brand`
+running into `--brand-mid`, which `--brand-grad` assembles into the sweep
+the primary buttons use.
 
 That one file is loaded by both stylesheets:
 
@@ -196,6 +202,12 @@ Two things not to break:
 - **Status colours are deliberately not brand-derived.** Green means
   correct and red means wrong to an eight-year-old whatever the logo looks
   like. Recolouring `--good` to match a palette costs more than it gains.
+- **Check contrast after changing a seed.** Every text-bearing pair
+  currently clears WCAG AA (4.5:1); `--brand` in particular is a shade
+  deeper than the site's literal magenta for exactly that reason.
+- **`art_placeholder()` in `app.py` holds the only brand colours CSS cannot
+  reach.** It builds an SVG server-side, so those literals have to be
+  changed by hand alongside the seeds.
 
 Check your work with:
 
