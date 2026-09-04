@@ -11,6 +11,7 @@ where things are and want to make a change.
 | [Extending it](EXTENDING.md) | You are adding a lesson, route, migration or command |
 | [Call graph](CALLGRAPH.md) | You want to know what a route touches before changing it |
 | [Deploying](../DEPLOY.md) | You are putting it on a server, or it is misbehaving on one |
+| [AWS readiness](AWS_READINESS.md) | Before you move it onto AWS — what will break, and why |
 | [Game README](../game/README.md) | You want the short version of what the app does |
 
 ---

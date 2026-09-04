@@ -69,6 +69,11 @@ slow clients.
 
 ---
 
+> **Moving to AWS?** Read [docs/AWS_READINESS.md](docs/AWS_READINESS.md)
+> first. Rolling deploys, health checks and the email defaults each have a
+> specific way of going wrong there, all of them verified rather than
+> guessed.
+
 ## Capacity for 1000 users
 
 A thousand registered users is roughly 50–100 concurrent at a peak class

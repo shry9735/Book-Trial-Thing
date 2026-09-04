@@ -60,6 +60,7 @@ There are no default accounts.
 | [**Extending it**](docs/EXTENDING.md) | Recipes: add a lesson, route, migration, command |
 | [**Call graph**](docs/CALLGRAPH.md) | What each route touches (generated) |
 | [**Deploying**](DEPLOY.md) | Docker, AWS, backups, payments, operations |
+| [**AWS readiness**](docs/AWS_READINESS.md) | What will break on AWS, and what to do about it |
 
 Build the browsable API reference from the source docstrings:
 
