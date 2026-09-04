@@ -113,6 +113,11 @@ def check_csrf(view_func=None) -> None:
 
 # ── Client identity ─────────────────────────────────────────────────────────────
 
+# Latched so the misconfiguration below is reported once per process
+# rather than on every single request.
+_warned_about_proxy = False
+
+
 def client_ip(trusted_proxies: int) -> str:
     """
     The caller's address, honouring X-Forwarded-For only as far as we
@@ -122,12 +127,29 @@ def client_ip(trusted_proxies: int) -> str:
     every entry before it is client-supplied and forgeable.  Reading the
     leftmost value — the common mistake — would let anyone set their own
     rate-limit bucket with a header.
+
+    If a forwarding header is present while trusted_proxies is 0, we are
+    behind a proxy that nobody told us about, and remote_addr is that
+    proxy — meaning every user in the world would share one rate-limit
+    bucket and a single wrong password would lock out everybody. That is
+    almost always APP_ENV not being set to "production", which silently
+    switches off this setting along with secure cookies and every
+    boot-time check. It is worth a loud line in the log.
     """
+    global _warned_about_proxy
+
     if trusted_proxies > 0:
         forwarded = request.headers.get("X-Forwarded-For", "")
         parts = [p.strip() for p in forwarded.split(",") if p.strip()]
         if len(parts) >= trusted_proxies:
             return parts[-trusted_proxies]
+    elif request.headers.get("X-Forwarded-For") and not _warned_about_proxy:
+        _warned_about_proxy = True
+        log.error(
+            "X-Forwarded-For is present but TRUSTED_PROXIES=0, so every request "
+            "looks like it came from the proxy and all users share one rate-limit "
+            "bucket. Set TRUSTED_PROXIES (and check APP_ENV=production).")
+
     return request.remote_addr or "unknown"
 
 

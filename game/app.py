@@ -482,12 +482,33 @@ def _teardown(exception=None):
     g.pop("_entitlement", None)
 
 
+@app.route("/livez")
+def livez():
+    """
+    Liveness: is this process alive and able to answer?
+
+    Touches nothing — no database, no catalog. Point the load balancer and
+    the container health check HERE.
+
+    The distinction matters more than it looks. /healthz reports 503 when
+    the database is away, and pointing an ALB at that means every task in
+    the service goes unhealthy at the same instant during a failover, so
+    the whole service gets replaced. The pool reconnects on its own in
+    about two seconds, so killing the processes is precisely the wrong
+    response to a blip they would otherwise have ridden out.
+    """
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/healthz")
 def healthz():
     """
-    Liveness plus readiness.  A load balancer that only checks whether the
-    port answers will happily route traffic to a process that has lost its
-    database, so this actually round-trips a query.
+    Readiness: can this process actually do its job right now?
+
+    Round-trips a real query, so it reports degraded when the database is
+    unreachable. Use it for dashboards, alerts and deploy verification —
+    not as a load balancer's health check, which should be /livez. See the
+    note there.
     """
     ok = db.healthy()
     return jsonify({"status": "ok" if ok else "degraded", "database": ok}), (200 if ok else 503)
@@ -2234,16 +2255,34 @@ def init_app() -> None:
     Prepare this process to serve.  Called once per gunicorn worker and
     once by the development server.
 
-    Migrations take a Postgres advisory lock, so several workers or
-    containers starting at the same moment cannot apply them twice.
+    Opening the pool never blocks and never fails the boot: a worker that
+    starts during a database blip comes up anyway and reconnects by itself,
+    rather than dying and turning a short outage into a crash loop.
+
+    Migrations are the one thing that genuinely needs a live database, so
+    they wait for one — with a budget, and then loudly. In production they
+    should not run here at all: apply them in a pre-deploy step and set
+    RUN_MIGRATIONS=0, which also avoids old tasks meeting a new schema
+    mid-rollout. See docs/AWS_READINESS.md.
+
+    They take a Postgres advisory lock, so several workers or containers
+    starting at the same moment cannot apply them twice.
     """
     db.init_pool(cfg)
+
     if os.environ.get("RUN_MIGRATIONS", "1") == "1":
+        if not db.wait_for_database(cfg.DB_BOOT_RETRY):
+            raise RuntimeError(
+                f"database unreachable after {cfg.DB_BOOT_RETRY}s and RUN_MIGRATIONS "
+                "is on, so the schema cannot be verified. Set RUN_MIGRATIONS=0 and "
+                "migrate in a pre-deploy step, or raise DB_BOOT_RETRY.")
         applied = db.migrate()
         if applied:
             log.info("applied %d migration(s)", applied)
+
     refresh_catalog()
-    log.info("catalog loaded: %d lesson(s)", len(load_lessons()))
+    log.info("catalog loaded: %d lesson(s) across %d track(s)",
+             len(load_lessons()), len(load_tracks()))
 
 
 def main() -> None:

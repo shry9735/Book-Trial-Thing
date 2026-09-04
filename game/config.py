@@ -51,6 +51,10 @@ class Config:
     # your server's max_connections (default 100).
     DB_POOL_MAX   = _int("DB_POOL_MAX", 5)
     DB_TIMEOUT    = _int("DB_TIMEOUT", 10)
+    # How long migrations keep retrying a database that is not answering
+    # yet. Only relevant when RUN_MIGRATIONS is on; production should be
+    # applying them in a pre-deploy step instead. See docs/AWS_READINESS.md.
+    DB_BOOT_RETRY = _int("DB_BOOT_RETRY", 30)
 
     # ── Sessions ────────────────────────────────────────────────────────────
     SECRET_KEY        = os.environ.get("SECRET_KEY", "")
@@ -171,9 +175,42 @@ def validate() -> Config:
     if cfg.IS_PROD and cfg.STRIPE_SECRET_KEY.startswith("sk_test_"):
         problems.append("A Stripe test key is configured in production.")
 
+    # A production box that requires email verification but cannot send
+    # email boots perfectly happily and lets nobody finish signing up. That
+    # used to be a warning on stderr, which is to say invisible.
     if cfg.IS_PROD and cfg.EMAIL_BACKEND == "console":
-        print("  config: EMAIL_BACKEND=console in production — verification and", file=sys.stderr)
-        print("          password-reset links will only appear in the logs.", file=sys.stderr)
+        if cfg.REQUIRE_EMAIL_VERIFICATION:
+            problems.append(
+                "EMAIL_BACKEND=console with REQUIRE_EMAIL_VERIFICATION=true in "
+                "production: verification links would only reach the logs, so no "
+                "one could finish signing up. Configure SMTP, or set "
+                "REQUIRE_EMAIL_VERIFICATION=false deliberately.")
+        else:
+            print("  config: EMAIL_BACKEND=console in production — password-reset",
+                  file=sys.stderr)
+            print("          links will only appear in the logs.", file=sys.stderr)
+
+    # Behind a load balancer with TRUSTED_PROXIES=0, request.remote_addr is
+    # the balancer's own address, so every user in the world shares one
+    # rate-limit bucket and one wrong password locks out everybody.
+    if cfg.IS_PROD and cfg.TRUSTED_PROXIES < 1:
+        problems.append(
+            "TRUSTED_PROXIES=0 in production. Set it to the number of proxies in "
+            "front of the app (1 for a bare ALB, 2 behind CloudFront), or every "
+            "request will look like it came from the load balancer.")
+
+    # psycopg defaults to sslmode=prefer, which silently falls back to
+    # plaintext when the server allows it — and RDS allows it unless
+    # rds.force_ssl is set. This is student data.
+    if cfg.IS_PROD and cfg.DATABASE_URL:
+        mode = ""
+        if "sslmode=" in cfg.DATABASE_URL:
+            mode = cfg.DATABASE_URL.split("sslmode=", 1)[1].split("&")[0].strip()
+        if mode not in ("require", "verify-ca", "verify-full"):
+            problems.append(
+                f"DATABASE_URL has sslmode={mode or '(unset)'}. In production it must "
+                "be require, verify-ca or verify-full — anything else lets the "
+                "connection quietly fall back to plaintext.")
 
     if cfg.IS_PROD and not cfg.COOKIE_SECURE:
         problems.append("COOKIE_SECURE=false in production would send session cookies over plain HTTP.")

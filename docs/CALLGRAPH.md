@@ -75,7 +75,7 @@ No layering violations: every import points downward.
 
 ## Routes
 
-48 routes. **Guards** are the decorators that must pass before
+49 routes. **Guards** are the decorators that must pass before
 the handler runs; **touches** is every other module the handler reaches,
 following local helpers.
 
@@ -113,6 +113,7 @@ following local helpers.
 | `/lesson/<lesson_id>` | GET | signed in, approved member | `app.lesson` | `billing`, `db`, `tracks` |
 | `/lessons` | GET | signed in, approved member | `app.lessons` | `billing`, `db`, `tracks` |
 | `/lessons/<lesson_id>/<path:filename>` | GET | — | `app.lesson_asset` | — |
+| `/livez` | GET | — | `app.livez` | — |
 | `/locked` | GET | signed in | `app.locked` | `billing`, `db`, `tracks` |
 | `/login` | GET/POST | — | `app.login` | `db`, `security` |
 | `/logout` | POST | — | `app.logout` | — |
@@ -141,7 +142,7 @@ handler ultimately reaches — not just what its own body names.
 
 Send each role to the screen it actually wants.
 
-`app.home` — game/app.py:627
+`app.home` — game/app.py:648
 
 - **db** → `user_by_id`
 
@@ -149,7 +150,7 @@ Send each role to the screen it actually wants.
 
 Record one practice-example answer and hand back the same correct/explain shape /api/quiz gives — Spark uses i
 
-`app.api_example` — game/app.py:1328
+`app.api_example` — game/app.py:1349
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_statuses`, `record_example`, `user_by_id`
@@ -159,7 +160,7 @@ Record one practice-example answer and hand back the same correct/explain shape 
 
 Prompts and choices for a lesson's practice examples, answer key stripped — the same treatment the quiz gets.
 
-`app.api_examples` — game/app.py:1308
+`app.api_examples` — game/app.py:1329
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_statuses`, `user_by_id`
@@ -169,7 +170,7 @@ Prompts and choices for a lesson's practice examples, answer key stripped — th
 
 Called by the lesson player, and by lessons via the kit's postMessage.
 
-`app.api_progress` — game/app.py:1241
+`app.api_progress` — game/app.py:1262
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_statuses`, `set_lesson_status`, `summaries_for`, `user_by_id`
@@ -179,7 +180,7 @@ Called by the lesson player, and by lessons via the kit's postMessage.
 
 Check one answer and record the attempt.
 
-`app.api_quiz` — game/app.py:1271
+`app.api_quiz` — game/app.py:1292
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_statuses`, `record_answer`, `user_by_id`
@@ -189,7 +190,7 @@ Check one answer and record the attempt.
 
 Score the quiz, complete the lesson, and hand back any reward earned.
 
-`app.api_quiz_finish` — game/app.py:1367
+`app.api_quiz_finish` — game/app.py:1388
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_entries`, `lesson_statuses`, `set_lesson_status`, `summaries_for`, `user_by_id`
@@ -197,7 +198,7 @@ Score the quiz, complete the lesson, and hand back any reward earned.
 
 ### `GET /billing`
 
-`app.billing_home` — game/app.py:2002
+`app.billing_home` — game/app.py:2023
 
 - **billing** → `entitlement_for`
 - **db** → `count_billable_seats`, `invoices_for`, `org_by_id`, `subscription_for_org`, `subscription_for_parent`, `user_by_id`, `visible_students`
@@ -206,7 +207,7 @@ Score the quiz, complete the lesson, and hand back any reward earned.
 
 Ask to be billed by invoice on terms instead of by card.
 
-`app.billing_invoice_request` — game/app.py:2107
+`app.billing_invoice_request` — game/app.py:2128
 
 - **db** → `count_billable_seats`, `org_by_id`, `set_billing_profile`, `user_by_id`
 - **emailer** → `send`
@@ -216,7 +217,7 @@ Ask to be billed by invoice on terms instead of by card.
 
 Stripe's hosted account page: change card, cancel, download invoices.
 
-`app.billing_portal` — game/app.py:2066
+`app.billing_portal` — game/app.py:2087
 
 - **billing** → `portal_session`
 - **db** → `count_billable_seats`, `org_by_id`, `subscription_for_org`, `subscription_for_parent`, `user_by_id`, `visible_students`
@@ -225,7 +226,7 @@ Stripe's hosted account page: change card, cancel, download invoices.
 
 Where Stripe sends the browser after Checkout.
 
-`app.billing_return` — game/app.py:2094
+`app.billing_return` — game/app.py:2115
 
 - **billing** → `entitlement_for`
 - **db** → `user_by_id`
@@ -234,14 +235,14 @@ Where Stripe sends the browser after Checkout.
 
 Send the payer to Stripe's hosted Checkout.
 
-`app.billing_subscribe` — game/app.py:2021
+`app.billing_subscribe` — game/app.py:2042
 
 - **billing** → `checkout_session`, `enabled`, `ensure_customer`
 - **db** → `count_billable_seats`, `org_by_id`, `subscription_for_org`, `subscription_for_parent`, `user_by_id`, `visible_students`
 
 ### `GET /classroom`
 
-`app.classroom` — game/app.py:1099
+`app.classroom` — game/app.py:1120
 
 - **db** → `summaries_for`, `user_by_id`
 
@@ -249,7 +250,7 @@ Send the payer to Stripe's hosted Checkout.
 
 Every classroom this account may see.
 
-`app.classrooms_home` — game/app.py:1569
+`app.classrooms_home` — game/app.py:1590
 
 - **db** → `classroom_membership`, `classroom_rows`, `summaries_for`, `unplaced_students`, `unresolved_counts`, `user_by_id`, `visible_students`
 
@@ -257,7 +258,7 @@ Every classroom this account may see.
 
 One classroom: who teaches it, who is in it, how they are doing.
 
-`app.classroom_detail` — game/app.py:1659
+`app.classroom_detail` — game/app.py:1680
 
 - **db** → `classroom_in_org`, `classroom_students`, `classroom_teachers`, `org_teachers`, `summaries_for`, `teaches_classroom`, `unresolved_counts`, `user_by_id`, `visible_students`
 
@@ -265,7 +266,7 @@ One classroom: who teaches it, who is in it, how they are doing.
 
 Delete a classroom.
 
-`app.classroom_delete` — game/app.py:1783
+`app.classroom_delete` — game/app.py:1804
 
 - **db** → `delete_classroom`, `user_by_id`
 
@@ -273,7 +274,7 @@ Delete a classroom.
 
 Put a student in a classroom, which is what lets its teachers see them.
 
-`app.classroom_add_student` — game/app.py:1710
+`app.classroom_add_student` — game/app.py:1731
 
 - **db** → `add_classroom_student`, `can_see_student`, `classroom_in_org`, `teaches_classroom`, `user_by_id`, `user_by_username`
 
@@ -281,7 +282,7 @@ Put a student in a classroom, which is what lets its teachers see them.
 
 Take a student out of a classroom.
 
-`app.classroom_remove_student` — game/app.py:1728
+`app.classroom_remove_student` — game/app.py:1749
 
 - **db** → `can_see_student`, `classroom_in_org`, `remove_classroom_student`, `teaches_classroom`, `user_by_id`, `user_by_username`
 
@@ -289,7 +290,7 @@ Take a student out of a classroom.
 
 Assign a teacher to a classroom.
 
-`app.classroom_add_teacher` — game/app.py:1745
+`app.classroom_add_teacher` — game/app.py:1766
 
 - **db** → `add_classroom_teacher`, `classroom_in_org`, `member_in_org`, `teaches_classroom`, `user_by_id`
 
@@ -297,7 +298,7 @@ Assign a teacher to a classroom.
 
 Unassign a teacher, revoking their sight of that classroom's students.
 
-`app.classroom_remove_teacher` — game/app.py:1766
+`app.classroom_remove_teacher` — game/app.py:1787
 
 - **db** → `classroom_in_org`, `member_in_org`, `remove_classroom_teacher`, `teaches_classroom`, `user_by_id`
 
@@ -305,13 +306,13 @@ Unassign a teacher, revoking their sight of that classroom's students.
 
 Create a classroom and put its creator in it.
 
-`app.classroom_create` — game/app.py:1634
+`app.classroom_create` — game/app.py:1655
 
 - **db** → `add_classroom_teacher`, `create_classroom`, `user_by_id`
 
 ### `GET/POST /forgot`
 
-`app.forgot_password` — game/app.py:860
+`app.forgot_password` — game/app.py:881
 
 - **db** → `invalidate_tokens`, `store_token`, `user_by_email`, `write`
 - **emailer** → `send_reset`
@@ -321,7 +322,7 @@ Create a classroom and put its creator in it.
 
 Answers "is my kid doing the work?" without any digging: a headline per student, and anything needing attentio
 
-`app.grownup_home` — game/app.py:1408
+`app.grownup_home` — game/app.py:1429
 
 - **db** → `org_by_id`, `summaries_for`, `unresolved_counts`, `user_by_id`, `visible_students`
 
@@ -329,7 +330,7 @@ Answers "is my kid doing the work?" without any digging: a headline per student,
 
 A parent attaches themselves to a student with the student's link code.
 
-`app.link_child` — game/app.py:1531
+`app.link_child` — game/app.py:1552
 
 - **db** → `link_parent`, `student_by_link_code`, `user_by_id`
 
@@ -337,7 +338,7 @@ A parent attaches themselves to a student with the student's link code.
 
 One student's full progress, for a grown-up.
 
-`app.student_detail` — game/app.py:1468
+`app.student_detail` — game/app.py:1489
 
 - **db** → `assigned_lesson_ids`, `can_see_student`, `lesson_entries`, `summaries_for`, `user_by_id`, `user_by_username`
 
@@ -345,15 +346,15 @@ One student's full progress, for a grown-up.
 
 Narrow (or re-widen) which lessons show up on one student's menu.
 
-`app.student_assign` — game/app.py:1511
+`app.student_assign` — game/app.py:1532
 
 - **db** → `can_see_student`, `set_assignment`, `user_by_id`, `user_by_username`
 
 ### `GET /healthz`
 
-Liveness plus readiness.
+Readiness: can this process actually do its job right now?
 
-`app.healthz` — game/app.py:486
+`app.healthz` — game/app.py:504
 
 - **db** → `healthy`
 
@@ -361,7 +362,7 @@ Liveness plus readiness.
 
 Open one lesson, if this student may.
 
-`app.lesson` — game/app.py:1165
+`app.lesson` — game/app.py:1186
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_entries`, `lesson_statuses`, `set_lesson_status`, `summaries_for`, `user_by_id`
@@ -371,7 +372,7 @@ Open one lesson, if this student may.
 
 The lesson menu, organised by track.
 
-`app.lessons` — game/app.py:1110
+`app.lessons` — game/app.py:1131
 
 - **billing** → `entitlement_for`, `lesson_is_free`
 - **db** → `assigned_lesson_ids`, `lesson_entries`, `summaries_for`, `user_by_id`
@@ -381,7 +382,7 @@ The lesson menu, organised by track.
 
 Where a student lands on a lesson that will not open.
 
-`app.locked` — game/app.py:1801
+`app.locked` — game/app.py:1822
 
 - **billing** → `entitlement_for`
 - **db** → `assigned_lesson_ids`, `lesson_statuses`, `user_by_id`
@@ -389,47 +390,47 @@ Where a student lands on a lesson that will not open.
 
 ### `GET/POST /login`
 
-`app.login` — game/app.py:644
+`app.login` — game/app.py:665
 
 - **db** → `touch_login`, `user_by_id`, `user_by_username`
 - **security** → `clear_attempts`, `client_ip`, `over_limit`, `record_attempt`, `rotate_csrf_token`, `safe_next`
 
 ### `GET /org`
 
-`app.org_home` — game/app.py:1836
+`app.org_home` — game/app.py:1857
 
 - **billing** → `entitlement_for`
 - **db** → `count_billable_seats`, `count_org_admins`, `org_by_id`, `org_members`, `pending_members`, `subscription_for_org`, `user_by_id`
 
 ### `POST /org/join-policy`
 
-`app.org_join_policy` — game/app.py:1870
+`app.org_join_policy` — game/app.py:1891
 
 - **db** → `set_join_policy`, `user_by_id`
 
 ### `POST /org/members/<member_id>/admin`
 
-`app.org_set_admin` — game/app.py:1926
+`app.org_set_admin` — game/app.py:1947
 
 - **db** → `count_org_admins`, `member_in_org`, `set_org_admin`, `user_by_id`
 
 ### `POST /org/members/<member_id>/approve`
 
-`app.org_approve_member` — game/app.py:1893
+`app.org_approve_member` — game/app.py:1914
 
 - **billing** → `enabled`, `update_seats`
 - **db** → `count_billable_seats`, `member_in_org`, `set_membership_status`, `subscription_for_org`, `user_by_id`
 
 ### `POST /org/members/<member_id>/remove`
 
-`app.org_remove_member` — game/app.py:1905
+`app.org_remove_member` — game/app.py:1926
 
 - **billing** → `enabled`, `update_seats`
 - **db** → `count_billable_seats`, `count_org_admins`, `member_in_org`, `set_membership_status`, `subscription_for_org`, `user_by_id`
 
 ### `POST /org/rotate-code`
 
-`app.org_rotate_code` — game/app.py:1884
+`app.org_rotate_code` — game/app.py:1905
 
 - **db** → `rotate_join_code`, `user_by_id`
 
@@ -437,13 +438,13 @@ Where a student lands on a lesson that will not open.
 
 Holding page for a member an admin has not let in yet.
 
-`app.pending` — game/app.py:601
+`app.pending` — game/app.py:622
 
 - **db** → `org_by_id`, `user_by_id`
 
 ### `GET/POST /reset/<token>`
 
-`app.reset_password` — game/app.py:890
+`app.reset_password` — game/app.py:911
 
 - **db** → `consume_token`, `set_password`
 - **security** → `clear_attempts`, `hash_token`, `password_problem`
@@ -452,7 +453,7 @@ Holding page for a member an admin has not let in yet.
 
 The student's trinket collection.
 
-`app.satchel` — game/app.py:1218
+`app.satchel` — game/app.py:1239
 
 - **db** → `inventory`, `summaries_for`, `user_by_id`
 
@@ -460,7 +461,7 @@ The student's trinket collection.
 
 Self-serve registration for all three roles.
 
-`app.signup` — game/app.py:705
+`app.signup` — game/app.py:726
 
 - **db** → `create_org`, `create_user`, `email_taken`, `org_by_join_code`, `store_token`, `user_by_id`, `username_taken`, `write`
 - **emailer** → `send_verification`
@@ -468,21 +469,21 @@ Self-serve registration for all three roles.
 
 ### `POST /stripe/webhook`
 
-`app.stripe_webhook` — game/app.py:2160
+`app.stripe_webhook` — game/app.py:2181
 
 - **billing** → `enabled`, `handle_event`, `verify_webhook`
 - **db** → `claim_event`, `finish_event`, `release_event`
 
 ### `GET /verify/<token>`
 
-`app.verify_email` — game/app.py:821
+`app.verify_email` — game/app.py:842
 
 - **db** → `consume_token`, `mark_verified`, `write`
 - **security** → `hash_token`, `rotate_csrf_token`
 
 ### `POST /verify/resend`
 
-`app.resend_verification` — game/app.py:836
+`app.resend_verification` — game/app.py:857
 
 - **db** → `invalidate_tokens`, `store_token`, `user_by_email`, `write`
 - **emailer** → `send_verification`
@@ -497,15 +498,15 @@ Self-serve registration for all three roles.
 | `import_assets.py` | entrypoint | 5 | 0 | — |
 | `manage.py` | entrypoint | 12 | 0 | `billing`, `config`, `db`, `logsetup` |
 | `migrate_json.py` | entrypoint | 3 | 0 | `config`, `db` |
-| `selftest.py` | entrypoint | 38 | 0 | `app`, `db`, `security` |
+| `selftest.py` | entrypoint | 42 | 0 | `app`, `db`, `security` |
 | `selftest_billing.py` | entrypoint | 50 | 0 | `app`, `billing`, `db` |
 | `selftest_classrooms.py` | entrypoint | 35 | 0 | `app`, `db`, `tracks` |
 | `wsgi.py` | entrypoint | 0 | 0 | `app` |
-| `app.py` | web | 93 | 48 | `billing`, `config`, `db`, `emailer`, `logsetup`, `security`, `tracks` |
+| `app.py` | web | 94 | 49 | `billing`, `config`, `db`, `emailer`, `logsetup`, `security`, `tracks` |
 | `billing.py` | service | 21 | 0 | `db` |
 | `emailer.py` | service | 4 | 0 | — |
 | `security.py` | service | 17 | 0 | `db` |
 | `tracks.py` | service | 9 | 0 | — |
-| `db.py` | data | 87 | 0 | — |
+| `db.py` | data | 88 | 0 | — |
 | `config.py` | platform | 3 | 0 | — |
 | `logsetup.py` | platform | 2 | 0 | — |

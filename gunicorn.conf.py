@@ -10,6 +10,7 @@ request timeouts; it must never face users.
 
 import multiprocessing
 import os
+import pathlib
 
 
 def _int(name, default):
@@ -25,7 +26,41 @@ bind = os.environ.get("BIND", "0.0.0.0:8000")
 # Postgres connections is workers * DB_POOL_MAX. Keep that product under
 # the server's max_connections (100 by default) — the arithmetic is in
 # DEPLOY.md.
-workers = _int("WEB_CONCURRENCY", min(multiprocessing.cpu_count() * 2 + 1, 8))
+def _available_cpus() -> int:
+    """
+    CPUs this container may actually use — not the host's.
+
+    multiprocessing.cpu_count() reports the machine, so a 0.5-vCPU task on
+    a 16-core ECS instance would size itself for sixteen: too many workers
+    thrashing one slice of CPU, and each one carrying its own database
+    pool, which is how a small task opens forty connections.
+
+    cgroup quota first (what the orchestrator actually enforces), then CPU
+    affinity, then the host count as a last resort.
+    """
+    try:
+        quota, period = pathlib.Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if quota != "max":
+            return max(1, int(int(quota) / int(period)))
+    except Exception:
+        pass
+    try:                                            # cgroup v1
+        quota = int(pathlib.Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+        period = int(pathlib.Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+        if quota > 0 and period > 0:
+            return max(1, int(quota / period))
+    except Exception:
+        pass
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, multiprocessing.cpu_count())
+
+
+# Set WEB_CONCURRENCY explicitly in production anyway: the connection
+# arithmetic in DEPLOY.md (workers x DB_POOL_MAX under the server's
+# max_connections) only holds if you know this number.
+workers = _int("WEB_CONCURRENCY", min(_available_cpus() * 2 + 1, 8))
 
 # Threads, not async workers: the work is Postgres round-trips and
 # password hashing, and gthread handles that without every library in the

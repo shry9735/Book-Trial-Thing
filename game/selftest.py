@@ -662,6 +662,154 @@ def t_pages_render():
     assert not broken, f"pages did not render: {broken}"
 
 
+@check("liveness is separate from readiness")
+def t_livez():
+    """
+    /livez must never touch the database. Pointing a load balancer at a
+    check that fails during a failover means every task is replaced at
+    once, for an outage the pool would have ridden out by itself.
+    """
+    res = client().get("/livez")
+    assert res.status_code == 200, res.status_code
+    assert res.get_json() == {"status": "ok"}, res.get_json()
+
+    # Signed out, and with the database stubbed away, it still answers.
+    original = db.healthy
+    db.healthy = lambda: False
+    try:
+        assert client().get("/livez").status_code == 200, \
+            "liveness followed the database down"
+        assert client().get("/healthz").status_code == 503, \
+            "readiness did not notice the database was gone"
+    finally:
+        db.healthy = original
+
+
+@check("production refuses the misconfigurations that fail silently")
+def t_production_guards():
+    """
+    Each of these boots fine today and breaks something later — no signups
+    at all, every user in one rate-limit bucket, or student data crossing
+    the network in the clear. They are boot failures now.
+    """
+    import importlib
+
+    import config
+
+    # Config reads the environment when the module is imported, not when
+    # validate() runs, so each case needs a genuine re-import — which is
+    # also exactly what a container restart does.
+    base = {
+        "APP_ENV": "production",
+        "BASE_URL": "https://example.test",
+        "SECRET_KEY": "0" * 64,
+        "DATABASE_URL": "postgresql://u:p@h/db?sslmode=require",
+        "TRUSTED_PROXIES": "1",
+        "EMAIL_BACKEND": "smtp",
+        "SMTP_HOST": "smtp.example.test",
+    }
+
+    def boots(**overrides):
+        env = {**base, **overrides}
+        saved = dict(os.environ)
+        os.environ.clear()
+        os.environ.update(env)
+        try:
+            importlib.reload(config).validate()
+            return True
+        except SystemExit:
+            return False
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+            importlib.reload(config)
+
+    assert boots(), "a correct production config was rejected"
+    assert not boots(EMAIL_BACKEND="console", REQUIRE_EMAIL_VERIFICATION="1"), \
+        "console email with verification required would let nobody sign up"
+    assert not boots(TRUSTED_PROXIES="0"), \
+        "TRUSTED_PROXIES=0 puts every user in one rate-limit bucket"
+    assert not boots(DATABASE_URL="postgresql://u:p@h/db"), \
+        "a database URL with no sslmode was accepted"
+    assert not boots(DATABASE_URL="postgresql://u:p@h/db?sslmode=prefer"), \
+        "sslmode=prefer falls back to plaintext silently"
+    assert boots(DATABASE_URL="postgresql://u:p@h/db?sslmode=verify-full"), \
+        "verify-full was rejected"
+
+
+@check("a proxy we were not told about is reported, once")
+def t_proxy_warning():
+    """
+    X-Forwarded-For present with TRUSTED_PROXIES=0 means remote_addr is the
+    proxy, so everyone shares a rate-limit bucket. Almost always APP_ENV
+    not being set to production, which also switches off the boot checks —
+    so this has to be caught at runtime.
+    """
+    import logging
+    import security as sec
+
+    sec._warned_about_proxy = False
+    original = appmod.cfg.TRUSTED_PROXIES
+    appmod.cfg.TRUSTED_PROXIES = 0
+
+    records = []
+
+    class Catch(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = Catch()
+    logging.getLogger("ignite.security").addHandler(handler)
+    try:
+        c = client()
+        page = c.get("/login").get_data(as_text=True)
+        for _ in range(3):
+            c.post("/login", data={"csrf_token": token_from(page),
+                                   "username": "nobody", "password": "wrong-one"},
+                   headers={"X-Forwarded-For": "1.2.3.4"})
+    finally:
+        logging.getLogger("ignite.security").removeHandler(handler)
+        appmod.cfg.TRUSTED_PROXIES = original
+        sec._warned_about_proxy = False
+
+    hits = [r for r in records if "TRUSTED_PROXIES=0" in r]
+    assert len(hits) == 1, f"expected exactly one warning, got {len(hits)}"
+
+
+@check("rate events do not accumulate forever")
+def t_rate_events_trim():
+    """
+    rate_count only looks inside the window, so expired rows are dead
+    weight — but nothing deleted them except a purge command that is easy
+    never to schedule.
+    """
+    with db.write() as cur:
+        cur.execute("DELETE FROM rate_events")
+        cur.execute("INSERT INTO rate_events (bucket, created_at) "
+                    "SELECT 'stale:x', now() - interval '3 days' "
+                    "FROM generate_series(1, 40)")
+
+    with db.query() as cur:
+        cur.execute("SELECT count(*) AS n FROM rate_events")
+        before = cur.fetchone()["n"]
+    assert before == 40, before
+
+    # The sweep is probabilistic, so give it enough attempts to be certain
+    # rather than flaky: 200 inserts at 1-in-50 misses with probability
+    # about 1.7e-2 ** ... vanishingly small.
+    for _ in range(200):
+        db.rate_hit("trimtest")
+        with db.query() as cur:
+            cur.execute("SELECT count(*) AS n FROM rate_events WHERE bucket = 'stale:x'")
+            if cur.fetchone()["n"] == 0:
+                break
+    else:
+        raise AssertionError("200 attempts and the expired rows were never swept")
+
+    with db.write() as cur:
+        cur.execute("DELETE FROM rate_events")
+
+
 @check("health check reports the database")
 def t_health():
     res = client().get("/healthz")
@@ -679,7 +827,10 @@ TESTS = [
     t_quiz_recording, t_reward_once, t_concurrent_writes, t_concurrent_same_row,
     t_dashboard_queries,
     t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
-    t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post, t_pages_render, t_health,
+    t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post,
+    t_pages_render,
+    t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,
+    t_health,
 ]
 
 

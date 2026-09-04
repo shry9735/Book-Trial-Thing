@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -40,7 +41,19 @@ _pool: ConnectionPool | None = None
 # ── Pool ────────────────────────────────────────────────────────────────────────
 
 def init_pool(cfg) -> ConnectionPool:
-    """Build the process-local pool.  Safe to call more than once."""
+    """
+    Build the process-local pool.  Safe to call more than once.
+
+    Opening is deliberately NON-BLOCKING.  A worker that started while the
+    database was briefly away — an RDS failover, a restart — used to die
+    after DB_TIMEOUT seconds and take the whole task with it, so a
+    survivable blip turned into a crash loop across the service.
+
+    The pool reconnects on its own, and it does so in about two seconds, so
+    the right behaviour is to come up regardless and let /healthz report
+    degraded until the database answers.  Requests that need it fail in the
+    meantime; the process does not.
+    """
     global _pool
     if _pool is not None:
         return _pool
@@ -52,9 +65,31 @@ def init_pool(cfg) -> ConnectionPool:
         kwargs={"row_factory": dict_row, "application_name": "ignite-academy"},
         open=False,
     )
-    _pool.open(wait=True, timeout=cfg.DB_TIMEOUT)
-    log.info("db pool ready (min=%s max=%s)", cfg.DB_POOL_MIN, cfg.DB_POOL_MAX)
+    _pool.open(wait=False)
+    log.info("db pool opening (min=%s max=%s, non-blocking)",
+             cfg.DB_POOL_MIN, cfg.DB_POOL_MAX)
     return _pool
+
+
+def wait_for_database(seconds: int) -> bool:
+    """
+    Block until the database answers, or the budget runs out.
+
+    Only used before running migrations, which genuinely cannot proceed
+    without a connection.  Everything else is happy to start first and
+    reconnect later — see init_pool().
+    """
+    deadline = time.monotonic() + max(0, seconds)
+    attempt = 0
+    while True:
+        if healthy():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        attempt += 1
+        delay = min(2 ** attempt, 5)
+        log.warning("database not ready, retrying in %ss", delay)
+        time.sleep(delay)
 
 
 def close_pool() -> None:
@@ -1403,9 +1438,34 @@ def rate_count(bucket: str, window_seconds: int) -> int:
         return cur.fetchone()["n"]
 
 
+# Roughly one insert in this many also sweeps up expired rows. Small enough
+# that the sweep is invisible in normal traffic, frequent enough that a table
+# under a brute-force attack — which is exactly when rows pile up — keeps
+# trimming itself.
+_TRIM_ODDS = 50
+
+
 def rate_hit(bucket: str) -> None:
+    """
+    Count one attempt, and occasionally take the bins out.
+
+    rate_count() only ever looks inside the window, so expired rows are
+    dead weight rather than a correctness problem — but nothing was
+    deleting them except `manage.py purge`, which is easy never to
+    schedule. This makes the table self-maintaining regardless.
+
+    Note there is deliberately no clear-on-success for the per-IP bucket
+    (see security.clear_attempts). Letting one good password reset the
+    address counter would hand an attacker holding a single valid
+    credential a way to wipe it between sprays.
+    """
     with write() as cur:
         cur.execute("INSERT INTO rate_events (bucket) VALUES (%s)", (bucket,))
+        if secrets.randbelow(_TRIM_ODDS) == 0:
+            cur.execute(
+                "DELETE FROM rate_events WHERE created_at < now() - interval '1 day'")
+            if cur.rowcount:
+                log.debug("trimmed %d expired rate event(s)", cur.rowcount)
 
 
 def rate_clear(bucket: str) -> None:

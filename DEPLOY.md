@@ -307,10 +307,19 @@ procurement).
 
 ## Operations
 
-**Health.** `GET /healthz` round-trips a query and returns 503 when
-Postgres is unreachable, so a load balancer takes a database-less process
-out of rotation instead of routing traffic at it. Docker's `HEALTHCHECK`
-uses the same endpoint.
+**Health.** Two endpoints, and which one you point things at matters.
+
+| Endpoint | Checks | Point this at it |
+|---|---|---|
+| `/livez` | Nothing — is the process answering? | Load balancer, container health check |
+| `/healthz` | Round-trips a real query | Dashboards, alerts, deploy verification |
+
+`/healthz` returns 503 when Postgres is unreachable. That is useful
+information and a terrible thing to kill tasks over: the connection pool
+reconnects by itself in about two seconds, so a load balancer watching
+`/healthz` would replace the entire service over a blip it would have
+ridden out. Use `/livez` for anything that decides whether a process
+lives.
 
 **Logs.** JSON, one object per line, on stdout, when `APP_ENV=production`.
 Logins, signups, password resets, rate-limit trips and unhandled errors
@@ -318,9 +327,14 @@ carry the username. No passwords, tokens or session cookies are ever
 logged. Worth alerting on: a sustained rise in `login failed`, any
 `unhandled error`, and `/healthz` failing.
 
-**Deploys.** `docker compose up -d --build`. Migrations are additive and
-applied before the new worker serves traffic; nothing in `MIGRATIONS`
+**Deploys.** `docker compose up -d --build`. Nothing in `MIGRATIONS`
 should ever be edited after it has shipped — add another entry instead.
+
+On anything doing **rolling** deploys, set `RUN_MIGRATIONS=0` and apply
+migrations in a separate step before the service updates. Otherwise the
+first new task migrates the schema out from under the old tasks that are
+still serving traffic, and a renaming migration takes them down until they
+drain. See [docs/AWS_READINESS.md](docs/AWS_READINESS.md).
 
 **Rotating `SECRET_KEY`** logs every user out. Do it if it leaks; expect
 the support load.

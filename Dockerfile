@@ -32,11 +32,13 @@ COPY --chown=ignite:ignite gunicorn.conf.py ./
 USER ignite
 EXPOSE 8000
 
-# The orchestrator restarts the container when this fails. It queries the
-# database rather than just checking the port, so a process that has lost
-# Postgres is taken out of rotation instead of serving errors.
+# Liveness only, deliberately. This decides whether the orchestrator KILLS
+# the container, so it must not fail just because the database is briefly
+# away — the pool reconnects by itself, and restarting every task during an
+# RDS failover turns a two-second blip into an outage.
+# Readiness (/healthz) is for dashboards and deploy checks.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; \
-sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status == 200 else 1)"
+sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=4).status == 200 else 1)"
 
 CMD ["gunicorn", "-c", "gunicorn.conf.py", "--chdir", "game", "wsgi:app"]

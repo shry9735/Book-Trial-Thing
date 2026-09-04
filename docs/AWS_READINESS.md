@@ -6,6 +6,10 @@ why, and what to do.
 
 Ordered by when it will bite you, not by how interesting it is.
 
+**Status:** findings 2–7 are fixed in code, with regression tests. Finding
+1 is partly a process change and finding 8 is infrastructure — both are
+still on you. Each section says which.
+
 - [Blockers](#blockers)
 - [Will bite you in the first month](#will-bite-you-in-the-first-month)
 - [Worth knowing before you wire it up](#worth-knowing-before-you-wire-it-up)
@@ -45,6 +49,12 @@ a fraction of users, on every deploy that contains a renaming migration.
 
 The second and third are the real fix. The first is how you ship next week.
 
+> **Still open — this one is yours.** `RUN_MIGRATIONS` is now passed
+> through `docker-compose.yml` and documented in `.env.example`, and
+> `init_app()` explains the hazard where you will read it. But nothing can
+> make a renaming migration safe for a rolling deploy except not doing it
+> that way.
+
 ### 2. Production boots with no working email, and only warns
 
 `REQUIRE_EMAIL_VERIFICATION` defaults to on in production.
@@ -55,8 +65,9 @@ verification link is written to CloudWatch instead of being sent.
 `config.validate()` prints a warning to stderr and carries on. Nobody
 reads container boot logs before a launch.
 
-**Fix:** make that combination a hard boot failure, the way a missing
-`SECRET_KEY` already is. Ten lines in `config.validate()`.
+> **Fixed.** That combination is now a hard boot failure, the way a
+> missing `SECRET_KEY` already was. Covered by
+> `t_production_guards`.
 
 ### 3. Two tables grow forever
 
@@ -64,15 +75,24 @@ reads container boot logs before a launch.
 `stripe_events` gains one per webhook. Both are only ever trimmed by
 `manage.py purge`, which nothing schedules.
 
-`rate_clear()` is called for the *username* bucket on a successful login
-but never for the *IP* bucket, so IP rows only ever accumulate.
-
 Left alone, `rate_count()` gets slower and the table gets bigger forever.
 It is not dramatic — it is the kind of thing you discover eighteen months
 in, on a Sunday.
 
-**Fix:** an EventBridge rule running `manage.py purge` daily as a
-scheduled ECS task. The command already exists and is idempotent.
+One correction to an earlier draft of this document: the per-IP bucket
+not being cleared on a successful login is **deliberate, not a bug**.
+Clearing it would let an attacker holding one valid credential reset the
+address counter between sprays, which is the exact thing that limit is
+for. Only the per-username bucket clears.
+
+> **Fixed.** `rate_hit()` now sweeps expired rows on roughly one insert in
+> fifty, so the table maintains itself whether or not anything is
+> scheduled — and it trims hardest under attack, which is when rows pile
+> up. Covered by `t_rate_events_trim`.
+>
+> Still worth adding an EventBridge rule running `manage.py purge` daily:
+> it also covers `stripe_events` and expired tokens, which grow far more
+> slowly and are not swept inline.
 
 ### 4. An RDS failover will be much worse than it needs to be
 
@@ -98,13 +118,21 @@ So a 60-second failover that the app would have ridden out becomes: all
 tasks killed, replacements crash-loop until the database returns, then a
 cold start. Minutes of hard downtime instead of seconds of degradation.
 
-**Fix:** separate liveness from readiness.
-
-- Add a `/livez` that returns 200 if the process is up, touching nothing.
-  Point the **ECS container health check** and the ALB at that.
-- Keep `/healthz` as the deep check for humans and dashboards.
-- Raise `DB_TIMEOUT`, or let `init_app()` retry rather than exit, so a task
-  starting mid-failover waits instead of dying.
+> **Fixed**, in three parts:
+>
+> - **`/livez`** is new: liveness, touching nothing. Point the ALB target
+>   group and the ECS container health check here. The Dockerfile's own
+>   `HEALTHCHECK` and the nginx config already do.
+> - **`/healthz`** keeps its deep check, for dashboards and deploy
+>   verification. It is no longer the thing that decides whether your
+>   tasks live.
+> - **The pool now opens non-blocking**, so a worker starting mid-failover
+>   comes up instead of dying. Verified: with the database stopped, boot
+>   takes 0.3s, `/livez` returns 200 and `/healthz` returns 503.
+>
+> Migrations still need a live database, so when `RUN_MIGRATIONS=1` they
+> wait up to `DB_BOOT_RETRY` (30s) and then fail loudly rather than
+> silently serving against an unverified schema. Covered by `t_livez`.
 
 ---
 
@@ -131,9 +159,16 @@ becomes the ALB's own private IP, so **every user in the world shares one
 rate-limit bucket**. One person fat-fingering their password locks out
 everybody.
 
-**Fix:** fail the boot if the app can tell it is behind a proxy
-(`X-Forwarded-For` present) while `TRUSTED_PROXIES` is 0. And set
-`APP_ENV=production` in the task definition before anything else.
+> **Fixed**, from both ends:
+>
+> - `TRUSTED_PROXIES=0` with `APP_ENV=production` is now a boot failure.
+> - The case that guard *cannot* catch — `APP_ENV` not being set at all,
+>   which switches off the guard too — is caught at runtime instead: an
+>   `X-Forwarded-For` arriving while `TRUSTED_PROXIES` is 0 logs one loud
+>   ERROR per process. Covered by `t_proxy_warning`.
+>
+> Set `APP_ENV=production` in the task definition before anything else
+> regardless. It remains the switch everything else hangs off.
 
 ### 6. Nothing forces TLS to the database
 
@@ -144,9 +179,12 @@ server allows it — and RDS allows it unless you set `rds.force_ssl=1`.
 This is student data, including minors' names and email addresses,
 crossing a VPC unencrypted, with nothing that would tell you.
 
-**Fix:** require `sslmode=require` (or `verify-full` with the RDS CA
-bundle) in `validate()` when `IS_PROD`, and set `rds.force_ssl=1` in the
-RDS parameter group so the server refuses plaintext regardless.
+> **Fixed.** Production now refuses to boot unless `DATABASE_URL` carries
+> `sslmode=require`, `verify-ca` or `verify-full`. Covered by
+> `t_production_guards`.
+>
+> Still set `rds.force_ssl=1` in the RDS parameter group as well, so the
+> server refuses plaintext regardless of what any client asks for.
 
 ### 7. Worker count is read from the host, not the task
 
@@ -163,10 +201,13 @@ CPU thrash from oversubscription.
 `db.t4g.micro` tops out around 80 connections. Two such tasks during a
 rolling deploy exhausts it, and new connections are refused.
 
-**Fix:** set `WEB_CONCURRENCY` explicitly in the task definition, always.
-It is already the override; just never rely on the default. The
-`WEB_CONCURRENCY × DB_POOL_MAX` arithmetic in `DEPLOY.md` only holds if
-you do.
+> **Fixed.** The default now reads the container's cgroup CPU quota, then
+> CPU affinity, and only falls back to the host count when neither is
+> available.
+>
+> Set `WEB_CONCURRENCY` explicitly in the task definition anyway. The
+> `WEB_CONCURRENCY × DB_POOL_MAX` arithmetic in `DEPLOY.md` only holds if
+> you know the number rather than inferring it.
 
 ### 8. Secrets are plain environment variables
 
@@ -175,9 +216,10 @@ you do.
 literally into an ECS task definition, every one of those is readable by
 anyone with `ecs:DescribeTaskDefinition` and visible in the console.
 
-**Fix:** use the task definition's `secrets` block with `valueFrom`
-pointing at Secrets Manager or SSM Parameter Store. The application needs
-no change — they still arrive as environment variables.
+> **Still open — this one is yours.** Use the task definition's `secrets`
+> block with `valueFrom` pointing at Secrets Manager or SSM Parameter
+> Store. The application needs no change: they still arrive as
+> environment variables, so nothing in the code has to know.
 
 ### 9. The ALB's default health check path fails
 
@@ -192,8 +234,9 @@ Leave the default and **every target is marked unhealthy immediately** and
 the service never comes up. It is a five-minute debugging session the
 first time, and an obvious one only in hindsight.
 
-**Fix:** set the target group health check path to `/healthz` (or `/livez`
-once finding 4 is addressed).
+> **Fixed** as far as code can fix it: `/livez` now exists and is the
+> right target. Set the target group health check path to **`/livez`** —
+> not `/`, and not `/healthz`, for the reason in finding 4.
 
 ---
 
