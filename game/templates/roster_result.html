@@ -1,0 +1,86 @@
+{# Shown exactly once, right after accounts are created or a password is
+   reset. The passwords on this page are not stored anywhere in readable
+   form and cannot be shown again — the copy the teacher prints or writes
+   down is the only one. #}
+{% extends "teacher_base.html" %}
+{% block title %}{% if reset %}New Password{% else %}Accounts Created{% endif %} — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    {% if classroom %}
+      <div class="crumb">
+        <a href="{{ url_for('classroom_detail', classroom_id=classroom.id) }}">← {{ classroom.name }}</a>
+      </div>
+    {% else %}
+      <div class="crumb"><a href="{{ url_for('grownup_home') }}">← Dashboard</a></div>
+    {% endif %}
+    <h1>{% if reset %}New password{% else %}{{ created | length }} account{{ '' if created | length == 1 else 's' }} created{% endif %}</h1>
+  </div>
+  <button type="button" class="btn sm ghost no-print" onclick="window.print()">Print this</button>
+</div>
+
+{% if created %}
+  <div class="panel">
+    <div class="panel-head teal">
+      {% if reset %}Hand this to the student{% else %}Hand these out{% endif %}
+      <span class="head-note">shown once</span>
+    </div>
+
+    <div class="billing-body no-print">
+      <p class="login-blurb">
+        <b>Write these down or print them now.</b> We store only a scrambled
+        version of each password, so this page cannot be shown again. The
+        first password works for one sign-in — each student is asked to pick
+        their own straight away.
+      </p>
+    </div>
+
+    <table class="t-table">
+      <thead><tr><th>Name</th><th>Username</th><th>First password</th></tr></thead>
+      <tbody>
+        {% for row in created %}
+          <tr>
+            <td><b>{{ row.name }}</b></td>
+            <td><code>{{ row.username }}</code></td>
+            <td><code class="temp-pass">{{ row.password }}</code></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% if failed %}
+  <div class="panel no-print">
+    <div class="panel-head">
+      Skipped
+      <span class="head-note">{{ failed | length }}</span>
+    </div>
+    <div class="billing-body">
+      <p class="login-blurb">
+        These rows weren't created. Everything else on the list went through —
+        fix these and import just them.
+      </p>
+    </div>
+    <table class="t-table">
+      <thead><tr><th>Name</th><th>Why</th></tr></thead>
+      <tbody>
+        {% for row in failed %}
+          <tr><td><b>{{ row.name }}</b></td><td class="bad">{{ row.reason }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% if classroom %}
+  <div class="no-print">
+    <a class="btn" href="{{ url_for('classroom_detail', classroom_id=classroom.id) }}">
+      Done — back to {{ classroom.name }}
+    </a>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -204,9 +204,86 @@ A teacher's signup creates the organisation and makes them its first
 admin. Students and parents must present that org's join code, so an
 account cannot appear inside a school nobody invited it to.
 
+This is one of two ways a student account comes into being. The other is a
+teacher provisioning it — no email, no join code, no confirmation link —
+covered under [Getting a class online](#getting-a-class-online-without-email-addresses)
+below.
+
 The username and email checks before the insert are for a friendly error
 message only — the unique indexes are what actually prevent a duplicate
 when two people race.
+
+### Getting a class online without email addresses
+
+Self-serve signup asks for an email and sends a confirmation link. That
+works for a parent at a kitchen table and fails completely for a class of
+twenty-eight, so a teacher creates the accounts directly instead.
+
+```mermaid
+sequenceDiagram
+    participant T as Teacher
+    participant A as app.classroom_import_students
+    participant S as security
+    participant D as db
+
+    T->>A: POST roster (paste or CSV) + consent
+    A->>A: _classroom_or_404  (must teach this classroom)
+    A->>A: _parse_roster
+    loop one transaction per row
+        A->>A: _username_from_name (or the one they chose)
+        A->>S: temp_password()
+        A->>D: create_student_in_classroom
+    end
+    A-->>T: printable usernames + first passwords, shown once
+```
+
+Three properties worth keeping if you touch this:
+
+- **A row fails alone.** Each student is its own transaction, so one
+  duplicate username on line nine does not defeat an import of thirty.
+  Failures come back beside the successes on the results page.
+- **The password is shown once and never stored.** Only the scrypt hash is
+  kept, so the page cannot be rebuilt. That is why it renders a results
+  page rather than flashing a message — a flash would follow the teacher
+  onto the next screen and into the session cookie.
+- **Any teacher of the classroom can do it**, not just an admin.
+  `_classroom_or_404()` has already refused anyone who does not teach it,
+  and making a teacher wait for an admin to enrol their own class is the
+  friction the whole flow exists to remove. Moving an *existing* student
+  between classrooms stays admin-only — that one hands a teacher sight of
+  somebody else's pupils.
+
+### Handing back a forgotten password
+
+The email reset loop is useless to a student with no email address, and
+most of them have none, so a teacher can issue a new password directly.
+
+`POST /grownup/student/<username>/reset-password` →
+`_visible_student_or_404()` → `db.set_password(..., must_change=True)`.
+
+Two guards do the real work. `_visible_student_or_404()` refuses anyone
+outside the teacher's own classrooms *and* refuses any account that is not
+a student — a teacher must never be able to reset another teacher's or the
+org admin's password, or one borrowed staff login becomes the whole school.
+And `set_password` bumps `session_epoch`, so the reset signs the student out
+of whatever device they left themselves logged in on.
+
+Deletion is deliberately stricter than a reset: a reset is recoverable and
+routine, so any teacher of the classroom may do it, while deleting a
+student is admin-only and needs `DELETE` typed into a box.
+
+### The forced first password
+
+An account whose password somebody else chose carries
+`must_change_password`. `app._force_password_change()` is a
+`before_request` hook that bounces every endpoint outside
+`_PASSWORD_CHANGE_EXEMPT` to `/settings/first-password`, and answers
+`/api/` with a 403 rather than a redirect.
+
+It is a hook rather than a decorator on purpose: a route added later is
+covered by default, and the failure mode of forgetting to exempt something
+is a redirect, not a hole. The exempt set holds the static and asset
+endpoints too, so the gate never costs a database lookup on a file request.
 
 ### Answering a quiz question
 
@@ -320,6 +397,9 @@ responsible:
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |
+| May this account move around yet? | `app._force_password_change()` |
+| May this account be deleted? | `app._deletion_blocker()` |
+| What does deleting an account remove? | `db.delete_user()` |
 | What colour is anything? | `static/kit/brand.css` |
 | What does the schema look like? | `db.MIGRATIONS` |
 | What can be configured? | `config.Config` |

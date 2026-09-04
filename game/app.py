@@ -95,11 +95,14 @@ RAG index:
 from __future__ import annotations
 
 import argparse
+import csv
 import functools
+import io
 import json
 import logging
 import os
 import random
+import re
 import sys
 import threading
 from datetime import datetime, timedelta, timezone
@@ -471,6 +474,39 @@ def _guard():
     security.check_csrf(app.view_functions.get(request.endpoint or ""))
 
 
+# Endpoints an account with must_change_password set may still reach.
+# Everything else bounces to the change form. Static and asset endpoints are
+# in here so a half-rendered page still loads its stylesheet, and so the
+# gate never costs a database lookup on a file request.
+_PASSWORD_CHANGE_EXEMPT = frozenset({
+    "static", "livez", "healthz", "logout", "login", "signup",
+    "art_url", "art_placeholder", "kit_asset", "lesson_asset",
+    "first_password", "verify_email", "forgot_password", "reset_password",
+})
+
+
+@app.before_request
+def _force_password_change():
+    """
+    Hold an account on the change-password page until it has one of its own.
+
+    Set when somebody else chose the password: a teacher provisioning a
+    student, or resetting one who forgot. The password is on a printout by
+    then, possibly on the floor of a classroom, so it is worth exactly one
+    sign-in. Enforcing it here rather than in each view means a route added
+    later is covered by default — the failure mode of forgetting to add it
+    to the exempt set is a redirect, not a hole.
+    """
+    if request.endpoint in _PASSWORD_CHANGE_EXEMPT or not session.get("uid"):
+        return None
+    user = current_user()
+    if not user or not user["must_change_password"]:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Set a new password before continuing."}), 403
+    return redirect(url_for("first_password"))
+
+
 @app.after_request
 def _headers(response):
     return security.apply_headers(response, cfg)
@@ -698,7 +734,11 @@ def login():
         log.info("login failed", extra={"username": username})
         return refuse("That username and password don't match.")
 
-    if cfg.REQUIRE_EMAIL_VERIFICATION and not user["email_verified"]:
+    # Verification gates accounts that HAVE an address. A teacher-provisioned
+    # student has email NULL and no inbox to check, so there is nothing to
+    # verify and this must not lock them out — the teacher vouched for them
+    # by creating the account, which is the whole point of that flow.
+    if cfg.REQUIRE_EMAIL_VERIFICATION and user["email"] and not user["email_verified"]:
         return refuse("Confirm your email address first — check your inbox "
                       "for the link, or request a new one below.")
 
@@ -933,6 +973,170 @@ def reset_password(token: str):
     log.info("password reset completed", extra={"username": user["username"]})
 
     flash("Password updated. Sign in with your new one.", "success")
+    return redirect(url_for("login"))
+
+
+# ── Account settings ────────────────────────────────────────────────────────────
+
+def _settings_template(user: dict) -> str:
+    """Students get the game chrome, grown-ups the dashboard chrome.
+
+    Two base templates exist because the two audiences see completely
+    different furniture; the settings page is the one screen both reach,
+    so it picks its wrapper from the role rather than having two copies.
+    """
+    return "settings_student.html" if user["role"] == "student" else "settings.html"
+
+
+@app.route("/settings")
+@login_required()
+def settings_home():
+    """Change your own password, or delete your own account."""
+    user = current_user()
+    blocker = _deletion_blocker(user)
+    return render_template(_settings_template(user),
+                           deletable=blocker is None,
+                           delete_blocked_reason=blocker)
+
+
+@app.route("/settings/password", methods=["POST"])
+@login_required()
+def change_password():
+    """
+    Change your own password, proving you know the current one first.
+
+    Requiring the old password is what stops a borrowed unlocked laptop
+    from becoming a permanent account takeover. db.set_password bumps the
+    session epoch, which signs out every other device — including the one
+    an attacker might be holding — so this session has to be re-established
+    immediately afterwards or the person changing their password would be
+    logged out by their own action.
+    """
+    user = current_user()
+    current = request.form.get("current_password", "")
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        blocker = _deletion_blocker(user)
+        return render_template(_settings_template(user),
+                               deletable=blocker is None,
+                               delete_blocked_reason=blocker), status
+
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
+    if security.over_limit("pwchange_ip", ip, cfg.RL_LOGIN_IP, cfg.RL_WINDOW):
+        return refuse("Too many attempts. Wait a few minutes and try again.", 429)
+
+    if not check_password_hash(user["password_hash"], current):
+        security.record_attempt("pwchange_ip", ip)
+        log.warning("password change refused", extra={"username": user["username"]})
+        return refuse("That isn't your current password.")
+
+    problem = security.password_problem(password, confirm)
+    if problem:
+        return refuse(problem)
+    if password == current:
+        return refuse("That's the password you already have. Pick a different one.")
+
+    db.set_password(user["id"], generate_password_hash(password))
+    # Re-read: set_password moved the epoch, so the row in hand is stale
+    # and start_session would store an epoch that no longer validates.
+    g.pop("_user", None)
+    start_session(db.user_by_id(user["id"]))
+    log.info("password changed", extra={"username": user["username"]})
+    flash("Password changed. Any other device you were signed in on has been signed out.",
+          "success")
+    return redirect(url_for("settings_home"))
+
+
+@app.route("/settings/first-password", methods=["GET", "POST"])
+@login_required()
+def first_password():
+    """
+    The one page an account with must_change_password can reach.
+
+    No current-password field: they typed it to get here, and asking a
+    ten-year-old to re-enter a code off a printout twice is how you get a
+    queue at the teacher's desk. The forced flag is cleared by
+    db.set_password writing it false, so completing this is what opens the
+    rest of the site.
+    """
+    user = current_user()
+    if not user["must_change_password"]:
+        return redirect(url_for("home"))
+
+    if request.method != "POST":
+        return render_template("first_password.html")
+
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    problem = security.password_problem(password, confirm)
+    if problem:
+        flash(problem, "error")
+        return render_template("first_password.html")
+
+    db.set_password(user["id"], generate_password_hash(password))
+    g.pop("_user", None)
+    start_session(db.user_by_id(user["id"]))
+    log.info("first password set", extra={"username": user["username"]})
+    flash("You're all set. That's your password now — don't share it.", "success")
+    return redirect(url_for("home"))
+
+
+def _deletion_blocker(user: dict) -> str | None:
+    """Why this account cannot delete itself yet, or None if it can.
+
+    Two blockers, both about leaving something stranded rather than about
+    the data itself. The last admin of an organisation holds the only keys
+    to its roster and its billing, so they have to hand those over before
+    they go. A parent with a live subscription would keep being charged
+    for a seat nobody holds — deleting our row does not cancel anything at
+    Stripe, so the only honest answer is to send them to the portal first.
+    """
+    if user["role"] == "teacher" and user["org_admin"]:
+        if db.count_org_admins(user["org_id"]) <= 1:
+            return ("You're the only admin of your organisation. Make another "
+                    "teacher an admin first, otherwise nobody can manage the "
+                    "roster or the billing after you go.")
+    if db.active_paid_subscription_for(user["id"]):
+        return ("You have a subscription that's still running. Cancel it in "
+                "the billing portal first — deleting your account here would "
+                "not stop the charges.")
+    return None
+
+
+@app.route("/settings/delete", methods=["POST"])
+@login_required()
+def delete_own_account():
+    """
+    Erase your own account and everything attached to it.
+
+    Guarded three ways, because it is irreversible: the current password,
+    typing the word DELETE, and _deletion_blocker() refusing to strand an
+    organisation or a live subscription. What actually goes is documented
+    on db.delete_user — in short, everything except the invoice rows,
+    which are financial records and stay.
+    """
+    user = current_user()
+    blocker = _deletion_blocker(user)
+    if blocker:
+        flash(blocker, "error")
+        return redirect(url_for("settings_home"))
+
+    if not check_password_hash(user["password_hash"], request.form.get("password", "")):
+        log.warning("account deletion refused", extra={"username": user["username"]})
+        flash("That isn't your current password.", "error")
+        return redirect(url_for("settings_home"))
+
+    if request.form.get("confirm", "").strip().upper() != "DELETE":
+        flash("Type DELETE in the box to confirm.", "error")
+        return redirect(url_for("settings_home"))
+
+    db.delete_user(user["id"])
+    session.clear()
+    log.info("account deleted", extra={"username": user["username"], "role": user["role"]})
+    flash("Your account and everything in it has been deleted.", "success")
     return redirect(url_for("login"))
 
 
@@ -1813,6 +2017,296 @@ def classroom_delete(classroom_id: int):
         flash(f"Deleted “{name}”. The students are still in the class.", "success")
     return redirect(url_for("classrooms_home"))
 
+
+
+# ── Provisioning student accounts ───────────────────────────────────────────────
+#
+# The self-serve signup form asks for an email address and sends a
+# confirmation link. That works for a parent at a kitchen table and fails
+# completely for a class of twenty-eight, half of whom have no inbox and
+# the other half of whom are on a district account that drops outside mail.
+# So a teacher can create the accounts directly: usernames they choose,
+# passwords the system generates and they hand out on paper, and no email
+# anywhere in the loop.
+
+# One import at a time, so a pasted spreadsheet cannot become a
+# denial-of-service against the seat count or the database.
+_MAX_IMPORT = 200
+
+
+def _username_from_name(name: str, taken: set[str]) -> str | None:
+    """
+    Derive a free username from a display name.
+
+    "Ada Lovelace" becomes "ada.lovelace", then "ada.lovelace2" and so on.
+    `taken` carries the names claimed earlier in the same import, which the
+    database cannot tell us about yet because those rows are still being
+    written in this transaction.
+
+    Returns None if the name has nothing usable in it — no letters or
+    digits at all — rather than inventing a username nobody can read out.
+    """
+    cleaned = re.sub(r"[^a-z0-9]+", ".", name.strip().lower()).strip(".")
+    if not cleaned:
+        return None
+    base = cleaned[:28] or "student"
+    if len(base) < 3:
+        base = f"{base}.s"
+    candidate = base
+    for suffix in range(2, 500):
+        if candidate not in taken and not db.username_taken(candidate):
+            return candidate
+        candidate = f"{base}{suffix}"
+    return None
+
+
+def _provision_student(cur, *, org_id: int, classroom_id: int, name: str,
+                       username: str, by_user_id: int) -> dict:
+    """
+    Create one student account and put it in the classroom.
+
+    Runs inside the caller's transaction so a bulk import is all-or-nothing
+    per row. Returns the generated password alongside the username — this
+    is the only moment either the teacher or we will ever see it, since
+    only its hash is stored.
+    """
+    password = security.temp_password()
+    db.create_student_in_classroom(
+        cur, org_id=org_id, classroom_id=classroom_id, username=username,
+        name=name, password_hash=generate_password_hash(password),
+        by_user_id=by_user_id)
+    return {"name": name, "username": username, "password": password}
+
+
+@app.route("/classrooms/<int:classroom_id>/students/new", methods=["POST"])
+@login_required("teacher")
+@membership_required
+def classroom_new_student(classroom_id: int):
+    """
+    Create one student account straight into this classroom.
+
+    Open to any teacher of the classroom, not just an admin:
+    _classroom_or_404 already refused anyone who does not teach it, and
+    making a teacher wait for an admin to enrol their own class is the
+    friction this whole flow exists to remove.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip().lower()
+
+    def back(message: str, category: str = "error"):
+        flash(message, category)
+        return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+    if not name:
+        return back("Enter the student's name.")
+    if not request.form.get("consent_ok"):
+        return back("Confirm you have permission to create accounts for these students.")
+
+    if username:
+        problem = security.username_problem(username)
+        if problem:
+            return back(problem)
+        if db.username_taken(username):
+            return back(f"The username “{username}” is taken. Pick another.")
+    else:
+        username = _username_from_name(name, set())
+        if not username:
+            return back("That name has no letters or numbers in it to build a username from.")
+
+    try:
+        with db.write() as cur:
+            created = _provision_student(cur, org_id=user["org_id"],
+                                         classroom_id=classroom_id, name=name,
+                                         username=username, by_user_id=user["id"])
+    except psycopg.errors.UniqueViolation:
+        return back("That username was just taken. Try another.")
+
+    _resize_org_seats(user["org_id"])
+    log.info("student provisioned",
+             extra={"username": username, "by": user["username"], "org_id": user["org_id"]})
+
+    # The password is shown once, here, and never again — only its hash is
+    # stored. Rendering the results page rather than flashing it keeps it
+    # off every subsequent screen and out of the session cookie.
+    return render_template("roster_result.html",
+                           classroom=db.classroom_in_org(classroom_id, user["org_id"]),
+                           created=[created], failed=[])
+
+
+@app.route("/classrooms/<int:classroom_id>/students/import", methods=["GET", "POST"])
+@login_required("teacher")
+@membership_required
+def classroom_import_students(classroom_id: int):
+    """
+    Create a whole class at once from a pasted list.
+
+    One student per line: a name, optionally followed by a comma and the
+    username to give them. A header row saying "name,username" is ignored
+    if present, because every spreadsheet export has one.
+
+    Rows are independent. A duplicate username or an unusable name fails
+    that row and the rest still go through, reported side by side on the
+    results page — an import of thirty students should not be defeated by
+    one typo on line nine.
+    """
+    user = current_user()
+    classroom = _classroom_or_404(user, classroom_id)
+
+    if request.method != "POST":
+        return render_template("roster_import.html", classroom=classroom)
+
+    raw = request.form.get("roster", "")
+    if request.files.get("roster_file"):
+        # Decoded leniently: these files come out of Excel on a school
+        # laptop and are as likely to be cp1252 as UTF-8. Mangling one
+        # accented character beats refusing the whole import.
+        raw = request.files["roster_file"].read(512_000).decode("utf-8", "replace")
+
+    if not request.form.get("consent_ok"):
+        flash("Confirm you have permission to create accounts for these students.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+
+    rows = _parse_roster(raw)
+    if not rows:
+        flash("No students found in that list. One name per line.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+    if len(rows) > _MAX_IMPORT:
+        flash(f"That's {len(rows)} students. Import at most {_MAX_IMPORT} at a time.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+
+    created, failed = [], []
+    claimed: set[str] = set()
+    for name, wanted in rows:
+        username = wanted
+        if username:
+            problem = security.username_problem(username)
+            if problem:
+                failed.append({"name": name, "reason": problem})
+                continue
+            if username in claimed or db.username_taken(username):
+                failed.append({"name": name, "reason": f"Username “{username}” is taken."})
+                continue
+        else:
+            username = _username_from_name(name, claimed)
+            if not username:
+                failed.append({"name": name, "reason": "No letters or numbers to build a username from."})
+                continue
+
+        try:
+            # A transaction per row, so one failure rolls back only itself.
+            with db.write() as cur:
+                created.append(_provision_student(
+                    cur, org_id=user["org_id"], classroom_id=classroom_id,
+                    name=name, username=username, by_user_id=user["id"]))
+            claimed.add(username)
+        except psycopg.errors.UniqueViolation:
+            failed.append({"name": name, "reason": f"Username “{username}” was just taken."})
+        except Exception:
+            log.exception("roster import row failed")
+            failed.append({"name": name, "reason": "Something went wrong creating this account."})
+
+    if created:
+        _resize_org_seats(user["org_id"])
+    # Not "created": logging.LogRecord already has that attribute (the
+    # record's own timestamp) and makeRecord raises rather than let an
+    # extra shadow it, which turns the log line into a 500.
+    log.info("roster imported",
+             extra={"by": user["username"],
+                    "accounts_created": len(created),
+                    "accounts_failed": len(failed)})
+
+    return render_template("roster_result.html", classroom=classroom,
+                           created=created, failed=failed)
+
+
+def _parse_roster(raw: str) -> list[tuple[str, str]]:
+    """
+    Turn pasted text into (name, requested_username) pairs.
+
+    Tolerant by design: blank lines go, a leading header row goes, quotes
+    and stray whitespace are stripped, and anything past the second column
+    is ignored so a spreadsheet with extra columns still imports. The
+    username is lowercased here because usernames are matched
+    case-insensitively and a teacher typing "Ada.L" should get what they
+    expect.
+    """
+    rows: list[tuple[str, str]] = []
+    for line in csv.reader(io.StringIO(raw)):
+        if not line:
+            continue
+        name = line[0].strip()
+        username = (line[1].strip().lower() if len(line) > 1 else "")
+        if not name:
+            continue
+        if not rows and name.lower() in ("name", "student", "full name", "student name"):
+            continue
+        rows.append((name, username))
+    return rows
+
+
+@app.route("/grownup/student/<username>/reset-password", methods=["POST"])
+@login_required("teacher")
+@membership_required
+def student_reset_password(username: str):
+    """
+    Give a student a new password, because they forgot theirs.
+
+    The reason this exists: the email reset loop is useless to a student
+    with no email address, and most of them have none. A teacher who can
+    already see all of this student's work is not gaining anything by
+    being able to reset their password, so this is open to any teacher of
+    their classroom rather than admins only.
+
+    Restricted to students on purpose. A teacher must not be able to reset
+    another teacher's or a parent's password — that would turn any
+    compromised teacher account into a way to take over the org admin's,
+    and grown-ups have email addresses and the ordinary reset flow.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    password = security.temp_password()
+    db.set_password(student["id"], generate_password_hash(password), must_change=True)
+    security.clear_attempts("login_user", student["username"])
+    log.info("student password reset by teacher",
+             extra={"username": student["username"], "by": user["username"]})
+
+    return render_template("roster_result.html",
+                           classroom=None,
+                           reset=True,
+                           created=[{"name": student["name"],
+                                     "username": student["username"],
+                                     "password": password}],
+                           failed=[])
+
+
+@app.route("/grownup/student/<username>/delete", methods=["POST"])
+@org_admin_required
+def student_delete(username: str):
+    """
+    Erase a student account on request.
+
+    Admin-only, unlike the password reset. A reset is recoverable and
+    routine; this is neither, so it sits with the person who answers for
+    the organisation. What goes and what stays is documented on
+    db.delete_user.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    if request.form.get("confirm", "").strip().upper() != "DELETE":
+        flash("Type DELETE to confirm.", "error")
+        return redirect(url_for("student_detail", username=username))
+
+    db.delete_user(student["id"])
+    _resize_org_seats(user["org_id"])
+    log.info("student deleted",
+             extra={"username": student["username"], "by": user["username"]})
+    flash(f"Deleted {student['name']} and all of their work.", "success")
+    return redirect(url_for("grownup_home"))
 
 
 # ── Locked lesson ───────────────────────────────────────────────────────────────

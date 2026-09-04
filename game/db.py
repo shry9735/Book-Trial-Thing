@@ -456,6 +456,34 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         ON CONFLICT DO NOTHING
         """,
     ]),
+    # ── 4. Teacher-provisioned accounts and account deletion ────────────────
+    #
+    # A student in a classroom often has no email address of their own, and
+    # the ones who do frequently cannot receive mail from outside the
+    # district.  Requiring an inbox to create an account made the product
+    # unusable for the exact customer it is aimed at, so an account may now
+    # exist with email NULL — provisioned by a teacher, who hands out the
+    # first password on paper.
+    (4, [
+        # Set on a provisioned account, and on one whose password a teacher
+        # has reset.  While it is true the only page the account can reach
+        # is the one that clears it, so a password read off a printout
+        # cannot stay in use.
+        "ALTER TABLE users ADD COLUMN must_change_password boolean NOT NULL DEFAULT false",
+
+        # Who provisioned this account.  Kept for the audit trail: a
+        # teacher creating logins for other people's children is exactly
+        # the action a school will later ask us to account for.  SET NULL
+        # rather than CASCADE — deleting the teacher must not delete the
+        # students they enrolled.
+        "ALTER TABLE users ADD COLUMN created_by bigint REFERENCES users(id) ON DELETE SET NULL",
+
+        # Erasure requests are answered by deleting the row and letting the
+        # foreign keys cascade.  That only works if every table that
+        # references a user actually cascades, so this index is here to
+        # stop the cascade sequentially scanning users on every delete.
+        "CREATE INDEX users_created_by_idx ON users (created_by) WHERE created_by IS NOT NULL",
+    ]),
 ]
 
 
@@ -564,7 +592,7 @@ USER_COLUMNS = """
     id, org_id, username, email, password_hash, role, name, avatar,
     session_epoch, email_verified, is_active, link_code, org_admin,
     membership_status, age_confirmed_at, terms_accepted_at,
-    created_at, last_login_at
+    must_change_password, created_by, created_at, last_login_at
 """
 
 
@@ -617,7 +645,9 @@ def create_user(cur, *, org_id: int, username: str, email: str | None,
                 age_confirmed: bool = False,
                 terms_accepted: bool = True,
                 org_admin: bool = False,
-                membership_status: str = "active") -> dict:
+                membership_status: str = "active",
+                must_change_password: bool = False,
+                created_by: int | None = None) -> dict:
     """
     Insert one account.  Students get a link_code so a parent can attach
     themselves later without a teacher having to broker it by hand.
@@ -625,6 +655,11 @@ def create_user(cur, *, org_id: int, username: str, email: str | None,
     membership_status comes from the org's join policy: on an
     approval-gated org, a correct join code buys you a pending place in
     the queue, not a seat.
+
+    `email` may be None.  A teacher-provisioned student account has no
+    address of its own: the teacher hands out the first password, and
+    `must_change_password` forces the student to replace it before they
+    can reach anything else.  `created_by` records which teacher did it.
     """
     link_code = _unique_code(cur, "users", "link_code", 6) if role == "student" else None
     stamp = now()
@@ -632,28 +667,37 @@ def create_user(cur, *, org_id: int, username: str, email: str | None,
         f"""
         INSERT INTO users (org_id, username, email, password_hash, role, name,
                            avatar, email_verified, link_code, org_admin,
-                           membership_status, age_confirmed_at, terms_accepted_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           membership_status, age_confirmed_at, terms_accepted_at,
+                           must_change_password, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING {USER_COLUMNS}
         """,
         (org_id, username.strip(), (email or "").strip() or None, password_hash,
          role, name.strip(), avatar, email_verified, link_code, org_admin,
          membership_status,
          stamp if age_confirmed else None,
-         stamp if terms_accepted else None),
+         stamp if terms_accepted else None,
+         must_change_password, created_by),
     )
     return cur.fetchone()
 
 
-def set_password(user_id: int, password_hash: str) -> None:
+def set_password(user_id: int, password_hash: str, *, must_change: bool = False) -> None:
     """
     Change a password and invalidate every session that account already
     has, by bumping the epoch the session cookie is checked against.
+
+    `must_change` is set when somebody other than the account holder chose
+    the password — a teacher resetting a student's — so the new one is
+    good for exactly one sign-in and has to be replaced on arrival.  A
+    person setting their own password clears the flag, which is why it is
+    written unconditionally rather than only when true.
     """
     with write() as cur:
         cur.execute(
-            "UPDATE users SET password_hash = %s, session_epoch = session_epoch + 1 WHERE id = %s",
-            (password_hash, user_id),
+            "UPDATE users SET password_hash = %s, must_change_password = %s, "
+            "session_epoch = session_epoch + 1 WHERE id = %s",
+            (password_hash, must_change, user_id),
         )
 
 
@@ -664,6 +708,75 @@ def mark_verified(cur, user_id: int) -> None:
 def touch_login(user_id: int) -> None:
     with write() as cur:
         cur.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user_id,))
+
+
+def clear_must_change_password(user_id: int) -> None:
+    """Drop the forced-change flag without touching the password or epoch.
+
+    Used only where the password itself was just set by its owner through
+    a path that already rotated the epoch, so this is the one remaining
+    bit of state to clear.
+    """
+    with write() as cur:
+        cur.execute(
+            "UPDATE users SET must_change_password = false WHERE id = %s", (user_id,))
+
+
+def delete_user(user_id: int) -> dict | None:
+    """
+    Erase an account and everything belonging to it.  Returns the deleted
+    row, or None if it was already gone.
+
+    This is a real DELETE, not a soft one, because it exists to answer
+    erasure requests and a soft delete answers nothing.  Every table that
+    references users(id) declares ON DELETE CASCADE or ON DELETE SET NULL,
+    so one statement takes the lot:
+
+      cascaded  parent_links, group_members, lesson_progress,
+                quiz_answers, example_answers, inventory, assignments,
+                auth_tokens, classroom_teachers, subscriptions
+      nulled    groups.created_by, assignments.updated_by,
+                users.created_by
+
+    Two things deliberately survive.  `invoices` keeps its rows — the
+    subscription they hang off cascades away and invoices.subscription_id
+    is SET NULL, leaving the money record intact, which is what tax law
+    wants and what a school's finance office will ask for.  `rate_events`
+    keeps its rows too: the bucket is a truncated SHA-256 of a username or
+    an address, holds no name, and ages out within a day on its own.
+
+    Adding a new table that references users(id) WITHOUT one of those two
+    clauses silently breaks this: the delete starts failing with a foreign
+    key violation instead of quietly leaving data behind, which is the
+    failure mode we want, but it is still a break. selftest_accounts.py
+    asserts the cascade actually empties every child table.
+    """
+    with write() as cur:
+        cur.execute(
+            f"DELETE FROM users WHERE id = %s RETURNING {USER_COLUMNS}", (user_id,))
+        return cur.fetchone()
+
+
+def active_paid_subscription_for(user_id: int) -> dict | None:
+    """A subscription this account pays for that is still live at Stripe.
+
+    Deletion is refused while one exists.  Dropping the row here would not
+    stop Stripe billing the card, so the honest answer is to make them
+    cancel first rather than delete the only record that they were paying.
+    Comped and invoice-terms subscriptions have no card to keep charging,
+    but they are somebody's paid seat too, so they count the same.
+    """
+    with query() as cur:
+        cur.execute(
+            """
+            SELECT id, status, account_kind, stripe_subscription_id
+            FROM subscriptions
+            WHERE user_id = %s AND status IN ('active', 'trialing', 'past_due', 'unpaid')
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        return cur.fetchone()
 
 
 def student_by_link_code(code: str) -> dict | None:
@@ -1303,6 +1416,44 @@ def add_classroom_student(classroom_id: int, student_id: int) -> None:
             "ON CONFLICT DO NOTHING",
             (classroom_id, student_id),
         )
+
+
+def create_student_in_classroom(cur, *, org_id: int, classroom_id: int,
+                                username: str, name: str, password_hash: str,
+                                by_user_id: int) -> dict:
+    """
+    Create a teacher-provisioned student and seat them in the classroom.
+
+    One unit of work on the caller's cursor, so a bulk import either gets
+    both halves of a row or neither — an account created but left out of
+    its classroom would be invisible to the teacher who just made it.
+
+    The account has no email address. age_confirmed and terms_accepted are
+    recorded on the teacher's attestation rather than the student's click,
+    and created_by keeps the record of whose attestation it was.
+    """
+    student = create_user(
+        cur,
+        org_id=org_id,
+        username=username,
+        email=None,
+        password_hash=password_hash,
+        role="student",
+        name=name,
+        avatar="characters/avatar-student",
+        email_verified=False,
+        age_confirmed=True,
+        terms_accepted=True,
+        membership_status="active",
+        must_change_password=True,
+        created_by=by_user_id,
+    )
+    cur.execute(
+        "INSERT INTO classroom_students (classroom_id, student_id) VALUES (%s, %s) "
+        "ON CONFLICT DO NOTHING",
+        (classroom_id, student["id"]),
+    )
+    return student
 
 
 def remove_classroom_student(classroom_id: int, student_id: int) -> None:

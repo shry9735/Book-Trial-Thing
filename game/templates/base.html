@@ -33,6 +33,7 @@
 
       {% block hud_actions %}
         <a class="btn sm ghost" href="{{ url_for('satchel') }}">🎒 Backpack</a>
+        <a class="btn sm ghost" href="{{ url_for('settings_home') }}">⚙</a>
         <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <button type="submit" class="btn sm ghost">Log out</button>

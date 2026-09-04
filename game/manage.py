@@ -277,6 +277,54 @@ def cmd_deactivate(cfg, args) -> int:
     return 0
 
 
+def cmd_delete_user(cfg, args) -> int:
+    """
+    Erase an account on request — the operator's answer to "delete my data".
+
+    Deliberately a CLI command rather than a support button. Deleting
+    somebody else's account is not reversible and not rate limited, so it
+    wants a person at a terminal who has read the request, not a form that
+    can be clicked by mistake or by somebody who talked their way past
+    support.
+
+    Refuses the last admin of an organisation, for the same reason the
+    self-service path does: it would leave a school with a roster and a
+    bill and nobody able to touch either. Promote a replacement first.
+    """
+    user = db.user_by_username(args.username)
+    if not user:
+        print(f"No user {args.username!r}.", file=sys.stderr)
+        return 1
+
+    if user["role"] == "teacher" and user["org_admin"] and db.count_org_admins(user["org_id"]) <= 1:
+        print(f"  {user['username']} is the only admin of org {user['org_id']}.",
+              file=sys.stderr)
+        print("  Promote another teacher first:  manage.py make-admin <username>",
+              file=sys.stderr)
+        return 1
+
+    live = db.active_paid_subscription_for(user["id"])
+    if live and not args.force:
+        print(f"  {user['username']} has a {live['status']} subscription "
+              f"({live['stripe_subscription_id'] or 'no Stripe id'}).", file=sys.stderr)
+        print("  Cancel it at Stripe first, or pass --force to delete anyway.",
+              file=sys.stderr)
+        return 1
+
+    print(f"  {user['name']} ({user['username']}, {user['role']}) in org {user['org_id']}")
+    if not args.yes:
+        if input("  Delete permanently? Type DELETE to confirm: ").strip() != "DELETE":
+            print("  Nothing deleted.")
+            return 1
+
+    db.delete_user(user["id"])
+    print(f"  {user['username']} deleted. Progress, answers, links and sessions "
+          "went with it.")
+    print("  Invoice rows are kept as financial records; they hold amounts and "
+          "dates, not schoolwork.")
+    return 0
+
+
 def cmd_make_admin(cfg, args) -> int:
     user = db.user_by_username(args.username)
     if not user:
@@ -333,6 +381,14 @@ def main() -> int:
     p = sub.add_parser("make-admin", help="Make a teacher an org admin.")
     p.add_argument("username")
 
+    p = sub.add_parser("delete-user",
+                       help="Erase an account and all of its data (irreversible).")
+    p.add_argument("username")
+    p.add_argument("--yes", action="store_true",
+                   help="Skip the typed confirmation. For scripted erasure runs.")
+    p.add_argument("--force", action="store_true",
+                   help="Delete even with a live subscription. Cancel it at Stripe first.")
+
     args = parser.parse_args()
 
     cfg = load_config()
@@ -349,6 +405,7 @@ def main() -> int:
         "sync-seats": cmd_sync_seats,
         "deactivate": cmd_deactivate,
         "make-admin": cmd_make_admin,
+        "delete-user": cmd_delete_user,
         "purge": cmd_purge,
     }
     try:

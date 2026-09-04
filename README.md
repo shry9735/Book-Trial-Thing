@@ -96,20 +96,22 @@ are stored.
 
 ## Tests
 
-Both suites run against a real Postgres — not mocks, because every bug
+All four suites run against a real Postgres — not mocks, because every bug
 worth catching here (lost concurrent writes, cross-org disclosure,
-replayable reset links) only exists in the interaction with the real
-thing.
+replayable reset links, a cascade that quietly leaves rows behind) only
+exists in the interaction with the real thing.
 
 ```bash
 createdb ignite_test
-DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
-DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
-DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_classrooms.py
+export DATABASE_URL=postgresql://localhost/ignite_test
+.venv/bin/python game/selftest.py             # 35  core, auth, hardening
+.venv/bin/python game/selftest_billing.py     # 34  subscriptions, orgs, net-30
+.venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
+.venv/bin/python game/selftest_accounts.py    # 41  provisioning, resets, deletion
 ```
 
-They wipe the database they point at, so aim them at a scratch one. Both
-refuse to run with `APP_ENV=production`.
+134 checks. They wipe the database they point at, so aim them at a scratch
+one. All four refuse to run with `APP_ENV=production`.
 
 ---
 

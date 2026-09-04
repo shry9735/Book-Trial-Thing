@@ -1,0 +1,81 @@
+{# Account settings inside the game chrome.
+
+   Students can change their own password but cannot delete their own
+   account. A school-provisioned login belongs to the school, and a
+   thirteen-year-old wiping a term's coursework on a bad afternoon is not
+   a recoverable mistake. Erasure requests for a student go through a
+   teacher or a linked grown-up, which is also how a district expects to
+   answer them. #}
+{% extends "base.html" %}
+{% block title %}Your Account — Ignite Academy{% endblock %}
+
+{% block hud_actions %}
+  <a class="btn sm ghost" href="{{ url_for('classroom') }}">← Classroom</a>
+  <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <button type="submit" class="btn sm ghost">Log out</button>
+  </form>
+{% endblock %}
+
+{% block stage_content %}
+<div class="screen">
+
+  <div class="screen-head">
+    <div class="screen-title">Your Account</div>
+  </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div class="flashes">
+        {% for category, message in msgs %}
+          <div class="flash-msg {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="panel">
+    <div class="panel-head teal">Change your password</div>
+    <form class="login-form" method="POST" action="{{ url_for('change_password') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <p class="login-blurb">
+        Your username is <code>{{ user.username }}</code>. Keep your password
+        to yourself — not even your best friend.
+      </p>
+
+      <div class="field">
+        <label for="current_password">Password you use now</label>
+        <input type="password" id="current_password" name="current_password"
+               autocomplete="current-password" required />
+      </div>
+
+      <div class="field">
+        <label for="password">New password</label>
+        <input type="password" id="password" name="password"
+               autocomplete="new-password" minlength="10" required />
+        <small class="field-note">At least 10 characters.</small>
+      </div>
+
+      <div class="field">
+        <label for="password_confirm">Type it again</label>
+        <input type="password" id="password_confirm" name="password_confirm"
+               autocomplete="new-password" minlength="10" required />
+      </div>
+
+      <button type="submit" class="btn block teal">Save</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Forgot it, or want your account gone?</div>
+    <div class="login-form">
+      <p class="login-blurb">
+        Ask your teacher. They can give you a new password to sign in with,
+        or delete your account and everything in it if you want that.
+      </p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

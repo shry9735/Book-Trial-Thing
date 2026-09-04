@@ -324,3 +324,32 @@ def new_token() -> tuple[str, str]:
 
 def hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# ── Handed-out passwords ────────────────────────────────────────────────────────
+
+# No 0/O/1/I/L/5/S: this gets printed on a slip of paper and typed by an
+# eleven-year-old. The same reasoning as db._CODE_ALPHABET, one character
+# stricter, because a join code is read back to a teacher who can correct
+# it and this is not.
+_TEMP_ALPHABET = "abcdefghjkmnpqrstuvwxyz"
+_TEMP_DIGITS = "23456789"
+
+
+def temp_password() -> str:
+    """
+    A first password for an account somebody else created.
+
+    Three lowercase syllables and two digits — "loper-fadu-nizo-47" —
+    which is long enough to clear MIN_PASSWORD and to survive being read
+    off a printout without a support call. It is not meant to be strong
+    for long: whoever receives it can only reach the page that replaces
+    it, and the account carries must_change_password until they do.
+
+    Roughly 23^9 * 8^2 combinations, which is far past guessing range for
+    a value that is single-use and rate limited on the login form anyway.
+    """
+    chunks = ["".join(secrets.choice(_TEMP_ALPHABET) for _ in range(3))
+              for _ in range(3)]
+    digits = "".join(secrets.choice(_TEMP_DIGITS) for _ in range(2))
+    return "-".join(chunks) + "-" + digits

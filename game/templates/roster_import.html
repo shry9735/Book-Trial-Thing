@@ -1,0 +1,68 @@
+{% extends "teacher_base.html" %}
+{% block title %}Add a Class — {{ classroom.name }}{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb">
+      <a href="{{ url_for('classroom_detail', classroom_id=classroom.id) }}">← {{ classroom.name }}</a>
+    </div>
+    <h1>Add a whole class</h1>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">Paste your roster</div>
+  <div class="billing-body">
+
+    <p class="login-blurb">
+      One student per line. Just names is fine — we'll build usernames from
+      them. If you want to choose the usernames yourself, put one after a
+      comma. Nobody needs an email address.
+    </p>
+
+    <pre class="roster-sample">Ada Lovelace
+Grace Hopper, ghopper
+Katherine Johnson</pre>
+
+    <form class="login-form" method="POST" enctype="multipart/form-data"
+          action="{{ url_for('classroom_import_students', classroom_id=classroom.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <div class="field">
+        <label for="roster">Students</label>
+        <textarea id="roster" name="roster" rows="12" spellcheck="false"
+                  placeholder="One student per line">{{ roster or '' }}</textarea>
+      </div>
+
+      <div class="field">
+        <label for="roster_file">…or upload a CSV</label>
+        <input type="file" id="roster_file" name="roster_file" accept=".csv,.txt,text/csv,text/plain" />
+        <small class="field-note">
+          A file replaces whatever is in the box above. A header row is ignored.
+        </small>
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" name="consent_ok" value="1" required />
+        <span>
+          I have permission from my school to create accounts for these
+          students, and they are all at least {{ config.MIN_AGE }} years old.
+        </span>
+      </label>
+
+      <button type="submit" class="btn">Create accounts</button>
+    </form>
+
+    <p class="dim small">
+      You'll get a printable list of usernames and first passwords on the
+      next screen. It's shown once — we only keep the scrambled version, so
+      we cannot show it to you again. Each student picks their own password
+      the first time they sign in.
+    </p>
+
+  </div>
+</div>
+
+{% endblock %}

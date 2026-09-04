@@ -89,8 +89,32 @@ other teachers. Ordinary teachers see students but not the roster controls
 or billing.
 
 Operator-level jobs — approving invoice terms, comping an account,
-deactivating someone, reconciling Stripe seat counts — are in `manage.py`,
-deliberately off the web.
+deactivating someone, erasing an account on request, reconciling Stripe
+seat counts — are in `manage.py`, deliberately off the web.
+
+## Getting students signed in
+
+Two ways in, and the second is the one a school actually uses.
+
+**They sign themselves up** at `/signup?role=student` with the org's join
+code and their own email address, and confirm the link.
+
+**A teacher creates the account** from the classroom screen — one at a
+time, or a whole roster pasted in or uploaded as CSV. No email address is
+involved anywhere. The teacher gets a printable page of usernames and
+first passwords to hand out; each of those is good for one sign-in, and the
+student is held on `/settings/first-password` until they pick their own.
+That page is shown once, because only the hash is stored.
+
+When a student forgets their password, their teacher issues a new one the
+same way from the student's page. The email reset loop at `/forgot` still
+exists for grown-ups, who have inboxes.
+
+Anyone signed in can change their own password at `/settings`. Teachers and
+parents can delete their own account there too; students cannot — a
+school-provisioned login belongs to the school, so erasing a student is a
+job for an org admin (on the student's page) or the operator
+(`manage.py delete-user`).
 
 ## Where state lives
 

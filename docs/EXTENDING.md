@@ -394,6 +394,17 @@ serves traffic, while old workers are still running the previous code — so
 avoid dropping or renaming a column in the same deploy as the code that
 stops using it. Do it in two.
 
+**If your new table references `users(id)`, it must declare `ON DELETE
+CASCADE` or `ON DELETE SET NULL`.** `db.delete_user()` answers erasure
+requests with a single `DELETE` and lets the foreign keys do the work; a
+table without one of those clauses either leaves personal data behind or
+starts failing the delete outright. `selftest_accounts.py` writes a row
+into every child table and asserts the lot is gone — add yours to its
+`CHILD_TABLES` list when you add the table.
+
+Use `SET NULL` when the row should outlive the person (an audit column like
+`users.created_by`, an invoice), `CASCADE` when it is their data.
+
 ---
 
 ## Add a config option

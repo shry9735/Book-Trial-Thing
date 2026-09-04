@@ -13,6 +13,7 @@ together cannot race.
 - [Teaching](#teaching)
 - [Billing](#billing)
 - [Infrastructure](#infrastructure)
+- [What is protected, and what is plain text](#what-is-protected-and-what-is-plain-text)
 - [Constraints that do real work](#constraints-that-do-real-work)
 
 ---
@@ -48,7 +49,11 @@ Three things to notice:
   `CHECK` enforces that rather than trusting the application to remember.
 - **Everything cascades from `users`.** Deleting a user row removes their
   progress, answers, inventory and memberships. That is what makes a
-  deletion request answerable.
+  deletion request answerable — `db.delete_user()` is one `DELETE` and the
+  foreign keys do the rest. Adding a table that references `users(id)`
+  without `ON DELETE CASCADE` or `ON DELETE SET NULL` silently breaks that,
+  so `selftest_accounts.py` writes a row into every child table and asserts
+  the lot is gone afterwards.
 
 ---
 
@@ -82,7 +87,8 @@ sessions and org membership, and differ only in `role`.
 | Column | Notes |
 |---|---|
 | `org_id` | The privacy boundary |
-| `username`, `email` | Unique on `lower()`, so `Alex` and `alex` are one account |
+| `username` | Unique on `lower()`, so `Alex` and `alex` are one account |
+| `email` | **Nullable.** Unique on `lower()` where present. A teacher-provisioned student has none |
 | `password_hash` | Werkzeug scrypt |
 | `role` | `student` \| `parent` \| `teacher` |
 | `org_admin` | Controls the roster and the money. Teachers only |
@@ -93,10 +99,27 @@ sessions and org membership, and differ only in `role`.
 | `link_code` | 6 chars, students only — a parent types it to link themselves |
 | `age_confirmed_at` | The 13+ attestation, with the time it was made |
 | `terms_accepted_at` | |
+| `must_change_password` | Somebody else chose this password. Holds the account on `/settings/first-password` |
+| `created_by` | The teacher who provisioned this account, if anyone. `SET NULL` |
 
 `session_epoch` is the mechanism that makes a password reset actually
 throw an attacker out. The session cookie carries the epoch it was issued
 under; `current_user()` refuses any cookie whose epoch no longer matches.
+
+`email` being nullable is what makes classroom onboarding work. A class of
+twenty-eight children mostly does not have inboxes, and the ones who do are
+often on a district account that drops outside mail, so requiring an
+address made the product unusable for its main customer. A provisioned
+account has `email IS NULL`, `must_change_password = true` and a
+`created_by` pointing at the teacher who made it. Login skips the
+verification check entirely when there is no address to verify — see
+`app.login` — while an account that *does* carry an email is gated exactly
+as before.
+
+`must_change_password` is set two ways: at provisioning, and whenever a
+teacher resets a student who forgot theirs. While it is true the only page
+the account can reach is the one that clears it, so a password read off a
+printout is worth one sign-in and no more.
 
 ### `parent_links`
 
@@ -258,6 +281,64 @@ Applied version numbers. Written by `db.migrate()` under an advisory lock.
 
 ---
 
+## What is protected, and what is plain text
+
+Worth being precise about, because "is the database encrypted?" has three
+different answers depending on what you mean.
+
+### Hashed — a stolen dump does not hand these over
+
+| Column | How |
+|---|---|
+| `users.password_hash` | scrypt via Werkzeug (`scrypt:32768:8:1`), per-user salt. Not reversible, and deliberately slow to guess |
+| `auth_tokens.token_hash` | SHA-256 of the token. The raw value exists only in the email that carried it, so a leaked table yields no working verification or reset links |
+| `rate_events.bucket` | SHA-256 of the username or IP, truncated. The limiter can count without the table holding either |
+
+Nothing anywhere stores a password, a reset link or a session cookie in a
+form that can be replayed.
+
+### Plain text columns
+
+Everything else. Names, usernames, email addresses, org names, quiz
+answers, lesson progress, Stripe customer and subscription ids, invoice
+amounts. That is normal and it is not a bug — the application has to read
+and index these values, and encrypting a column you then need to search
+buys very little while costing a great deal. Card numbers are the obvious
+thing that would matter here, and none ever reach us: Stripe's hosted
+Checkout means the app never sees a PAN, which is the whole reason for
+choosing it.
+
+So the honest summary is: **credentials are properly protected; the
+personal data is protected by the disk it sits on and by who can reach the
+database.** Which makes the next two points the ones that actually matter.
+
+### Encryption at rest — your deployment decides this
+
+This is a property of the storage, not the schema, and the app cannot
+enforce it:
+
+- **The local Docker stack is not encrypted at rest.** The `db` container
+  writes to an ordinary Docker volume. That is fine for a laptop and is not
+  fine for anything with real students in it.
+- **RDS must be created with encryption enabled.** It cannot be switched on
+  afterwards — turning it on later means snapshot, restore into a new
+  encrypted instance, and cut over. Tick the box the first time.
+- **Back-ups inherit whatever the source had.** `scripts/backup.sh` writes a
+  plain dump; if you keep those anywhere but an encrypted bucket, they are
+  the weakest link in this whole list.
+
+### Encryption in transit — enforced, in production only
+
+`config.validate()` refuses to start with `APP_ENV=production` unless
+`DATABASE_URL` carries `sslmode` set to `require`, `verify-ca` or
+`verify-full`. Prefer `verify-full` with the RDS CA bundle: `require`
+encrypts but does not authenticate the server, so it stops passive
+sniffing and not an active attacker. `APP_ENV=local` deliberately exempts
+this so the container stack works out of the box — which is exactly why
+`local` must never be used on a real deployment.
+
+---
+
 ## Constraints that do real work
 
 These are not decoration. Each one is load-bearing, and removing it
@@ -273,6 +354,24 @@ reintroduces a specific bug:
 | `quiz_answers` PK | Concurrent answers overwriting rather than counting |
 | `ON DELETE CASCADE` throughout | Orphaned rows after a deletion request |
 | `classroom_teachers` PK | One teacher assigned twice to a class |
+| `users_email_key` is partial (`WHERE email IS NOT NULL`) | Provisioned students, who all have `NULL`, colliding with each other |
+
+### What deletion keeps
+
+`db.delete_user()` is a real `DELETE`, not a soft one — a soft delete
+answers no erasure request. Two things survive on purpose:
+
+| Survives | Why |
+|---|---|
+| `invoices` | Financial records. The subscription cascades away and `invoices.subscription_id` is `SET NULL`, leaving the amount and date intact for tax and for a school's finance office |
+| `rate_events` | The bucket is a truncated SHA-256 of a username or address, holds no name, and ages out within a day on its own |
+
+Deletion is refused, rather than done badly, in two cases: the last
+`org_admin` of an organisation (it would leave a school with a roster and a
+bill and nobody able to touch either) and an account with a live
+subscription (deleting our row does not stop Stripe charging the card, so
+the honest answer is to make them cancel first). Both live in
+`app._deletion_blocker()`.
 
 ---
 

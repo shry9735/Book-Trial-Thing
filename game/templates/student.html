@@ -203,4 +203,56 @@
   </form>
 </div>
 
+{# ── Account admin ───────────────────────────────────────────────────── #}
+{#  Teachers only. A parent viewing their own child gets none of this: the
+    reset is a teacher's classroom-management tool, and deletion belongs
+    to whoever answers for the organisation. #}
+{% if is_teacher %}
+  <div class="panel">
+    <div class="panel-head">Account</div>
+    <div class="billing-body">
+
+      <p class="login-blurb">
+        <b>{{ student.name }}</b> signs in as <code>{{ student.username }}</code>{% if not student.email %} and
+        has no email address on file{% endif %}.
+      </p>
+
+      <form method="POST"
+            action="{{ url_for('student_reset_password', username=student.username) }}"
+            onsubmit="return confirm('Give {{ student.name }} a new password? Their old one stops working straight away.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit" class="btn sm">Give them a new password</button>
+      </form>
+
+      <p class="dim small">
+        Use this when they've forgotten it. You'll get a new one to hand
+        over on the next screen, and they'll pick their own when they sign
+        in. It signs them out of any device they're already on.
+      </p>
+
+      {% if user.org_admin %}
+        <hr class="rule" />
+        <form class="login-form" method="POST"
+              action="{{ url_for('student_delete', username=student.username) }}"
+              onsubmit="return confirm('Delete {{ student.name }} and all of their work? This cannot be undone.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <div class="field">
+            <label for="confirm">
+              Delete this account — type <b>DELETE</b> to confirm
+            </label>
+            <input type="text" id="confirm" name="confirm" autocomplete="off"
+                   pattern="[Dd][Ee][Ll][Ee][Tt][Ee]" required />
+            <small class="field-note">
+              Erases the account, their progress, their answers and any
+              parent links. It cannot be undone.
+            </small>
+          </div>
+          <button type="submit" class="btn danger">Delete {{ student.name }}</button>
+        </form>
+      {% endif %}
+
+    </div>
+  </div>
+{% endif %}
+
 {% endblock %}

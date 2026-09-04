@@ -109,27 +109,81 @@
     </div>
   {% endif %}
 
-  {% if is_admin %}
-    {% if addable %}
-      <form class="inline-form" method="POST"
-            action="{{ url_for('classroom_add_student', classroom_id=classroom.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <select name="username" required>
-          <option value="">Add a student…</option>
-          {% for student in addable %}
-            <option value="{{ student.username }}">{{ student.name }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn sm">Add</button>
-      </form>
-    {% endif %}
-  {% else %}
+  {% if is_admin and addable %}
+    {# Moving an existing student between classrooms stays admin-only: it
+       hands one teacher sight of another teacher's pupils. #}
+    <form class="inline-form" method="POST"
+          action="{{ url_for('classroom_add_student', classroom_id=classroom.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <select name="username" required>
+        <option value="">Move an existing student in…</option>
+        {% for student in addable %}
+          <option value="{{ student.username }}">{{ student.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn sm">Add</button>
+    </form>
+  {% endif %}
+  {% if not is_admin %}
     <div class="billing-body">
       <p class="dim small">
-        Only an admin can change who's in a classroom.
+        Only an admin can move students between classrooms, but you can
+        create new ones for your own class below.
       </p>
     </div>
   {% endif %}
+</div>
+
+{# ── Enrolling new students ──────────────────────────────────────────── #}
+{#  Open to any teacher of this classroom, not just an admin. The account
+    is created here and now, with no email address and a password printed
+    on the next screen — which is what makes this usable for a class of
+    twenty-eight children who mostly do not have an inbox. #}
+<div class="panel">
+  <div class="panel-head teal">Create student logins</div>
+  <div class="billing-body">
+
+    <p class="login-blurb">
+      Make accounts for students who don't have one. They don't need an
+      email address — you'll get their usernames and first passwords to
+      hand out, and each student picks their own password when they sign in.
+    </p>
+
+    <form class="login-form" method="POST"
+          action="{{ url_for('classroom_new_student', classroom_id=classroom.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <div class="field">
+        <label for="new_name">Student's name</label>
+        <input type="text" id="new_name" name="name" maxlength="80"
+               placeholder="Ada Lovelace" required />
+      </div>
+
+      <div class="field">
+        <label for="new_username">Username <span class="dim">(optional)</span></label>
+        <input type="text" id="new_username" name="username" maxlength="32"
+               autocomplete="off" placeholder="Leave blank and we'll pick one" />
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" name="consent_ok" value="1" required />
+        <span>
+          I have permission from my school to create an account for this
+          student, and they are at least {{ config.MIN_AGE }} years old.
+        </span>
+      </label>
+
+      <button type="submit" class="btn">Create one login</button>
+    </form>
+
+    <p class="dim small">
+      Got a whole class?
+      <a href="{{ url_for('classroom_import_students', classroom_id=classroom.id) }}">
+        Paste the roster instead →
+      </a>
+    </p>
+
+  </div>
 </div>
 
 {% endblock %}
