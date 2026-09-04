@@ -1,12 +1,23 @@
-# Ignite Academy — app + Postgres.
+# Ignite Academy — the whole stack on one machine.
 #
 #   cp .env.example .env      # then edit: SECRET_KEY and POSTGRES_PASSWORD
 #   docker compose up -d
 #   docker compose logs -f app
+#   open http://localhost:8000
 #
-# Good for one box. Past that, move Postgres to a managed service so
-# backups and point-in-time recovery are somebody else's job, and drop the
-# db service here — see DEPLOY.md.
+# That is the "prove it works" setup: real Postgres, real gunicorn, real
+# migrations, no TLS anywhere. APP_ENV=local waives the checks a laptop
+# cannot satisfy and says so at boot.
+#
+# Want TLS on this box too? Put certificates in deploy/certs/ and add
+# --profile tls, which brings nginx up in front on 80/443. Not needed to
+# try the app, and not what you will use on AWS — there the load balancer
+# terminates TLS and this service disappears entirely.
+#
+# GOING TO AWS: Postgres becomes RDS and the db service below is deleted.
+# Never run a database container on ECS — the disk is ephemeral, so a task
+# restart loses it, and you get no backups, no point-in-time recovery and
+# no failover. See docs/AWS_READINESS.md.
 #
 # The RAG side of this repo (ingest.py, query.py) is a separate local tool
 # and is not part of this deployment; its qdrant service lives in
@@ -42,17 +53,31 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Published so the app is reachable directly. With the tls profile on,
+    # nginx fronts it on 80/443 and you can ignore this port.
+    ports:
+      - "${APP_PORT:-8000}:8000"
     environment:
-      APP_ENV: production
+      # local = production-shaped, laptop-appropriate. Set production only
+      # on a real deployment: it requires TLS to the database, https in
+      # BASE_URL and Secure cookies, none of which hold here.
+      APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: postgresql://${POSTGRES_USER:-ignite}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ignite}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
-      BASE_URL: ${BASE_URL:?set BASE_URL in .env}
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       DB_POOL_MAX: ${DB_POOL_MAX:-5}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-1}
+      # 0 because nothing is in front by default. Set it to 1 when you
+      # turn the tls profile on, or every user shares a rate-limit
+      # bucket — the app logs an error if it spots that.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-0}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
-      COOKIE_SECURE: "true"
-      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-true}
+      # Must stay false without TLS: a Secure cookie is never sent back
+      # over plain http, so login would fail with no error anywhere.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Off by default so a first run is not a scavenger hunt. Turn it on
+      # and the link still works — it goes to `docker compose logs app`.
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
       EMAIL_FROM: ${EMAIL_FROM:-Ignite Academy <no-reply@localhost>}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -73,8 +98,11 @@ services:
     expose:
       - "8000"
 
+  # Only starts with `--profile tls`, because it will not come up at all
+  # without certificates in deploy/certs/.
   web:
     image: nginx:1.27-alpine
+    profiles: ["tls"]
     restart: unless-stopped
     depends_on:
       - app

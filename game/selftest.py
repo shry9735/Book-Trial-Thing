@@ -662,6 +662,77 @@ def t_pages_render():
     assert not broken, f"pages did not render: {broken}"
 
 
+@check("the local stack boots with the settings compose actually sets")
+def t_local_stack_boots():
+    """
+    docker compose up is the "prove it works" path, and the production
+    guards were written strictly enough to reject it — no TLS to the
+    database, no https, console mail. APP_ENV=local exists for exactly
+    that, and this pins the combination so it cannot break again.
+    """
+    import importlib
+
+    import config
+
+    compose_env = {
+        "APP_ENV": "local",
+        "DATABASE_URL": "postgresql://ignite:pw@db:5432/ignite",   # no sslmode
+        "SECRET_KEY": "0" * 64,
+        "BASE_URL": "http://localhost:8000",                        # not https
+        "COOKIE_SECURE": "false",
+        "TRUSTED_PROXIES": "0",
+        "EMAIL_BACKEND": "console",
+        "REQUIRE_EMAIL_VERIFICATION": "false",
+    }
+    saved = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(compose_env)
+    try:
+        cfg = importlib.reload(config).validate()
+        assert cfg.IS_LOCAL and not cfg.IS_PROD
+        assert cfg.COOKIE_SECURE is False, "a Secure cookie never returns over http"
+        assert cfg.LOG_JSON is False, "local should log readable lines"
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+        importlib.reload(config)
+
+
+@check("an unrecognised APP_ENV is refused rather than silently relaxed")
+def t_app_env_validated():
+    """
+    Everything hangs off APP_ENV, so a typo used to land in development and
+    switch off secure cookies, proxy handling and every boot check at once.
+    """
+    import importlib
+
+    import config
+
+    saved = dict(os.environ)
+    for value, should_boot in (("production", True), ("local", True),
+                               ("development", True), ("prod", False),
+                               ("Production ", True), ("staging", False)):
+        os.environ.clear()
+        os.environ.update({
+            "APP_ENV": value,
+            "SECRET_KEY": "0" * 64,
+            "BASE_URL": "https://example.test",
+            "DATABASE_URL": "postgresql://u:p@h/db?sslmode=require",
+            "TRUSTED_PROXIES": "1",
+            "EMAIL_BACKEND": "smtp",
+            "SMTP_HOST": "smtp.example.test",
+        })
+        try:
+            importlib.reload(config).validate()
+            booted = True
+        except SystemExit:
+            booted = False
+        assert booted == should_boot, f"APP_ENV={value!r} booted={booted}"
+    os.environ.clear()
+    os.environ.update(saved)
+    importlib.reload(config)
+
+
 @check("liveness is separate from readiness")
 def t_livez():
     """
@@ -829,6 +900,7 @@ TESTS = [
     t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
     t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post,
     t_pages_render,
+    t_local_stack_boots, t_app_env_validated,
     t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,
     t_health,
 ]

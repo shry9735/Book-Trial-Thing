@@ -498,7 +498,7 @@ Self-serve registration for all three roles.
 | `import_assets.py` | entrypoint | 5 | 0 | — |
 | `manage.py` | entrypoint | 12 | 0 | `billing`, `config`, `db`, `logsetup` |
 | `migrate_json.py` | entrypoint | 3 | 0 | `config`, `db` |
-| `selftest.py` | entrypoint | 42 | 0 | `app`, `db`, `security` |
+| `selftest.py` | entrypoint | 44 | 0 | `app`, `db`, `security` |
 | `selftest_billing.py` | entrypoint | 50 | 0 | `app`, `billing`, `db` |
 | `selftest_classrooms.py` | entrypoint | 35 | 0 | `app`, `db`, `tracks` |
 | `wsgi.py` | entrypoint | 0 | 0 | `app` |

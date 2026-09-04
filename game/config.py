@@ -39,8 +39,26 @@ def _int(name: str, default: int) -> int:
 
 class Config:
     # ── Environment ─────────────────────────────────────────────────────────
+    #
+    # Three values, and almost everything else hangs off which one is set:
+    #
+    #   development  a bare `python app.py`. Everything relaxed.
+    #   local        the whole stack on one machine — real Postgres, real
+    #                gunicorn, real migrations — but no TLS anywhere and
+    #                mail to the log. For proving it works before it is
+    #                anywhere near AWS.
+    #   production   a real deployment. Every guard on, no exemptions.
+    #
+    # A typo here used to fall through to development in silence, which
+    # switched off secure cookies, proxy handling and every boot check at
+    # once. validate() now refuses anything it does not recognise.
+    ENVIRONMENTS = ("development", "local", "production")
+
     ENV        = os.environ.get("APP_ENV", "development").strip().lower()
     IS_PROD    = ENV == "production"
+    # Production-shaped, but running on somebody's laptop: no certificate,
+    # no managed database, no mail provider.
+    IS_LOCAL   = ENV == "local"
     BASE_URL   = os.environ.get("BASE_URL", "http://localhost:5000").rstrip("/")
 
     # ── Database ────────────────────────────────────────────────────────────
@@ -61,6 +79,8 @@ class Config:
     SESSION_DAYS      = _int("SESSION_DAYS", 14)
     # Behind a TLS-terminating proxy the cookie must still be Secure; set
     # this to false only for plain-HTTP local development.
+    # Off for local: a Secure cookie is never returned over plain http,
+    # so leaving it on would make signing in silently impossible.
     COOKIE_SECURE     = _bool("COOKIE_SECURE", IS_PROD)
     # How many proxies sit in front of us.  Wrong values here let a client
     # spoof its own IP via X-Forwarded-For, which would defeat rate limiting.
@@ -125,6 +145,7 @@ class Config:
 
     # ── Logging ─────────────────────────────────────────────────────────────
     LOG_LEVEL         = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    # Readable lines on a laptop, machine-parseable in production.
     LOG_JSON          = _bool("LOG_JSON", IS_PROD)
 
 
@@ -139,6 +160,13 @@ def validate() -> Config:
     """
     cfg = Config()
     problems: list[str] = []
+
+    # Everything below keys off this, so a typo — APP_ENV=prod, say — used
+    # to silently land in development and switch off secure cookies, proxy
+    # handling and every check in this function at once.
+    if cfg.ENV not in Config.ENVIRONMENTS:
+        sys.exit(f"Configuration error:\n  - APP_ENV={cfg.ENV!r} is not one of "
+                 f"{', '.join(Config.ENVIRONMENTS)}.")
 
     if not cfg.DATABASE_URL:
         if cfg.IS_PROD:
@@ -220,5 +248,15 @@ def validate() -> Config:
 
     if problems:
         sys.exit("Configuration errors:\n" + "\n".join(f"  - {p}" for p in problems))
+
+    if cfg.IS_LOCAL:
+        # Loud on purpose. Local waives the checks that a laptop cannot
+        # satisfy, and nobody should be able to run this by accident and
+        # think they are looking at a production-equivalent box.
+        print("  config: APP_ENV=local — running with laptop exemptions:", file=sys.stderr)
+        print("          no TLS to the database, cookies not marked Secure,",
+              file=sys.stderr)
+        print("          email to the log. Never use this on a real deployment.",
+              file=sys.stderr)
 
     return cfg

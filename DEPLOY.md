@@ -27,18 +27,48 @@ else follows from it.
 
 ---
 
-## Quick start (one box)
+## Run it on your own machine first
+
+The compose stack is the "prove it works" setup: Postgres in a container,
+real gunicorn, real migrations, no TLS anywhere.
 
 ```bash
 cp .env.example .env
 python -c "import secrets; print(secrets.token_hex(32))"      # → SECRET_KEY
 python -c "import secrets; print(secrets.token_urlsafe(24))"  # → POSTGRES_PASSWORD
-$EDITOR .env                                                  # also set BASE_URL
+$EDITOR .env
 
-# TLS certificates into deploy/certs/{fullchain.pem,privkey.pem}
 docker compose up -d
 docker compose logs -f app
+open http://localhost:8000
 ```
+
+Two containers: `db` and `app`. No certificates needed and nothing to
+configure beyond those two secrets. `APP_ENV=local` waives the checks a
+laptop cannot satisfy — TLS to the database, https links, Secure cookies —
+and says so at boot so it cannot be mistaken for a production box.
+
+Want TLS on this machine too? Put certificates in `deploy/certs/` and add
+`--profile tls`, which brings nginx up on 80/443. You will not need it on
+AWS: the load balancer terminates TLS and that service disappears.
+
+Verification email is off by default so a first run is not a scavenger
+hunt. Turn it on with `REQUIRE_EMAIL_VERIFICATION=true` and the link still
+works — it goes to `docker compose logs app`.
+
+### Moving that to AWS
+
+Three changes, no code:
+
+| | Local | AWS |
+|---|---|---|
+| `APP_ENV` | `local` | `production` |
+| `DATABASE_URL` | the `db` container | RDS, with `sslmode=require` |
+| `RUN_MIGRATIONS` | `1` | `0`, applied in a pre-deploy step |
+
+Then delete the `db` service. **Never run a database container on ECS** —
+the disk is ephemeral, so a task restart loses it, and you get no backups,
+no point-in-time recovery and no failover.
 
 Migrations run automatically at start-up, under a Postgres advisory lock,
 so several workers or containers booting together cannot apply them twice.
