@@ -1,0 +1,47 @@
+{# Terms and Privacy. Standalone: no nav, no HUD, readable signed out —
+   somebody deciding whether to sign up has nowhere to sign in to yet. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }} — Ignite Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body class="t-body">
+
+<div class="t-top">
+  <div class="mark">🔥</div>
+  <a class="title" href="{{ url_for('home') }}">Ignite Academy</a>
+  <div class="who"></div>
+  <a class="btn sm ghost" href="{{ url_for('legal', page='terms') }}">Terms</a>
+  <a class="btn sm ghost" href="{{ url_for('legal', page='privacy') }}">Privacy</a>
+  {% if user %}
+    <a class="btn sm ghost" href="{{ url_for('home') }}">Back</a>
+  {% else %}
+    <a class="btn sm ghost" href="{{ url_for('login') }}">Sign in</a>
+  {% endif %}
+</div>
+
+<div class="t-main">
+
+  {% if not reviewed %}
+    {# Shown until LEGAL_REVIEWED is set. Saying this out loud is both the
+       honest thing to do and a very effective reminder. #}
+    <div class="legal-draft">
+      <b>Draft — not yet reviewed by a lawyer.</b>
+      This page is boilerplate written to describe how Ignite Academy
+      actually works. It is a starting point for a solicitor or attorney to
+      review, not legal advice, and it has not been checked against the law
+      where you live.
+    </div>
+  {% endif %}
+
+  <div class="panel legal-panel">
+    <div class="legal-body">{{ body | safe }}</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -110,8 +110,8 @@ from pathlib import Path
 
 try:
     from flask import (
-        Flask, abort, flash, g, jsonify, redirect, render_template,
-        request, send_from_directory, session, url_for,
+        Flask, abort, flash, g, jsonify, make_response, redirect,
+        render_template, request, send_from_directory, session, url_for,
     )
     from werkzeug.exceptions import HTTPException
     from werkzeug.security import check_password_hash, generate_password_hash
@@ -458,6 +458,18 @@ def render_content(source: str) -> str:
     raw = path.read_text(encoding="utf-8", errors="replace")
     if path.suffix.lower() in (".html", ".htm"):
         return raw
+    return render_markdown(raw)
+
+
+def render_markdown(raw: str) -> str:
+    """
+    Markdown to HTML, with the same extensions everywhere.
+
+    Shared by lesson prose and the legal pages so the two cannot render
+    differently — the tables in the privacy notice need the same `tables`
+    extension a lesson does, and finding that out the hard way is a
+    published page full of pipe characters.
+    """
     try:
         import markdown
     except ImportError:
@@ -482,6 +494,9 @@ _PASSWORD_CHANGE_EXEMPT = frozenset({
     "static", "livez", "healthz", "logout", "login", "signup",
     "art_url", "art_placeholder", "kit_asset", "lesson_asset",
     "first_password", "verify_email", "forgot_password", "reset_password",
+    # Somebody held on the first-password page can still read what they
+    # agreed to. Blocking that would be a strange thing to do.
+    "legal",
 })
 
 
@@ -974,6 +989,80 @@ def reset_password(token: str):
 
     flash("Password updated. Sign in with your new one.", "success")
     return redirect(url_for("login"))
+
+
+# ── Legal pages ─────────────────────────────────────────────────────────────────
+#
+# Signup requires ticking a box that says "I agree to the terms". These are
+# the pages behind it. They ship as boilerplate — drafted for this product's
+# actual shape, but not by a lawyer — and say so in a banner until
+# LEGAL_REVIEWED is set.
+
+LEGAL_PAGES = {
+    "terms":   ("Terms of Service", "legal/terms.md"),
+    "privacy": ("Privacy Notice",   "legal/privacy.md"),
+}
+
+
+def _legal_tokens() -> dict[str, str]:
+    """
+    The values substituted into the legal Markdown.
+
+    Kept in one place because several of them are numbers that also drive
+    behaviour — the grace periods and the invoice due date are read from
+    the same config the billing code uses, so the page cannot drift away
+    from what the software actually does. That is the whole reason these
+    are tokens rather than typed into the prose.
+    """
+    return {
+        "ENTITY":       cfg.LEGAL_ENTITY or "[YOUR COMPANY NAME]",
+        "EMAIL":        cfg.LEGAL_EMAIL or "[YOUR CONTACT EMAIL]",
+        "ADDRESS":      cfg.LEGAL_ADDRESS or "[YOUR POSTAL ADDRESS]",
+        "JURISDICTION": cfg.LEGAL_JURISDICTION or "[YOUR STATE / COUNTRY]",
+        "EFFECTIVE":    cfg.LEGAL_EFFECTIVE or "[NOT YET PUBLISHED]",
+        "MIN_AGE":            str(cfg.MIN_AGE),
+        "INVOICE_DUE_DAYS":   str(cfg.INVOICE_DUE_DAYS),
+        "GRACE_DAYS_CARD":    str(cfg.GRACE_DAYS_CARD),
+        "GRACE_DAYS_INVOICE": str(cfg.GRACE_DAYS_INVOICE),
+    }
+
+
+def _fill_tokens(markdown_source: str) -> str:
+    """
+    Replace {{TOKEN}} in the legal Markdown.
+
+    Done before rendering rather than after, so a substituted value cannot
+    inject markup — whatever comes out of config is escaped by the Markdown
+    renderer along with the rest of the prose.
+    """
+    for name, value in _legal_tokens().items():
+        markdown_source = markdown_source.replace("{{" + name + "}}", value)
+    return markdown_source
+
+
+@app.route("/legal/<page>")
+def legal(page: str):
+    """
+    Terms and Privacy. Public, and readable without an account.
+
+    They have to be: somebody deciding whether to sign up needs to read
+    them before they have anywhere to sign in to. That is also why this is
+    in _PASSWORD_CHANGE_EXEMPT — a student held on the first-password page
+    can still read what they are agreeing to.
+    """
+    if page not in LEGAL_PAGES:
+        abort(404)
+    title, source = LEGAL_PAGES[page]
+
+    path = CONTENT_DIR / source
+    if not path.is_file():
+        log.error("legal page %s is missing from content/", source)
+        abort(404)
+
+    body = render_markdown(_fill_tokens(path.read_text(encoding="utf-8")))
+    return _cached(make_response(render_template(
+        "legal.html", title=title, body=body, page=page,
+        reviewed=cfg.LEGAL_REVIEWED)))
 
 
 # ── Account settings ────────────────────────────────────────────────────────────

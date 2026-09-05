@@ -61,6 +61,7 @@ There are no default accounts.
 | [**Call graph**](docs/CALLGRAPH.md) | What each route touches (generated) |
 | [**Deploying**](DEPLOY.md) | Docker, AWS, backups, payments, operations |
 | [**AWS readiness**](docs/AWS_READINESS.md) | What will break on AWS, and what to do about it |
+| [**Legal pages**](docs/LEGAL.md) | The Terms and Privacy text, and what a lawyer needs to look at |
 
 Build the browsable API reference from the source docstrings:
 

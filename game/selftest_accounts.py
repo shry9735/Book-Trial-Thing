@@ -772,6 +772,76 @@ def t_invoices_kept():
     assert row["subscription_id"] is None, "the invoice still points at a deleted subscription"
 
 
+# ── Legal pages ─────────────────────────────────────────────────────────────────
+
+@check("the terms and privacy pages render without an account")
+def t_legal_public():
+    for page in ("terms", "privacy"):
+        response = client().get(f"/legal/{page}")
+        assert response.status_code == 200, f"{page} -> {response.status_code}"
+        html = response.get_data(as_text=True)
+        assert "<h2" in html, f"{page} did not render as Markdown"
+        assert len(html) > 4000, f"{page} looks truncated ({len(html)} bytes)"
+
+
+@check("an unknown legal page is a 404, not a traversal")
+def t_legal_unknown():
+    for page in ("nonsense", "..%2f..%2fconfig.py", "../db.py"):
+        assert client().get(f"/legal/{page}").status_code == 404, page
+
+
+@check("every placeholder token is substituted")
+def t_legal_tokens():
+    for page in ("terms", "privacy"):
+        html = client().get(f"/legal/{page}").get_data(as_text=True)
+        assert "{{" not in html, f"{page} still has an unfilled token"
+
+
+@check("the legal pages quote the config the billing code actually uses")
+def t_legal_matches_config():
+    # These numbers appear in the terms as promises. If someone changes the
+    # grace period in config and the page keeps claiming the old one, the
+    # terms are wrong — which is why they are tokens, not typed prose.
+    html = client().get("/legal/terms").get_data(as_text=True)
+    for value in (str(appmod.cfg.MIN_AGE), str(appmod.cfg.INVOICE_DUE_DAYS),
+                  str(appmod.cfg.GRACE_DAYS_CARD), str(appmod.cfg.GRACE_DAYS_INVOICE)):
+        assert value in html, f"terms does not mention {value}"
+
+
+@check("unreviewed boilerplate says so, and a reviewed page does not")
+def t_legal_draft_banner():
+    assert not appmod.cfg.LEGAL_REVIEWED, "fixture expects the default"
+    html = client().get("/legal/terms").get_data(as_text=True)
+    assert "not yet reviewed by a lawyer" in html.lower(), "no draft banner"
+
+    appmod.cfg.LEGAL_REVIEWED = True
+    try:
+        html = client().get("/legal/terms").get_data(as_text=True)
+        assert "not yet reviewed by a lawyer" not in html.lower(), \
+            "the banner survived LEGAL_REVIEWED"
+    finally:
+        appmod.cfg.LEGAL_REVIEWED = False
+
+
+@check("the signup consent checkbox links to both pages")
+def t_signup_links_legal():
+    # The whole point of the checkbox. Agreeing to something unreadable is
+    # worse than not asking.
+    html = client().get("/signup?role=student").get_data(as_text=True)
+    assert 'href="/legal/terms"' in html, "no link to the terms"
+    assert 'href="/legal/privacy"' in html, "no link to the privacy notice"
+    assert 'name="terms_ok"' in html
+
+
+@check("a student held on the first-password page can still read the terms")
+def t_legal_past_the_gate():
+    username, password = provision("Legal Pupil")
+    c = client()
+    login(c, username, password)
+    assert c.get("/classroom", follow_redirects=False).status_code == 302, "not gated"
+    assert c.get("/legal/terms").status_code == 200, "the gate blocked the terms"
+
+
 # ── Rendering ───────────────────────────────────────────────────────────────────
 
 @check("every new page renders")
@@ -813,6 +883,8 @@ TESTS = [
     t_delete_self, t_delete_self_needs_password, t_last_admin_blocked,
     t_second_admin_unblocks, t_subscription_blocks_deletion,
     t_cancelled_subscription_allows_deletion, t_invoices_kept,
+    t_legal_public, t_legal_unknown, t_legal_tokens, t_legal_matches_config,
+    t_legal_draft_banner, t_signup_links_legal, t_legal_past_the_gate,
     t_pages_render,
 ]
 

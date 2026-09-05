@@ -115,9 +115,19 @@
           </label>
         {% endif %}
 
+        {# The links are the point of this checkbox. Ticking a box that
+           agrees to nothing readable is worse than having no box. Both
+           open in a new tab so a half-filled form is not lost. #}
         <label class="check-row">
           <input type="checkbox" name="terms_ok" value="1" required />
-          <span>I agree to the terms and the privacy notice.</span>
+          <span>
+            I agree to the
+            <a href="{{ url_for('legal', page='terms') }}" target="_blank"
+               rel="noopener">Terms of Service</a>
+            and the
+            <a href="{{ url_for('legal', page='privacy') }}" target="_blank"
+               rel="noopener">Privacy Notice</a>.
+          </span>
         </label>
 
         <button type="submit" class="btn block lg {% if role != 'student' %}teal{% endif %}">

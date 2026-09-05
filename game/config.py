@@ -137,6 +137,23 @@ class Config:
     # a link.
     STORE_URL              = os.environ.get("STORE_URL", "").rstrip("/")
 
+    # ── Legal pages ─────────────────────────────────────────────────────────
+    # The Terms and Privacy pages are built from Markdown in
+    # content/legal/, with these values substituted in. They ship as
+    # boilerplate: a starting point drafted for this product's actual
+    # shape, NOT reviewed by a lawyer and not legal advice.
+    #
+    # LEGAL_REVIEWED is the switch that says a lawyer has been over them.
+    # Until it is set, every legal page carries a visible banner saying so,
+    # which is the honest thing to show and also very hard to forget about.
+    LEGAL_ENTITY      = os.environ.get("LEGAL_ENTITY", "").strip()
+    LEGAL_EMAIL       = os.environ.get("LEGAL_EMAIL", "").strip()
+    LEGAL_ADDRESS     = os.environ.get("LEGAL_ADDRESS", "").strip()
+    # Where disputes are heard, e.g. "the State of Ohio, USA".
+    LEGAL_JURISDICTION = os.environ.get("LEGAL_JURISDICTION", "").strip()
+    LEGAL_EFFECTIVE   = os.environ.get("LEGAL_EFFECTIVE", "").strip()
+    LEGAL_REVIEWED    = _bool("LEGAL_REVIEWED", False)
+
     # ── Static assets ───────────────────────────────────────────────────────
     # Set to a CDN origin (https://cdn.example.com) to serve /static from it.
     # Empty means Flask serves the files, which is fine for a single box.
@@ -246,8 +263,30 @@ def validate() -> Config:
     if cfg.IS_PROD and cfg.BASE_URL.startswith("http://"):
         problems.append("BASE_URL must be https:// in production — it is used to build email links.")
 
+    # Signup requires ticking a box that says "I agree to the terms". If the
+    # pages behind it still say [YOUR COMPANY], that consent is worthless and
+    # the box is worse than not having one. Unfilled placeholders in
+    # production are a mistake, not a decision, so they stop the boot.
+    if cfg.IS_PROD:
+        missing = [name for name in ("LEGAL_ENTITY", "LEGAL_EMAIL", "LEGAL_JURISDICTION")
+                   if not getattr(cfg, name)]
+        if missing:
+            problems.append(
+                f"{', '.join(missing)} unset in production. The Terms and Privacy "
+                "pages are linked from the signup consent checkbox and would render "
+                "with unfilled placeholders. See docs/LEGAL.md.")
+
     if problems:
         sys.exit("Configuration errors:\n" + "\n".join(f"  - {p}" for p in problems))
+
+    if cfg.IS_PROD and not cfg.LEGAL_REVIEWED:
+        # A warning, not an error: shipping a pilot on boilerplate is a
+        # decision somebody is allowed to make. Every legal page says so in
+        # a banner, so nobody is misled while it is switched off.
+        print("  config: LEGAL_REVIEWED=false — the Terms and Privacy pages are",
+              file=sys.stderr)
+        print("          unreviewed boilerplate and say so to every visitor.",
+              file=sys.stderr)
 
     if cfg.IS_LOCAL:
         # Loud on purpose. Local waives the checks that a laptop cannot

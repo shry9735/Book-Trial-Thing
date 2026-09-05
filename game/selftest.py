@@ -721,6 +721,11 @@ def t_app_env_validated():
             "TRUSTED_PROXIES": "1",
             "EMAIL_BACKEND": "smtp",
             "SMTP_HOST": "smtp.example.test",
+            # Production also refuses to boot with unfilled legal
+            # placeholders; that is its own check, below.
+            "LEGAL_ENTITY": "Example Co",
+            "LEGAL_EMAIL": "legal@example.test",
+            "LEGAL_JURISDICTION": "Nowhere",
         })
         try:
             importlib.reload(config).validate()
@@ -778,6 +783,9 @@ def t_production_guards():
         "TRUSTED_PROXIES": "1",
         "EMAIL_BACKEND": "smtp",
         "SMTP_HOST": "smtp.example.test",
+        "LEGAL_ENTITY": "Example Co",
+        "LEGAL_EMAIL": "legal@example.test",
+        "LEGAL_JURISDICTION": "Nowhere",
     }
 
     def boots(**overrides):
@@ -806,6 +814,16 @@ def t_production_guards():
         "sslmode=prefer falls back to plaintext silently"
     assert boots(DATABASE_URL="postgresql://u:p@h/db?sslmode=verify-full"), \
         "verify-full was rejected"
+
+    # Signup makes people tick "I agree to the terms". Booting production
+    # with the placeholders unfilled would put [YOUR COMPANY NAME] on the
+    # page behind that box, which makes the consent meaningless.
+    assert not boots(LEGAL_ENTITY=""), "production booted with no legal entity"
+    assert not boots(LEGAL_EMAIL=""), "production booted with no legal contact"
+    assert not boots(LEGAL_JURISDICTION=""), "production booted with no jurisdiction"
+    # Unreviewed boilerplate is a decision, not a mistake: it warns and
+    # banners rather than blocking. LEGAL_REVIEWED must not gate the boot.
+    assert boots(LEGAL_REVIEWED="false"), "the review flag blocked the boot"
 
 
 @check("a proxy we were not told about is reported, once")
@@ -865,17 +883,19 @@ def t_rate_events_trim():
         before = cur.fetchone()["n"]
     assert before == 40, before
 
-    # The sweep is probabilistic, so give it enough attempts to be certain
-    # rather than flaky: 200 inserts at 1-in-50 misses with probability
-    # about 1.7e-2 ** ... vanishingly small.
-    for _ in range(200):
+    # The sweep is probabilistic (db._TRIM_ODDS), so this needs enough
+    # attempts that a miss is not worth thinking about. 200 was not: at
+    # 1-in-50 the chance of never firing is (49/50)^200 = 1.8%, roughly one
+    # failed run in every 55, which is exactly often enough to teach people
+    # to re-run a red build. 600 puts it at 6e-6.
+    for _ in range(600):
         db.rate_hit("trimtest")
         with db.query() as cur:
             cur.execute("SELECT count(*) AS n FROM rate_events WHERE bucket = 'stale:x'")
             if cur.fetchone()["n"] == 0:
                 break
     else:
-        raise AssertionError("200 attempts and the expired rows were never swept")
+        raise AssertionError("600 attempts and the expired rows were never swept")
 
     with db.write() as cur:
         cur.execute("DELETE FROM rate_events")
