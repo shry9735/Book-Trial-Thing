@@ -93,8 +93,38 @@ services:
       GRACE_DAYS_INVOICE: ${GRACE_DAYS_INVOICE:-45}
       INVOICE_DUE_DAYS: ${INVOICE_DUE_DAYS:-30}
       STORE_URL: ${STORE_URL:-}
+
+      # The Terms and Privacy pages are built from these. Under APP_ENV=local
+      # they may be blank and the pages render [YOUR COMPANY NAME]; under
+      # production the app refuses to boot without the first three, because
+      # signup makes people agree to those pages. See docs/LEGAL.md.
+      LEGAL_ENTITY: ${LEGAL_ENTITY:-}
+      LEGAL_EMAIL: ${LEGAL_EMAIL:-}
+      LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+      LEGAL_JURISDICTION: ${LEGAL_JURISDICTION:-}
+      LEGAL_EFFECTIVE: ${LEGAL_EFFECTIVE:-}
+      LEGAL_REVIEWED: ${LEGAL_REVIEWED:-false}
+
+      # Tuning. Every one of these has a working default in config.py, so
+      # they are here only so that setting one in .env actually does
+      # something — a variable the app reads but compose does not forward is
+      # a silent no-op, and you find out by wondering why nothing changed.
+      MIN_AGE: ${MIN_AGE:-13}
+      TOKEN_HOURS: ${TOKEN_HOURS:-24}
+      SESSION_DAYS: ${SESSION_DAYS:-14}
+      RL_WINDOW: ${RL_WINDOW:-900}
+      RL_LOGIN_USER: ${RL_LOGIN_USER:-10}
+      RL_LOGIN_IP: ${RL_LOGIN_IP:-30}
+      RL_SIGNUP_IP: ${RL_SIGNUP_IP:-10}
+      RL_RESET_IP: ${RL_RESET_IP:-10}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      DB_POOL_MIN: ${DB_POOL_MIN:-1}
+      DB_TIMEOUT: ${DB_TIMEOUT:-10}
+      DB_BOOT_RETRY: ${DB_BOOT_RETRY:-30}
       CDN_URL: ${CDN_URL:-}
+      STATIC_MAX_AGE: ${STATIC_MAX_AGE:-2592000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-false}
     expose:
       - "8000"
 

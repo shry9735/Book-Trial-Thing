@@ -56,6 +56,11 @@ Verification email is off by default so a first run is not a scavenger
 hunt. Turn it on with `REQUIRE_EMAIL_VERIFICATION=true` and the link still
 works — it goes to `docker compose logs app`.
 
+Every variable `config.py` reads is forwarded by the compose file, so
+anything you set in `.env` takes effect on the next `docker compose up -d`.
+The tuning knobs are listed, commented out, at the bottom of
+`.env.example`; you do not need any of them to run the stack.
+
 ### Moving that to AWS
 
 Three changes, no code:
@@ -65,6 +70,11 @@ Three changes, no code:
 | `APP_ENV` | `local` | `production` |
 | `DATABASE_URL` | the `db` container | RDS, with `sslmode=require` |
 | `RUN_MIGRATIONS` | `1` | `0`, applied in a pre-deploy step |
+| `LEGAL_ENTITY`, `LEGAL_EMAIL`, `LEGAL_JURISDICTION` | may be blank | **required — production will not boot without them** |
+
+The legal ones are a hard stop rather than a warning: signup makes people
+tick "I agree to the terms", and with those unset the pages behind that box
+render `[YOUR COMPANY NAME]`. See [docs/LEGAL.md](docs/LEGAL.md).
 
 Then delete the `db` service. **Never run a database container on ECS** —
 the disk is ephemeral, so a task restart loses it, and you get no backups,
