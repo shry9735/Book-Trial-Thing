@@ -26,6 +26,7 @@
        own checkout. Nothing about it touches this app. #}
     <a class="btn sm ghost" href="{{ store_url }}" target="_blank" rel="noopener noreferrer">Shop</a>
   {% endif %}
+  <a class="btn sm ghost" href="{{ url_for('resources_home') }}">Helping at home</a>
   <a class="btn sm ghost" href="{{ url_for('settings_home') }}">Account</a>
   <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

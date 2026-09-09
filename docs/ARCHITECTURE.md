@@ -272,6 +272,36 @@ Deletion is deliberately stricter than a reset: a reset is recoverable and
 routine, so any teacher of the classroom may do it, while deleting a
 student is admin-only and needs `DELETE` typed into a box.
 
+### Keeping an answer key away from the student it is about
+
+Grown-up material — parent guides, answer keys, worksheets — is attached to
+a lesson or a track in its manifest and lives in `game/resources/`.
+
+That directory is the whole design. Two existing ways to serve a file in
+this app have **no authentication on them at all**: nginx aliases
+`/static/` straight off disk, so no Python runs, and `/lessons/<id>/<file>`
+is deliberately open because lesson artwork must load inside the game
+frame. A guide in either is public to every student with a browser.
+
+```mermaid
+flowchart TD
+    A["GET /grownup/resources/lesson/x/key.md"] --> B{"parent or teacher?"}
+    B -- no --> R["redirect: students never get here"]
+    B -- yes --> C{"named in x's manifest?"}
+    C -- no --> N["404 — whitelist, not a directory listing"]
+    C -- yes --> D{"visible to this role?"}
+    D -- no --> N
+    D -- yes --> E{"lesson paywalled?"}
+    E -- yes --> L["/locked"]
+    E -- no --> F["send file, private + no-store"]
+```
+
+Four checks, and the third is the one that makes accidents survivable: a
+file sitting in the directory that no manifest names cannot be fetched by
+guessing its name. `app._without_resources()` adds a fourth line of defence
+by stripping the list before a lesson reaches a student's template context,
+so a future partial or serialiser has nothing to leak.
+
 ### The forced first password
 
 An account whose password somebody else chose carries
@@ -396,6 +426,7 @@ responsible:
 | Has the student reached this lesson? | `app.prerequisite_block()` |
 | Is that a sequence, a prerequisite or an unassigned lesson? | `tracks.requirement_block()`, then `tracks.gate()` |
 | Who is this lesson for, and what does it lean on? | `tracks.band()`, `tracks.skills()` |
+| May this person see this guide? | `tracks.visible_resources()`, then `app._resource_or_404()` |
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |

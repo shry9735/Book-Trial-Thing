@@ -3,9 +3,28 @@
   "description": "Loops, bugs, and telling a machine exactly what you mean.",
   "order": 30,
   "sequential": false,
-  "ages": [11, 15],
+  "ages": [
+    11,
+    15
+  ],
   "skills": [
-    { "name": "Put a set of steps in the right order", "subject": "General" },
-    { "name": "Use a letter to stand for a number that changes", "subject": "Math", "standard": "6.EE.B.6" }
+    {
+      "name": "Put a set of steps in the right order",
+      "subject": "General"
+    },
+    {
+      "name": "Use a letter to stand for a number that changes",
+      "subject": "Math",
+      "standard": "6.EE.B.6"
+    }
+  ],
+  "resources": [
+    {
+      "file": "code-at-home.md",
+      "title": "Helping with Code",
+      "kind": "guide",
+      "description": "For grown-ups who have never programmed. What a loop is, and what not to do.",
+      "audience": "parent"
+    }
   ]
 }

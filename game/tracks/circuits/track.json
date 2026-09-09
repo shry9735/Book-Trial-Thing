@@ -17,5 +17,13 @@
       "subject": "Math",
       "standard": "6.RP.A.3"
     }
+  ],
+  "resources": [
+    {
+      "file": "first-circuit-at-home.md",
+      "title": "Your first circuit, at home",
+      "kind": "guide",
+      "description": "What you need, why nothing works the first time, and how to help them find it themselves."
+    }
   ]
 }

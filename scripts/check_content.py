@@ -31,6 +31,7 @@ import tracks                                        # noqa: E402
 LESSONS_DIR = ROOT / "game" / "lessons"
 TRACKS_DIR = ROOT / "game" / "tracks"
 STANDARDS_DIR = ROOT / "game" / "standards"
+RESOURCES_DIR = ROOT / "game" / "resources"
 
 
 def load_lessons() -> tuple[list[dict], list[str]]:
@@ -88,6 +89,23 @@ def main() -> int:
                         f"{kind} {name}: skill {skill['name']!r} cites unknown "
                         f"standard {code}")
 
+            # A resource in a manifest but not on disk is a 404 the grown-up
+            # only finds by clicking it. The reverse — a file on disk that no
+            # manifest names — is not an error: the download route is a
+            # whitelist, so such a file is simply unreachable, which is the
+            # safe direction to fail in.
+            raw = item.get("resources")
+            if raw and not tracks.resources(item):
+                problems.append(f"{kind} {name}: resources present but none usable")
+            for entry in tracks.resources(item):
+                if not entry["file"]:
+                    continue
+                path = RESOURCES_DIR / f"{kind}s" / name / entry["file"]
+                if not path.is_file():
+                    problems.append(
+                        f"{kind} {name}: resource {entry['file']!r} is in the "
+                        f"manifest but not at {path.relative_to(ROOT)}")
+
     if "--list" in sys.argv:
         for track in built:
             requires = track["requires"]
@@ -120,6 +138,33 @@ def main() -> int:
     print(f"\n  {len(built)} track(s), {len(lessons)} lesson(s)")
     banded = sum(1 for t in built for l in t["lessons"] if l["band"])
     print(f"  {banded}/{len(lessons)} lessons carry an age band")
+
+    res_count = sum(len(tracks.resources(i))
+                    for t in built for i in [t] + list(t["lessons"]))
+    orphans = []
+    if RESOURCES_DIR.is_dir():
+        declared = {
+            (kind, owner["id"], entry["file"])
+            for t in built
+            for kind, owner in [("track", t)] + [("lesson", l) for l in t["lessons"]]
+            for entry in tracks.resources(owner) if entry["file"]
+        }
+        for path in RESOURCES_DIR.rglob("*"):
+            if not path.is_file() or path.name == "README.md":
+                continue
+            rel = path.relative_to(RESOURCES_DIR).parts
+            if len(rel) != 3:
+                continue
+            kind = rel[0].rstrip("s")
+            if (kind, rel[1], rel[2]) not in declared:
+                orphans.append("/".join(rel))
+    print(f"  {res_count} grown-up resource(s) declared")
+    if orphans:
+        # Unreachable rather than exposed, so this is a note and not a
+        # failure — but an author who wrote a guide and forgot to declare it
+        # would otherwise never find out.
+        print(f"  note: on disk but declared nowhere, so unreachable: "
+              f"{', '.join(sorted(orphans))}")
 
     # Lessons inherit their track's skills, so one bad skill entry would
     # otherwise be reported once per lesson in the track.

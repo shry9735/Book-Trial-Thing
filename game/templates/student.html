@@ -250,6 +250,24 @@
                   </div>
                 {% endif %}
 
+                {% if row.resources %}
+                  {# Grown-up material for this exact lesson. The route is
+                     parent/teacher-only and tracks.visible_resources() has
+                     already filtered by role, so nothing a student may not
+                     see can reach this loop. #}
+                  <div class="res-inline">
+                    {% for item in row.resources %}
+                      <a class="btn sm ghost"
+                         href="{{ url_for('resource_read', kind='lesson', owner_id=row.id, filename=item.file)
+                                 if item.file and (item.file.endswith('.md') or item.file.endswith('.txt'))
+                                 else (item.url or url_for('resource_download', kind='lesson', owner_id=row.id, filename=item.file)) }}"
+                         {% if item.url %}target="_blank" rel="noopener noreferrer"{% endif %}>
+                        {%- if item.kind == 'answers' %}🔑{% else %}🧭{% endif %} {{ item.title }}
+                      </a>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+
                 {% if row.skills %}
                   {# The whole point of the skills list: a grown-up can see
                      what maths a lesson leans on before their child stalls. #}

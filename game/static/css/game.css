@@ -1684,3 +1684,37 @@ a.role-tab         { text-decoration: none; display: inline-flex;
 .skill-subject     { font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
                      color: var(--ink-dim); background: var(--surface);
                      border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
+
+/* ── Grown-up resources ────────────────────────────────────────────────────
+   A list of things to read or download, scanned by someone deciding whether
+   to sit down with their child for twenty minutes. */
+
+.res-item          { display: flex; gap: 12px; align-items: flex-start;
+                     padding: 12px 0; border-top: 1px solid var(--border-lt); }
+.res-item:first-of-type { border-top: none; }
+.res-icon          { font-size: 1.25rem; line-height: 1.3; flex: none; width: 26px;
+                     text-align: center; }
+.res-body          { flex: 1; min-width: 0; }
+.res-title         { font-weight: 700; color: var(--ink); }
+.res-desc          { margin-top: 2px; font-size: 0.86rem; color: var(--ink-mid);
+                     line-height: 1.5; }
+.res-actions       { margin-top: 7px; display: flex; align-items: center; gap: 8px;
+                     flex-wrap: wrap; }
+.res-locked        { opacity: .72; }
+
+.res-tag           { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: .05em; padding: 2px 6px; border-radius: 3px;
+                     margin-left: 6px; vertical-align: 2px;
+                     background: var(--accent-lt); color: var(--accent-dk); }
+.res-tag.warn      { background: var(--gold-pale); color: var(--gold-deep); }
+
+/* A lesson's own material, nested under its track's. */
+.res-lesson        { margin-top: 14px; padding-left: 14px;
+                     border-left: 3px solid var(--border-lt); }
+.res-lesson-head   { font-size: 0.82rem; font-weight: 700; color: var(--frame);
+                     display: flex; gap: 10px; align-items: baseline; }
+
+.res-warn          { background: var(--gold-pale); border-left-color: var(--gold); }
+
+/* The panel on a student's page pointing at what is relevant right now. */
+.res-inline        { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

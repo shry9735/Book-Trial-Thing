@@ -146,5 +146,13 @@
       "subject": "Math",
       "standard": "HSA.CED.A.4"
     }
+  ],
+  "resources": [
+    {
+      "file": "ohms-law-answers.md",
+      "title": "Ohm's Law — answers and reasoning",
+      "kind": "answers",
+      "description": "The quiz answers, what each wrong answer usually means, and a worked example."
+    }
   ]
 }

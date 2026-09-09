@@ -250,6 +250,61 @@ the object form adds a subject and a standard code. Cite a code and
 
 ---
 
+## Add a parent guide or an answer key
+
+Drop the file in, then declare it. **Where it goes is the security
+design**, not a filing preference:
+
+    game/resources/lessons/<lesson_id>/<file>
+    game/resources/tracks/<track_id>/<file>
+
+Not `static/`, and not the lesson folder. This app already serves files two
+ways that have no login on them at all — nginx aliases `/static/` straight
+off disk, and `/lessons/<id>/<file>` is deliberately open so lesson artwork
+loads inside the game frame. An answer key in either is public.
+
+Then in the lesson's or track's manifest:
+
+```json
+"resources": [
+  { "file": "ohms-law-answers.md",
+    "title": "Ohm's Law — answers and reasoning",
+    "kind": "answers",
+    "description": "The quiz answers and what each wrong one usually means." },
+  { "file": "code-at-home.md", "title": "Helping with Code",
+    "audience": "parent" },
+  { "url": "https://example.com/video", "title": "A good explainer",
+    "kind": "link" }
+]
+```
+
+`kind` is `guide`, `answers`, `worksheet`, `reading` or `link` and picks an
+icon and a heading — **it never affects who may read one**. `audience` is
+`grownup` (parents and teachers, the default) or `parent` (parents only);
+neither includes students and there is no value that would.
+
+Markdown and `.txt` get a "Read it" link as well as a download, which is
+what people want on a phone. Everything else downloads.
+
+A resource inherits its lesson's paywall — a guide to a free lesson is
+free. Run `python scripts/check_content.py` afterwards: it fails on a
+manifest naming a file that is not on disk, and notes files on disk that no
+manifest names.
+
+**Three locks keep this away from students**, and each is tested on its own
+in `selftest_resources.py` so removing one fails loudly:
+
+1. The routes require a parent or teacher session.
+2. `tracks.visible_resources()` returns `[]` for a student whatever the
+   manifest says, so a template that forgets its own check cannot leak one.
+3. The download route serves **only files a manifest names** — a whitelist,
+   so something committed by accident is not fetchable by guessing.
+
+There is a fourth, belt-and-braces: `app._without_resources()` strips the
+list before a lesson reaches a student's template context at all.
+
+---
+
 ## Block a lesson on work somewhere else
 
 ```json

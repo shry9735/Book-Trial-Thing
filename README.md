@@ -112,9 +112,10 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 .venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
 .venv/bin/python game/selftest_gating.py      # 36  age bands, prep skills, four block reasons
+.venv/bin/python game/selftest_resources.py   # 26  grown-up material, and the wall around it
 ```
 
-213 checks. They wipe the database they point at, so aim them at a scratch
+239 checks. They wipe the database they point at, so aim them at a scratch
 one. All four refuse to run with `APP_ENV=production`.
 
 ---

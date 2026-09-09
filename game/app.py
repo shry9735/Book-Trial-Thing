@@ -134,6 +134,10 @@ ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
 TRACKS_DIR  = BASE_DIR / "tracks"     # one folder per track
 STANDARDS_DIR = BASE_DIR / "standards"  # one JSON per curriculum framework
+# Grown-up material: parent guides, answer keys, worksheets. Deliberately
+# NOT under static/ and NOT inside a lesson folder — both of those are
+# served to anyone who asks. See the resource routes for the long version.
+RESOURCES_DIR = BASE_DIR / "resources"
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
 DATA_DIR    = BASE_DIR / "data"       # content only: item and classroom catalogs
 
@@ -292,6 +296,19 @@ def load_room() -> dict:
 
 def load_tracks() -> list[dict]:
     return _catalog["tracks"]
+
+
+def _without_resources(lesson: dict) -> dict:
+    """
+    A copy of a lesson with the grown-up material taken out.
+
+    Belt and braces. The download routes are the real boundary — they
+    require a parent or teacher session and serve only whitelisted files —
+    and tracks.visible_resources() is the second check. This is the third:
+    a student's template context simply never contains the list at all, so
+    there is nothing for a future template, partial or serialiser to leak.
+    """
+    return {k: v for k, v in lesson.items() if k != "resources"}
 
 
 def load_frameworks() -> list[dict]:
@@ -1536,7 +1553,7 @@ def lessons():
                              "remedy": f"Finish “{prereq['after']}” first."}
 
             cards.append({
-                **lesson,
+                **_without_resources(lesson),
                 "progress":     entries.get(lesson["id"], {"status": "not_started"}),
                 "locked":       not (billing.lesson_is_free(lesson) or paid_ok),
                 "prereq_locked": bool(block),
@@ -1611,8 +1628,13 @@ def lesson(lesson_id: str):
              "diagram": q.get("diagram")}
             for q in found.get("quiz", [])]
 
-    return render_template("lesson.html", lesson=found, entry=entry,
-                           body=body, quiz=quiz,
+    # Strip the grown-up material before the lesson reaches a student's
+    # template. Nothing in lesson.html renders it today, so this changes
+    # nothing on screen — it is here so that adding a debug dump, a JSON
+    # endpoint or a new partial cannot quietly put an answer key in front of
+    # the child it is an answer key for.
+    return render_template("lesson.html", lesson=_without_resources(found),
+                           entry=entry, body=body, quiz=quiz,
                            summary=summarise(user["id"]))
 
 
@@ -1908,6 +1930,10 @@ def student_detail(username: str):
                              "remedy": f"Finish “{state['after']}” first."}
             rows.append({
                 **item,
+                # Filtered by who is looking: a resource marked for home is
+                # not shown to a teacher.
+                "resources": tracks.visible_resources(
+                    item.get("resources") or [], user["role"]),
                 "track_title": track["title"],
                 "progress": entry,
                 "score":    quiz_score(item, entry),
@@ -1979,6 +2005,183 @@ def _group_by_fit(rows: list[dict]) -> list[dict]:
         buckets.setdefault(row["fit"], []).append(row)
     return [{"fit": fit, "title": _FIT_TITLES[fit], "rows": buckets[fit]}
             for fit in _FIT_ORDER if buckets.get(fit)]
+
+
+# ── Grown-up resources ──────────────────────────────────────────────────────────
+#
+# Downloadable material attached to a lesson or a track — a parent guide, an
+# answer key, a worksheet — that a student must never see.
+#
+# WHERE THESE FILES LIVE IS THE WHOLE SECURITY DESIGN. There are two
+# existing ways to serve a file in this app and BOTH are open to everybody:
+#
+#   /static/...            nginx aliases it straight off disk. No Python
+#                          runs. There is nothing to authenticate against.
+#   /lessons/<id>/<file>   deliberately unauthenticated, because lesson
+#                          artwork has to load inside the game frame.
+#
+# Putting an answer key in either would hand it to every student with a
+# browser and a guess. So resources live in their own directory, are served
+# only through the route below, and that route serves ONLY files a manifest
+# actually names — a whitelist, so a traversal attempt has nothing to
+# traverse to even if the filename checks in tracks.resources() were wrong.
+
+_RESOURCE_OWNERS = ("lesson", "track")
+
+
+def _resource_owner(kind: str, owner_id: str) -> dict | None:
+    """The lesson or track a resource hangs off, or None."""
+    if kind == "lesson":
+        return get_lesson(owner_id)
+    if kind == "track":
+        return next((t for t in load_tracks() if t["id"] == owner_id), None)
+    return None
+
+
+def _resource_or_404(kind: str, owner_id: str, filename: str, role: str) -> tuple[dict, dict]:
+    """
+    Resolve (owner, resource) for a download, or 404.
+
+    The whitelist: `filename` has to appear in this owner's own manifest and
+    be visible to this role. A file sitting in the directory that no
+    manifest mentions is not servable, which means an accidental commit of
+    something private cannot be fetched by guessing its name.
+
+    404 rather than 403 throughout, so the response cannot be used to
+    discover which resources exist.
+    """
+    if kind not in _RESOURCE_OWNERS:
+        abort(404)
+    owner = _resource_owner(kind, owner_id)
+    if not owner:
+        abort(404)
+
+    allowed = tracks.visible_resources(owner.get("resources") or [], role)
+    resource = next((r for r in allowed if r["file"] and r["file"] == filename), None)
+    if not resource:
+        abort(404)
+    return owner, resource
+
+
+def _resource_paywalled(owner: dict, kind: str) -> bool:
+    """
+    Whether this owner's material needs a subscription.
+
+    Mirrors the lesson it belongs to rather than having a rule of its own:
+    a guide to a free lesson is free, a guide to a subscriber lesson is not.
+    Anything else would either sell help nobody needs or give away the
+    answer keys for the paid content.
+    """
+    if entitlement()["active"]:
+        return False
+    if kind == "lesson":
+        return not billing.lesson_is_free(owner)
+    # A track's own material is free when any lesson in it is.
+    return not any(billing.lesson_is_free(l) for l in owner.get("lessons") or [])
+
+
+@app.route("/grownup/resources")
+@login_required("parent", "teacher")
+@membership_required
+def resources_home():
+    """
+    Everything a grown-up can download, by track.
+
+    Teachers see the shared material; parents see that plus anything marked
+    for home only. Students cannot reach this route at all — the role list
+    on login_required is the first of the three checks, the second is
+    tracks.visible_resources() below, and the third is on the download
+    itself.
+    """
+    user = current_user()
+    role = user["role"]
+
+    groups = []
+    for track in load_tracks():
+        track_items = tracks.visible_resources(track.get("resources") or [], role)
+        lessons = []
+        for lesson in track["lessons"]:
+            items = tracks.visible_resources(lesson.get("resources") or [], role)
+            if items:
+                lessons.append({
+                    "id": lesson["id"], "title": lesson["title"],
+                    "band_label": lesson.get("band_label", ""),
+                    "resources": items,
+                    "locked": _resource_paywalled(lesson, "lesson"),
+                })
+        if track_items or lessons:
+            groups.append({
+                "id": track["id"], "title": track["title"],
+                "description": track.get("description", ""),
+                "band_label": track.get("band_label", ""),
+                "skills": track.get("skills") or [],
+                "resources": track_items,
+                "locked": _resource_paywalled(track, "track"),
+                "lessons": lessons,
+            })
+
+    return render_template("resources.html", groups=groups, role=role)
+
+
+@app.route("/grownup/resources/<kind>/<owner_id>/<path:filename>")
+@login_required("parent", "teacher")
+@membership_required
+def resource_download(kind: str, owner_id: str, filename: str):
+    """
+    Hand over one file, to a grown-up who is allowed it.
+
+    Sent as an attachment with `Cache-Control: private, no-store`: these go
+    out over the same connection as the student's own pages, and a shared
+    or browser cache holding an answer key would undo the whole point.
+    """
+    user = current_user()
+    owner, resource = _resource_or_404(kind, owner_id, filename, user["role"])
+
+    if _resource_paywalled(owner, kind):
+        return redirect(url_for("locked", lesson_id=owner_id))
+
+    directory = RESOURCES_DIR / f"{kind}s" / owner_id
+    if not (directory / filename).is_file():
+        log.error("resource %s/%s/%s is in the manifest but not on disk",
+                  kind, owner_id, filename)
+        abort(404)
+
+    log.info("resource downloaded",
+             extra={"username": user["username"], "resource": f"{kind}/{owner_id}/{filename}"})
+    response = make_response(send_from_directory(directory, filename, as_attachment=True))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@app.route("/grownup/resources/<kind>/<owner_id>/<path:filename>/read")
+@login_required("parent", "teacher")
+@membership_required
+def resource_read(kind: str, owner_id: str, filename: str):
+    """
+    Read a Markdown guide in the browser rather than downloading it.
+
+    Most of these get opened on a phone at a kitchen table, where a
+    downloaded .md file is useless. Only text renders; anything else is
+    sent to the download route instead of being guessed at.
+    """
+    user = current_user()
+    owner, resource = _resource_or_404(kind, owner_id, filename, user["role"])
+
+    if _resource_paywalled(owner, kind):
+        return redirect(url_for("locked", lesson_id=owner_id))
+
+    path = RESOURCES_DIR / f"{kind}s" / owner_id / filename
+    if path.suffix.lower() not in (".md", ".markdown", ".txt"):
+        return redirect(url_for("resource_download", kind=kind, owner_id=owner_id,
+                                filename=filename))
+    if not path.is_file():
+        abort(404)
+
+    body = render_markdown(path.read_text(encoding="utf-8", errors="replace"))
+    response = make_response(render_template(
+        "resource.html", owner=owner, owner_kind=kind, resource=resource, body=body))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 # ── Curriculum tracker ──────────────────────────────────────────────────────────

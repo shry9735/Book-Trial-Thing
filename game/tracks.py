@@ -200,6 +200,91 @@ def skills(source: dict) -> list[dict]:
     return out
 
 
+# What a resource may be. `kind` only picks an icon and a heading — it
+# never affects who may read one.
+RESOURCE_KINDS = ("guide", "answers", "worksheet", "reading", "link")
+
+# Who a resource is for. NEITHER value includes students: that is the whole
+# point of the feature, and there is no third value that would.
+AUDIENCE_GROWNUP = "grownup"   # parents and teachers
+AUDIENCE_PARENT = "parent"     # parents only — a note meant for home
+AUDIENCES = (AUDIENCE_GROWNUP, AUDIENCE_PARENT)
+
+
+def resources(source: dict) -> list[dict]:
+    """
+    Normalise the downloadable material attached to a lesson or a track.
+
+    Two shapes, because both are genuinely useful and forcing one into the
+    other is annoying:
+
+        {"file": "ohms-law-at-home.md", "title": "Helping with Ohm's Law"}
+        {"url": "https://...", "title": "A video that explains it"}
+
+    A `file` names something in resources/<kind>/<owner>/, which is a
+    directory of its own on purpose — NOT under static/ and NOT inside the
+    lesson folder. Both of those are served to anybody who asks: nginx
+    aliases /static/ straight off disk, and /lessons/<id>/<file> has no
+    login on it because lesson artwork has to load for everyone. Putting a
+    parent's answer key in either would hand it to every student with a
+    browser.
+
+    A bare filename is enforced here — no slashes, no "..", no leading dot
+    — so a manifest cannot name a path outside its own directory. The
+    download route additionally serves ONLY files that appear in a
+    manifest, so this is the second of two locks, not the only one.
+    """
+    out = []
+    for entry in source.get("resources") or []:
+        if not isinstance(entry, dict):
+            continue
+        title = (entry.get("title") or "").strip()
+        if not title:
+            continue
+
+        url = (entry.get("url") or "").strip()
+        name = (entry.get("file") or "").strip()
+
+        if name:
+            # A filename, not a path. Anything else is a content bug and is
+            # dropped rather than resolved — see check_content.py.
+            if "/" in name or "\\" in name or name.startswith(".") or ".." in name:
+                log.warning("resource %r in %r is not a bare filename, ignoring",
+                            name, title)
+                continue
+        elif not url:
+            continue
+
+        kind = (entry.get("kind") or ("link" if url else "guide")).strip().lower()
+        audience = (entry.get("audience") or AUDIENCE_GROWNUP).strip().lower()
+
+        out.append({
+            "title": title,
+            "file": name,
+            "url": url,
+            "kind": kind if kind in RESOURCE_KINDS else "guide",
+            "audience": audience if audience in AUDIENCES else AUDIENCE_GROWNUP,
+            "description": (entry.get("description") or "").strip(),
+        })
+    return out
+
+
+def visible_resources(items: list[dict], role: str) -> list[dict]:
+    """
+    Filter a resource list to what this role may see.
+
+    Students get an empty list, always, whatever a manifest says. This is
+    the belt to the route's braces: every place that renders resources runs
+    them through here, so a template that forgets its own check still
+    cannot leak an answer key onto a student's screen.
+    """
+    if role == "parent":
+        return list(items)
+    if role == "teacher":
+        return [r for r in items if r["audience"] != AUDIENCE_PARENT]
+    return []
+
+
 def requirements(source: dict) -> dict:
     """
     Normalise "requires" into a shape the gate can read without guessing.
@@ -290,6 +375,10 @@ def build(tracks_dir: Path, lessons: list[dict]) -> list[dict]:
             lesson["band_label"] = band_label(lesson["band"])
             lesson["skills"] = skills(lesson) or track_skills
             lesson["requires"] = requirements(lesson)
+            # NOT inherited from the track, unlike the three above. A
+            # track-wide guide and a lesson's own are both worth having and
+            # the grown-up sees both, so inheriting would just hide one.
+            lesson["resources"] = resources(lesson)
 
         built.append({
             "id":          track_id,
@@ -306,6 +395,7 @@ def build(tracks_dir: Path, lessons: list[dict]) -> list[dict]:
             "band_label":  band_label(track_band),
             "skills":      track_skills,
             "requires":    requirements(manifest),
+            "resources":   resources(manifest),
             "lessons":     ordered,
             "lesson_ids":  [l["id"] for l in ordered],
         })

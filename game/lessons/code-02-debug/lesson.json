@@ -35,5 +35,13 @@
     "2-AP-17",
     "2-CS-03",
     "3A-CS-03"
+  ],
+  "resources": [
+    {
+      "file": "debugging-together.md",
+      "title": "Debugging together",
+      "kind": "guide",
+      "description": "The one rule: do not tell them what is wrong, even when you can see it."
+    }
   ]
 }
