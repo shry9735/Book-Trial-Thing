@@ -265,6 +265,12 @@ def refresh_catalog() -> None:
         for lesson_id, code in standards.unknown_codes(
                 lessons, _catalog["standard_by_code"]):
             log.warning("lesson %s claims unknown standard %s", lesson_id, code)
+        # A requirement naming something that does not exist is ignored at
+        # runtime rather than enforced, precisely so a typo cannot lock
+        # content permanently — which means the only way anyone finds out
+        # is if it is said out loud here.
+        for problem in tracks.check_requirements(built):
+            log.warning("content: %s", problem)
 
 
 def load_lessons() -> list[dict]:
@@ -304,8 +310,19 @@ def track_of(lesson_id: str) -> dict | None:
 
 def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
     """
-    The lesson standing between this student and the one they asked for, or
+    What is standing between this student and the lesson they asked for, or
     None if nothing is.
+
+    Three kinds of block live here, all pedagogy and none of them payment:
+
+      unassigned    a grown-up has to hand this one out
+      prerequisite  a track or lesson somewhere else is unfinished
+      sequence      the lesson before this one, in this same track
+
+    Reported in that order, worst-remedy-last. "Ask your teacher" is
+    actionable today; "finish Basic Electricity" is a week's work; "finish
+    the lesson before this" is the smallest of the three, so it goes last
+    when several are true at once.
 
     Staging is per-student, so this reads their progress and their own
     assigned menu. Every route that opens a lesson goes through here — the
@@ -313,22 +330,44 @@ def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
     through the menu.
     """
     track = track_of(lesson["id"])
+    by_track = {t["id"]: t for t in load_tracks()}
+    by_lesson = {l["id"]: l for l in load_lessons()}
+
+    # Both the lesson's own requirements and its track's apply. A track-level
+    # requirement holds every lesson in it, which is the point of putting it
+    # on the track.
+    gated = [lesson] + ([track] if track else [])
+    needed = tracks.required_lesson_ids(gated, by_track)
+    if track and track.get("sequential"):
+        needed.update(track["lesson_ids"])
+
+    assigned = db.assigned_lesson_ids(student_id)
+    assigned_ids = None if assigned is None else set(assigned)
+
+    # One query for every status any of the checks below could want, rather
+    # than one per requirement: this runs on /api/quiz, once per answered
+    # question.
+    statuses = db.lesson_statuses(student_id, sorted(needed)) if needed else {}
+    entries = {lesson_id: {"status": status} for lesson_id, status in statuses.items()}
+
+    for item in gated:
+        block = tracks.requirement_block(item, entries, by_track, by_lesson, assigned_ids)
+        if block:
+            return {"track": track, "after": block["title"],
+                    "reason": block["reason"], "remedy": block["remedy"]}
+
     if not track or not track.get("sequential"):
         return None
 
-    # Only this track's statuses, not the student's whole history: this runs
-    # on /api/quiz, once per answered question.
-    statuses = db.lesson_statuses(student_id, track["lesson_ids"])
-    entries = {lesson_id: {"status": status} for lesson_id, status in statuses.items()}
-
-    assigned = db.assigned_lesson_ids(student_id)
-    available_ids = (set(track["lesson_ids"]) if assigned is None
-                     else set(track["lesson_ids"]) & set(assigned))
+    available_ids = (set(track["lesson_ids"]) if assigned_ids is None
+                     else set(track["lesson_ids"]) & assigned_ids)
 
     state = tracks.gate(track, entries, available_ids).get(lesson["id"])
     if not state or not state["locked"]:
         return None
-    return {"track": track, "after": state["after"]}
+    return {"track": track, "after": state["after"],
+            "reason": tracks.BLOCK_SEQUENCE,
+            "remedy": f"Finish “{state['after']}” first."}
 
 
 def assigned_lessons(student_id: int, catalog: list[dict]) -> list[dict]:
@@ -1447,10 +1486,16 @@ def lessons():
     """
     The lesson menu, organised by track.
 
-    Two independent gates decide whether a card is open, and they are kept
-    apart all the way to the template because they mean different things to
-    a student. A paywalled lesson needs a grown-up to buy something; a
-    prerequisite-locked one just needs the lesson before it finishing.
+    Two independent kinds of gate decide whether a card is open, and they
+    are kept apart all the way to the template because they mean different
+    things to a student. A paywalled lesson needs a grown-up to buy
+    something. A blocked one needs work doing — and which work depends on
+    the reason, so the card carries the sentence rather than the template
+    guessing from a boolean.
+
+    db.lesson_entries() already returns the student's whole history in one
+    query, which is what lets the cross-track requirement checks below cost
+    nothing extra: every status they could ask about is already in hand.
     """
     user = current_user()
     entries = db.lesson_entries(user["id"])
@@ -1459,23 +1504,45 @@ def lessons():
     available = assigned_lessons(user["id"], load_lessons())
     available_ids = {l["id"] for l in available}
 
+    assigned = db.assigned_lesson_ids(user["id"])
+    assigned_ids = None if assigned is None else set(assigned)
+
+    all_tracks = load_tracks()
+    by_track = {t["id"]: t for t in all_tracks}
+    by_lesson = {l["id"]: l for l in load_lessons()}
+
     rows = []
-    for track in load_tracks():
+    for track in all_tracks:
         # gate() is given the student's own menu, so a lesson a teacher has
         # hidden cannot become an impassable gate mid-track.
         gates = tracks.gate(track, entries, available_ids)
+        # A requirement on the track holds every lesson in it, so it is
+        # evaluated once here rather than per card.
+        track_block = tracks.requirement_block(
+            track, entries, by_track, by_lesson, assigned_ids)
 
         cards = []
         for lesson in track["lessons"]:
             if lesson["id"] not in available_ids:
                 continue
-            prereq = gates.get(lesson["id"], {"locked": False, "after": None})
+
+            block = track_block or tracks.requirement_block(
+                lesson, entries, by_track, by_lesson, assigned_ids)
+            if not block:
+                prereq = gates.get(lesson["id"], {"locked": False, "after": None})
+                if prereq["locked"]:
+                    block = {"reason": tracks.BLOCK_SEQUENCE,
+                             "title": prereq["after"],
+                             "remedy": f"Finish “{prereq['after']}” first."}
+
             cards.append({
                 **lesson,
                 "progress":     entries.get(lesson["id"], {"status": "not_started"}),
                 "locked":       not (billing.lesson_is_free(lesson) or paid_ok),
-                "prereq_locked": prereq["locked"],
-                "prereq_after":  prereq["after"],
+                "prereq_locked": bool(block),
+                "prereq_after":  block["title"] if block else None,
+                "block_reason":  block["reason"] if block else None,
+                "block_remedy":  block["remedy"] if block else None,
             })
 
         if not cards:
@@ -1483,6 +1550,7 @@ def lessons():
         rows.append({
             **track,
             "cards":    cards,
+            "blocked":  track_block,
             "progress": tracks.progress({**track, "lessons": [c for c in cards]}, entries),
         })
 
@@ -1813,25 +1881,60 @@ def student_detail(username: str):
     student = _visible_student_or_404(user, username)
 
     entries = db.lesson_entries(student["id"])
-    assigned_ids = db.assigned_lesson_ids(student["id"])
+    assigned = db.assigned_lesson_ids(student["id"])
+    assigned_ids = None if assigned is None else set(assigned)
     summary = summarise(student["id"])
 
+    grade, grade_source = _grade_for(student, request.args.get("grade"))
+    lessons = load_lessons()
+    all_tracks = load_tracks()
+    by_track = {t["id"]: t for t in all_tracks}
+    by_lesson = {l["id"]: l for l in lessons}
+
     rows = []
-    for item in load_lessons():
-        entry = entries.get(item["id"], {"status": "not_started"})
-        rows.append({
-            **item,
-            "progress": entry,
-            "score":    quiz_score(item, entry),
-            "assigned": assigned_ids is None or item["id"] in assigned_ids,
-        })
+    for track in all_tracks:
+        track_block = tracks.requirement_block(
+            track, entries, by_track, by_lesson, assigned_ids)
+        gates = tracks.gate(track, entries,
+                            None if assigned_ids is None else assigned_ids)
+        for item in track["lessons"]:
+            entry = entries.get(item["id"], {"status": "not_started"})
+            block = track_block or tracks.requirement_block(
+                item, entries, by_track, by_lesson, assigned_ids)
+            if not block:
+                state = gates.get(item["id"], {"locked": False, "after": None})
+                if state["locked"]:
+                    block = {"reason": tracks.BLOCK_SEQUENCE, "title": state["after"],
+                             "remedy": f"Finish “{state['after']}” first."}
+            rows.append({
+                **item,
+                "track_title": track["title"],
+                "progress": entry,
+                "score":    quiz_score(item, entry),
+                "assigned": assigned_ids is None or item["id"] in assigned_ids,
+                "block":    block,
+                # Where this sits relative to the grade being viewed, which
+                # is what the grown-up page groups on.
+                "fit": _fit(item.get("band"), grade),
+            })
 
     sticking = sticking_points(student["id"], entries)
     unresolved = len([s for s in sticking if not s["resolved"]])
 
+    # The tracker's own numbers, so the page can lead with where this child
+    # stands against their grade rather than with a list of our lessons.
+    statuses = {r["id"]: r["progress"].get("status", "not_started") for r in rows}
+    report = standards.report(load_frameworks(), lessons, grade, statuses)
+
     return render_template("student.html",
                            student=student,
                            rows=rows,
+                           groups=_group_by_fit(rows),
+                           report=report,
+                           grade=grade,
+                           grade_source=grade_source,
+                           grade_label=standards.grade_label,
+                           grades=list(range(0, standards.LAST_GRADE + 1)),
                            summary=summary,
                            headline=headline(summary, unresolved),
                            sticking=sticking,
@@ -1840,6 +1943,42 @@ def student_detail(username: str):
                            quiet=days_since(summary["last_active"]),
                            is_teacher=user["role"] == "teacher",
                            custom_assignment=assigned_ids is not None)
+
+
+# How a lesson's age band sits against the grade being looked at. The
+# grown-up view groups on this, because "what should my child be doing now"
+# is the question they came with — and a lesson three years ahead is not a
+# gap, it is next year.
+FIT_ON = "on"          # this grade is inside the lesson's band
+FIT_BELOW = "below"    # the band ends before this grade: revision
+FIT_ABOVE = "above"    # the band starts after it: later
+FIT_UNKNOWN = "unknown"  # no band stated, so we say nothing
+
+_FIT_ORDER = [FIT_ON, FIT_ABOVE, FIT_BELOW, FIT_UNKNOWN]
+_FIT_TITLES = {
+    FIT_ON:      "At this grade",
+    FIT_ABOVE:   "Ahead of this grade",
+    FIT_BELOW:   "Below this grade",
+    FIT_UNKNOWN: "No age given",
+}
+
+
+def _fit(band: dict | None, grade: int) -> str:
+    if not band or not band.get("grades"):
+        return FIT_UNKNOWN
+    grades = band["grades"]
+    if grade in grades:
+        return FIT_ON
+    return FIT_ABOVE if grade < grades[0] else FIT_BELOW
+
+
+def _group_by_fit(rows: list[dict]) -> list[dict]:
+    """Lesson rows bucketed by how they sit against the grade on screen."""
+    buckets: dict[str, list[dict]] = {}
+    for row in rows:
+        buckets.setdefault(row["fit"], []).append(row)
+    return [{"fit": fit, "title": _FIT_TITLES[fit], "rows": buckets[fit]}
+            for fit in _FIT_ORDER if buckets.get(fit)]
 
 
 # ── Curriculum tracker ──────────────────────────────────────────────────────────

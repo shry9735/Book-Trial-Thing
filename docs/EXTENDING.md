@@ -214,6 +214,87 @@ does not pass through the menu.
 
 ---
 
+## Say who a lesson is for, and what it leans on
+
+Three optional fields, on a lesson or on its track. A lesson inherits its
+track's unless it says otherwise, so the normal case is one declaration per
+track rather than the same lines copied onto every lesson in it.
+
+```json
+{
+  "title": "Basic Electricity",
+  "ages": [12, 15],
+  "requires": { "tracks": ["circuits"] },
+  "skills": [
+    { "name": "Multiply and divide whole numbers", "subject": "Math",
+      "standard": "6.RP.A.3" },
+    { "name": "Solve a one-step equation for an unknown", "subject": "Math",
+      "standard": "6.EE.B.7" }
+  ]
+}
+```
+
+**`ages` or `grades`** — write either. `"ages": [12, 15]` and
+`"grades": [7, 8, 9]` are the same band and each converts to the other, so
+nobody has to keep two lists in step. Omitting both means "no age stated",
+which is *not* the same as "all ages": the UI stays quiet rather than
+claiming a lesson suits everybody.
+
+**`skills`** — advisory, never a gate. This is what tells a parent that
+Ohm's Law needs division and rearranging a formula *before* their child
+stalls on it. A bare string works (`"skills": ["Divide whole numbers"]`);
+the object form adds a subject and a standard code. Cite a code and
+`check_content.py` verifies it exists.
+
+**`requires`** — a real gate. See below.
+
+---
+
+## Block a lesson on work somewhere else
+
+```json
+"requires": {
+  "tracks":  ["basic-electricity"],
+  "lessons": ["code-02-debug"],
+  "assignment": true
+}
+```
+
+A requirement on a **track** holds every lesson in it. A requirement on a
+**lesson** holds just that one. `"assignment": true` means a grown-up has
+to hand it out — with no assignment row at all, that lesson stays shut,
+because nothing has been handed out.
+
+Keep the four block reasons straight; the UI shows a different sentence for
+each and they are not interchangeable:
+
+| Reason | Means | The student's remedy |
+|---|---|---|
+| `subscription` | Nobody is paying | Ask a grown-up to sort the billing |
+| `unassigned` | `"assignment": true` and it has not been set | Ask your teacher |
+| `prerequisite` | A `requires` track or lesson is unfinished | Go and finish that |
+| `sequence` | The lesson before it, in the same `sequential` track | Finish that one |
+
+`app.prerequisite_block()` reports them in that order — cheapest remedy
+first, because "ask your teacher" is actionable today and "finish another
+whole track" is a week.
+
+Then check it:
+
+```bash
+python scripts/check_content.py           # dangling ids, cycles, bad bands
+python scripts/check_content.py --list    # the whole content map
+```
+
+A requirement naming something that does not exist is **ignored at
+runtime**, deliberately: a typo must not be able to lock content
+permanently and invisibly. The cost of that choice is that the typo is
+silent, which is exactly why the check exists and why the app also logs it
+at boot. `check_content.py` catches dangling ids, requirement cycles, bands
+that were written but did not parse, and skills citing unknown standards.
+
+---
+
 ## Align a lesson to a standard
 
 Add the codes to the lesson's own manifest:

@@ -41,6 +41,55 @@
   </div>
 </div>
 
+{# ── Where this child stands against their grade ─────────────────────
+   The page leads with this rather than with a list of our lessons, because
+   "is my kid where they should be" is the question a grown-up arrives
+   with. The caveat is not optional: there is no national curriculum, so
+   these numbers are a framework's opinion, not a verdict. #}
+<div class="panel grade-panel">
+  <div class="panel-head teal">
+    {{ grade_label(grade) }}
+    <span class="head-note">
+      {% if grade_source == 'recorded' %}{{ student.name.split(' ')[0] }}'s grade
+      {% elif grade_source == 'chosen' %}just looking
+      {% else %}a guess — nobody has set a grade{% endif %}
+    </span>
+  </div>
+  <div class="billing-body">
+    <div class="grade-row-top">
+      <div class="std-summary">
+        <div class="std-stat">
+          <div class="std-stat-num done">{{ report.totals.covered }}</div>
+          <div class="std-stat-lbl">Standards met here</div>
+        </div>
+        <div class="std-stat">
+          <div class="std-stat-num open">{{ report.taught }}</div>
+          <div class="std-stat-lbl">We teach at this grade</div>
+        </div>
+        <div class="std-stat">
+          <div class="std-stat-num none">{{ report.total }}</div>
+          <div class="std-stat-lbl">Exist at this grade</div>
+        </div>
+      </div>
+      <form method="GET" action="{{ url_for('student_detail', username=student.username) }}">
+        <label class="grade-label" for="gradepick">Show against</label>
+        <select id="gradepick" name="grade" onchange="this.form.submit()">
+          {% for g in grades %}
+            <option value="{{ g }}" {% if g == grade %}selected{% endif %}>{{ grade_label(g) }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+    <p class="dim small" style="margin:10px 0 0">
+      There is no national US curriculum — each state sets its own. These are
+      the frameworks most state standards are built from, and the match to our
+      lessons is our own reading.
+      <a href="{{ url_for('student_standards', username=student.username) }}">
+        See it standard by standard →</a>
+    </p>
+  </div>
+</div>
+
 <div class="stat-row">
   <div class="panel stat-box">
     <div class="stat-num">{{ summary.completed }} <span class="stat-of">/ {{ summary.total }}</span></div>
@@ -141,67 +190,97 @@
 {% endif %}
 
 <div class="panel">
-  <div class="panel-head">All Lessons</div>
+  <div class="panel-head">
+    Lessons
+    <span class="head-note">grouped against {{ grade_label(grade) }}</span>
+  </div>
   <div style="font-size:0.78rem;color:var(--ink-dim);padding:0 16px 10px">
     {% if custom_assignment %}
       Only the checked lessons show up on {{ student.name }}'s menu.
     {% else %}
-      Everything is available by default — uncheck any to hide them from {{ student.name }}'s menu.
+      Everything is available by default — uncheck any to hide them from
+      {{ student.name }}'s menu.
     {% endif %}
   </div>
+
   <form method="POST" action="{{ url_for('student_assign', username=student.username) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-    <table class="data">
-      <thead>
-        <tr>
-          <th>On menu</th>
-          <th>Lesson</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Quiz</th>
-          <th>Quiz Time</th>
-          <th>Last Worked On</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+    {% for group in groups %}
+      <div class="fit-head fit-{{ group.fit }}">
+        {{ group.title }}
+        <span class="fit-count">{{ group.rows | length }}</span>
+      </div>
+      <table class="data">
+        <thead>
           <tr>
-            <td>
-              <input type="checkbox" name="lesson_id" value="{{ row.id }}" {{ 'checked' if row.assigned }}>
-            </td>
-            <td>
-              <div style="font-weight:700">{{ row.title }}</div>
-              <div style="font-size:0.72rem;color:var(--ink-dim)">{{ row.subject }}</div>
-            </td>
-            <td style="font-size:0.78rem;color:var(--ink-mid)">
-              {% if row.type == 'video' %}▶ Video
-              {% elif row.type == 'interactive' %}🎮 Activity
-              {% else %}📖 Reading{% endif %}
-            </td>
-            <td>
-              <span class="pill {{ row.progress.status }}">
-                {{ row.progress.status | replace('_', ' ') | title }}
-              </span>
-            </td>
-            <td>
-              {% if row.score is not none %}
-                <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--brand)' }}">{{ row.score }}%</b>
-              {% else %}—{% endif %}
-            </td>
-            <td style="color:var(--ink-dim);font-size:0.78rem">
-              {% set secs = row.progress.get('quiz_seconds') %}
-              {% if secs %}
-                {{ (secs // 60) }}m {{ '%02d' | format(secs % 60) }}s
-              {% else %}—{% endif %}
-            </td>
-            <td style="color:var(--ink-dim);font-size:0.78rem">
-              {% set when = row.progress.get('updated') %}
-              {{ when[:16] | replace('T', ' ') if when else '—' }}
-            </td>
+            <th>On menu</th>
+            <th>Lesson</th>
+            <th>Ages</th>
+            <th>Status</th>
+            <th>Quiz</th>
+            <th>Last worked on</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for row in group.rows %}
+            <tr>
+              <td>
+                <input type="checkbox" name="lesson_id" value="{{ row.id }}"
+                       {{ 'checked' if row.assigned }}>
+              </td>
+              <td>
+                <div style="font-weight:700">{{ row.title }}</div>
+                <div class="row-track">{{ row.track_title }}</div>
+
+                {% if row.block %}
+                  {# Says WHICH kind of block and what clears it. "Locked" on
+                     its own sends a parent to support. #}
+                  <div class="row-block block-{{ row.block.reason }}">
+                    {%- if row.block.reason == 'unassigned' %}📋 Needs handing out
+                    {%- elif row.block.reason == 'prerequisite' %}🔗 Blocked
+                    {%- else %}🔗 Next in line{% endif %} —
+                    {{ row.block.remedy }}
+                  </div>
+                {% endif %}
+
+                {% if row.standards %}
+                  <div class="row-standards">
+                    {% for code in row.standards %}<code>{{ code }}</code>{% endfor %}
+                  </div>
+                {% endif %}
+
+                {% if row.skills %}
+                  {# The whole point of the skills list: a grown-up can see
+                     what maths a lesson leans on before their child stalls. #}
+                  <div class="row-skills">
+                    <b>Wants first:</b>
+                    {% for skill in row.skills %}{{ skill.name }}{% if skill.subject %}
+                      <span class="skill-subject">{{ skill.subject }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+                  </div>
+                {% endif %}
+              </td>
+              <td class="nowrap dim small">{{ row.band_label or '—' }}</td>
+              <td>
+                <span class="pill {{ row.progress.status }}">
+                  {{ row.progress.status | replace('_', ' ') | title }}
+                </span>
+              </td>
+              <td>
+                {% if row.score is not none %}
+                  <b style="color:{{ 'var(--good)' if row.score >= 80 else 'var(--brand)' }}">{{ row.score }}%</b>
+                {% else %}—{% endif %}
+              </td>
+              <td class="dim small">
+                {% set when = row.progress.get('updated') %}
+                {{ when[:16] | replace('T', ' ') if when else '—' }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+
     <div style="padding:12px 16px">
       <button class="btn" type="submit">Save lesson menu</button>
     </div>

@@ -393,7 +393,9 @@ responsible:
 |---|---|
 | Is this account paid up? | `billing.entitlement_for()` |
 | Who can see this student? | `db.visible_students()`, `db.can_see_student()` |
-| Has the student reached this lesson? | `app.prerequisite_block()` → `tracks.gate()` |
+| Has the student reached this lesson? | `app.prerequisite_block()` |
+| Is that a sequence, a prerequisite or an unassigned lesson? | `tracks.requirement_block()`, then `tracks.gate()` |
+| Who is this lesson for, and what does it lean on? | `tracks.band()`, `tracks.skills()` |
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |

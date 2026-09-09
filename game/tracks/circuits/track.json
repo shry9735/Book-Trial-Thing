@@ -2,5 +2,20 @@
   "title": "Circuits",
   "description": "Wires, power, and why nothing works the first time.",
   "order": 10,
-  "sequential": true
+  "sequential": true,
+  "ages": [
+    11,
+    14
+  ],
+  "skills": [
+    {
+      "name": "Follow a diagram and match it to a real object",
+      "subject": "General"
+    },
+    {
+      "name": "Measure and compare small numbers",
+      "subject": "Math",
+      "standard": "6.RP.A.3"
+    }
+  ]
 }

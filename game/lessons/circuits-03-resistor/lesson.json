@@ -44,5 +44,10 @@
   ],
   "standards": [
     "MS-PS2-3"
-  ]
+  ],
+  "requires": {
+    "lessons": [
+      "resistors-basics"
+    ]
+  }
 }

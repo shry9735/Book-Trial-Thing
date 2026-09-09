@@ -6,6 +6,7 @@ done here — and which ones we do not teach at all.
 
 - [The thing to understand first](#the-thing-to-understand-first)
 - [What we track against](#what-we-track-against)
+- [Where this shows up](#where-this-shows-up)
 - [Licensing, and why we ship no standards text](#licensing-and-why-we-ship-no-standards-text)
 - [How coverage is worked out](#how-coverage-is-worked-out)
 - [Grades, ages, and why we ask](#grades-ages-and-why-we-ask)
@@ -104,6 +105,27 @@ a whole curriculum and the page says so.
 gets at 7.RP.A.2 (it is a proportional relationship, so we think it does).
 `claim_status` on each framework records whose opinion it is, and the UI
 never prints a coverage figure without that caveat attached.
+
+## Where this shows up
+
+Two screens, and they answer different questions.
+
+**`/grownup/student/<name>`** is the one a parent lands on. It leads with
+where the child stands against their grade, then lists every lesson
+*grouped by how it sits against that grade* — at it, ahead of it, below it.
+Each row carries the lesson's own age band, the standards it claims, the
+maths or reading it leans on, and, if it will not open, which of the four
+reasons is holding it. Changing the grade regroups the page.
+
+**`/grownup/student/<name>/standards`** is the full breakdown: every
+standard at that grade, framework by framework, with the lessons that touch
+it. Use it when the summary raises a question.
+
+Lesson age bands come from `tracks.band()` and are content, not schema —
+see [Extending it](EXTENDING.md). They are independent of the standards
+catalogue: a band says who a lesson is *for*, a standard says what it
+*teaches*, and a lesson can perfectly well be aimed at 7th graders while
+covering a 6th-grade standard.
 
 ## Grades, ages, and why we ask
 

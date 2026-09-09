@@ -103,5 +103,29 @@
     "2-AP-17",
     "MS-ETS1-2",
     "MS-ETS1-3"
+  ],
+  "ages": [
+    13,
+    16
+  ],
+  "requires": {
+    "tracks": [
+      "basic-electricity"
+    ],
+    "lessons": [
+      "code-02-debug"
+    ],
+    "assignment": true
+  },
+  "skills": [
+    {
+      "name": "Read a multi-step problem and pick what matters",
+      "subject": "General"
+    },
+    {
+      "name": "Compare two options against the same criteria",
+      "subject": "Science",
+      "standard": "MS-ETS1-2"
+    }
   ]
 }

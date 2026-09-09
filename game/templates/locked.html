@@ -2,35 +2,66 @@
 {% block title %}Locked — Ignite Academy{% endblock %}
 
 {% block stage_content %}
-{# Two quite different reasons land here, and they have different remedies.
-   A staged lesson needs the one before it finishing — nothing to buy, and
-   nothing a grown-up has to do. A paywalled one is not the student's
-   problem to solve at all, so it tells them who to ask instead of selling
-   to them. #}
+{# Four reasons land here and they have four different remedies. Three are
+   work — the lesson before this one, a whole other track, or a grown-up
+   who has not handed it out — and none of those is anything to buy. The
+   fourth is a subscription, which is not the student's problem to solve at
+   all, so it tells them who to ask instead of selling to them. #}
 <div class="panel locked-panel">
   <div class="panel-head">
     {% if why == 'prerequisite' %}Not yet{% else %}This one's locked{% endif %}
   </div>
   <div class="locked-body">
-    <div class="locked-icon">{% if why == 'prerequisite' %}🔗{% else %}🔒{% endif %}</div>
+    <div class="locked-icon">
+      {%- if why != 'prerequisite' %}🔒
+      {%- elif blocked and blocked.reason == 'unassigned' %}📋
+      {%- else %}🔗{% endif -%}
+    </div>
 
     {% if why == 'prerequisite' %}
+      {% set reason = blocked.reason if blocked else 'sequence' %}
+
       <h2 class="locked-title">
-        {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %} opens a bit later
+        {% if lesson %}“{{ lesson.title }}”{% else %}That lesson{% endif %}
+        {% if reason == 'unassigned' %}isn't set for you{% else %}opens a bit later{% endif %}
       </h2>
+
       <p class="locked-text">
-        {% if blocked and blocked.after %}
-          Finish <b>“{{ blocked.after }}”</b> first and this one unlocks.
+        {# The remedy sentence is built where the reason is known, so this
+           does not have to reconstruct it from a boolean and get it wrong. #}
+        {% if blocked and blocked.remedy %}
+          {{ blocked.remedy }}
         {% else %}
           Work through this track in order and this one will open up.
         {% endif %}
       </p>
+
       <p class="locked-text dim">
-        {% if blocked and blocked.track %}
+        {% if reason == 'unassigned' %}
+          Your teacher chooses which lessons to hand out. Ask them for this one.
+        {% elif reason == 'prerequisite' %}
+          This one builds on work from somewhere else, so it waits until that's done.
+        {% elif blocked and blocked.track %}
           {{ blocked.track.title }} lessons are meant to be done in order — each
           one builds on the last.
         {% endif %}
       </p>
+
+      {% if lesson and lesson.skills %}
+        {# Advisory, never a gate. If a student is stuck it is often because
+           the prep is missing, and naming it is more use than "try again". #}
+        <div class="locked-skills">
+          <div class="skills-head">Handy to know first</div>
+          <ul class="skills-list">
+            {% for skill in lesson.skills %}
+              <li>
+                {{ skill.name }}
+                {% if skill.subject %}<span class="skill-subject">{{ skill.subject }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
 
     {% else %}
       <h2 class="locked-title">

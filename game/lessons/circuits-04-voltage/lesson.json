@@ -134,5 +134,17 @@
     "7.RP.A.2",
     "6.EE.B.7",
     "HSA.CED.A.4"
+  ],
+  "skills": [
+    {
+      "name": "Multiply and divide whole numbers",
+      "subject": "Math",
+      "standard": "6.RP.A.3"
+    },
+    {
+      "name": "Rearrange a formula to solve for any of its parts",
+      "subject": "Math",
+      "standard": "HSA.CED.A.4"
+    }
   ]
 }

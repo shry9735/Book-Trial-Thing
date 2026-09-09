@@ -641,8 +641,18 @@ def t_pages_render():
     login(student, "racer0")
     for path in ("/classroom", "/lessons", "/satchel"):
         visit(student, path)
+    # A lesson the student has not earned redirects to /locked rather than
+    # rendering, which is the gate doing its job — see selftest_gating.py
+    # for which reason applies to which. Here we only care that the page
+    # answers at all, so either is fine.
     for lesson in appmod.load_lessons():
-        visit(student, f"/lesson/{lesson['id']}")
+        res = student.get(f"/lesson/{lesson['id']}")
+        if res.status_code not in (200, 302):
+            broken.append((f"/lesson/{lesson['id']}", res.status_code, "200 or 302"))
+    # /locked answers 402 for a paywall and 403 for a gate, never 200 —
+    # a "you cannot have this" page returning OK would be a lie to a cache.
+    visit(student, "/locked", 402)
+    visit(student, "/locked?why=prerequisite&lesson_id=story-science-fair", 403)
 
     teacher = client()
     login(teacher, "ms_chen")

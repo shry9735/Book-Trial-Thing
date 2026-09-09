@@ -1630,3 +1630,57 @@ a.role-tab         { text-decoration: none; display: inline-flex;
                      color: var(--ink-mid); margin-bottom: 5px; }
 .grade-row         { display: flex; align-items: center; gap: 8px; }
 .grade-hint        { margin-top: 4px; font-size: 11px; color: var(--ink-dim); }
+
+/* ── Grown-up view, organised against a grade ──────────────────────────────
+   The lesson table is grouped by how each lesson sits against the grade on
+   screen, so the band heading has to be readable at a glance while scanning
+   for "what should they be doing now". */
+
+.grade-panel       { margin-bottom: 16px; }
+.grade-row-top     { display: flex; flex-wrap: wrap; align-items: flex-start;
+                     justify-content: space-between; gap: 20px; }
+
+.fit-head          { display: flex; align-items: center; gap: 10px;
+                     padding: 12px 16px 7px; font-size: 11px; font-weight: 700;
+                     text-transform: uppercase; letter-spacing: .07em;
+                     border-top: 1px solid var(--border-lt); }
+.panel form > .fit-head:first-of-type { border-top: none; }
+.fit-count         { font-weight: 400; opacity: .7; letter-spacing: 0; }
+
+/* On-grade is the answer to the question they came with, so it is the only
+   one that gets the brand colour. Ahead and below are context, not alarm. */
+.fit-head.fit-on      { color: var(--good-deep); }
+.fit-head.fit-above   { color: var(--accent); }
+.fit-head.fit-below   { color: var(--ink-dim); }
+.fit-head.fit-unknown { color: var(--ink-dim); }
+
+.row-track         { font-size: 0.72rem; color: var(--ink-dim); }
+.row-standards     { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.row-standards code { font-size: 10px; color: var(--ink-mid);
+                      background: var(--border-lt); border-radius: 3px;
+                      padding: 1px 5px; }
+.row-skills        { margin-top: 4px; font-size: 0.74rem; color: var(--ink-mid);
+                     line-height: 1.45; }
+.row-skills b      { color: var(--ink-dim); font-weight: 700; }
+
+/* Why a lesson will not open. Colour-coded by whose problem it is: a
+   grown-up can lift "needs handing out" right now; the others are work. */
+.row-block         { margin-top: 5px; font-size: 0.74rem; line-height: 1.4;
+                     padding: 3px 7px; border-radius: 4px; display: inline-block; }
+.block-unassigned  { background: var(--gold-pale); color: var(--gold-deep); }
+.block-prerequisite{ background: var(--accent-lt); color: var(--accent-dk); }
+.block-sequence    { background: var(--border-lt); color: var(--ink-mid); }
+
+.nowrap            { white-space: nowrap; }
+
+/* The advisory prep-skills block on the locked page. */
+.locked-skills     { margin: 16px auto 0; max-width: 26rem; text-align: left;
+                     background: var(--brand-lt); border-radius: 6px;
+                     padding: 12px 16px; }
+.skills-head       { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: .07em; color: var(--ink-mid); margin-bottom: 6px; }
+.skills-list       { margin: 0; padding-left: 18px; font-size: 0.86rem;
+                     line-height: 1.6; color: var(--ink); }
+.skill-subject     { font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+                     color: var(--ink-dim); background: var(--surface);
+                     border-radius: 3px; padding: 1px 5px; margin-left: 4px; }

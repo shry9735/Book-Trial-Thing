@@ -2,5 +2,10 @@
   "title": "Code",
   "description": "Loops, bugs, and telling a machine exactly what you mean.",
   "order": 30,
-  "sequential": false
+  "sequential": false,
+  "ages": [11, 15],
+  "skills": [
+    { "name": "Put a set of steps in the right order", "subject": "General" },
+    { "name": "Use a letter to stand for a number that changes", "subject": "Math", "standard": "6.EE.B.6" }
+  ]
 }
