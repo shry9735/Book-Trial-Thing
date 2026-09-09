@@ -26,10 +26,15 @@
       "choices": [
         "The shorter one",
         "The longer one",
-        "Either \u2014 it doesn't matter"
+        "Either — it doesn't matter"
       ],
       "answer": 1,
       "explain": "The long leg is the anode (positive). LEDs only conduct one way, so backwards means no light at all."
     }
+  ],
+  "standards": [
+    "2-CS-02",
+    "MS-PS3-5",
+    "MS-ETS1-4"
   ]
 }

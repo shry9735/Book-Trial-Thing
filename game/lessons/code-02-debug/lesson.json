@@ -13,7 +13,7 @@
       "prompt": "The sensor returns 0 every few readings. What does that usually mean?",
       "choices": [
         "The sensor is broken and needs replacing",
-        "A loose connection \u2014 an intermittent fault",
+        "A loose connection — an intermittent fault",
         "The battery is dead"
       ],
       "answer": 1,
@@ -30,5 +30,10 @@
       "answer": 1,
       "explain": "An engineer's first question is never \"what should I change?\" It's \"what is actually happening?\""
     }
+  ],
+  "standards": [
+    "2-AP-17",
+    "2-CS-03",
+    "3A-CS-03"
   ]
 }

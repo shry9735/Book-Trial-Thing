@@ -1,0 +1,127 @@
+{
+  "id": "ngss",
+  "name": "Next Generation Science Standards",
+  "short": "NGSS",
+  "subject": "Science and engineering",
+  "url": "https://www.nextgenscience.org/",
+  "owner": "NGSS Lead States. \"NGSS\" is a registered trademark of WestEd.",
+  "claim_status": "self_assessed",
+  "adoption": "Twenty states and the District of Columbia use the NGSS as written. About forty-four states use science standards built on the same National Research Council framework, so the ideas usually match even where the codes do not.",
+  "code_help": "MS-PS3-3 reads as: middle school, Physical Science, core idea 3 (Energy), third performance expectation.",
+  "standards": [
+    {
+      "code": "MS-PS2-3",
+      "grades": [6, 7, 8],
+      "strand": "Forces and interactions",
+      "summary": "Investigate what makes an electric or magnetic force stronger or weaker."
+    },
+    {
+      "code": "MS-PS2-5",
+      "grades": [6, 7, 8],
+      "strand": "Forces and interactions",
+      "summary": "Show that objects can push or pull each other without touching."
+    },
+    {
+      "code": "MS-PS3-1",
+      "grades": [6, 7, 8],
+      "strand": "Energy",
+      "summary": "Describe how a moving object's energy depends on its mass and speed."
+    },
+    {
+      "code": "MS-PS3-2",
+      "grades": [6, 7, 8],
+      "strand": "Energy",
+      "summary": "Model how stored energy changes when objects in a system move relative to each other."
+    },
+    {
+      "code": "MS-PS3-3",
+      "grades": [6, 7, 8],
+      "strand": "Energy",
+      "summary": "Design and improve a device that moves heat energy where you want it."
+    },
+    {
+      "code": "MS-PS3-4",
+      "grades": [6, 7, 8],
+      "strand": "Energy",
+      "summary": "Plan an experiment about what changes an object's temperature."
+    },
+    {
+      "code": "MS-PS3-5",
+      "grades": [6, 7, 8],
+      "strand": "Energy",
+      "summary": "Argue from evidence that energy moves into or out of an object when it speeds up or slows down."
+    },
+    {
+      "code": "MS-PS4-1",
+      "grades": [6, 7, 8],
+      "strand": "Waves and information transfer",
+      "summary": "Use a mathematical model to describe how waves carry energy."
+    },
+    {
+      "code": "MS-PS4-3",
+      "grades": [6, 7, 8],
+      "strand": "Waves and information transfer",
+      "summary": "Explain why digital signals are a more reliable way to send information than analogue ones."
+    },
+    {
+      "code": "MS-ETS1-1",
+      "grades": [6, 7, 8],
+      "strand": "Engineering design",
+      "summary": "State clearly what a design has to achieve and what limits it, before starting to build."
+    },
+    {
+      "code": "MS-ETS1-2",
+      "grades": [6, 7, 8],
+      "strand": "Engineering design",
+      "summary": "Compare competing designs against the same set of criteria, methodically."
+    },
+    {
+      "code": "MS-ETS1-3",
+      "grades": [6, 7, 8],
+      "strand": "Engineering design",
+      "summary": "Test several designs, then combine the best parts of each into a better one."
+    },
+    {
+      "code": "MS-ETS1-4",
+      "grades": [6, 7, 8],
+      "strand": "Engineering design",
+      "summary": "Build, test, change, and test again until the design works well."
+    },
+    {
+      "code": "HS-PS3-1",
+      "grades": [9, 10, 11, 12],
+      "strand": "Energy",
+      "summary": "Calculate how energy moves between parts of a system when one part changes."
+    },
+    {
+      "code": "HS-PS3-3",
+      "grades": [9, 10, 11, 12],
+      "strand": "Energy",
+      "summary": "Design and build a device that converts one form of energy into another."
+    },
+    {
+      "code": "HS-PS3-5",
+      "grades": [9, 10, 11, 12],
+      "strand": "Energy",
+      "summary": "Use a model to predict how objects interact through electric or magnetic fields."
+    },
+    {
+      "code": "HS-PS4-2",
+      "grades": [9, 10, 11, 12],
+      "strand": "Waves and information transfer",
+      "summary": "Evaluate why digital transmission and storage dominate modern electronics."
+    },
+    {
+      "code": "HS-ETS1-2",
+      "grades": [9, 10, 11, 12],
+      "strand": "Engineering design",
+      "summary": "Break a large design problem into smaller ones that can be solved separately."
+    },
+    {
+      "code": "HS-ETS1-3",
+      "grades": [9, 10, 11, 12],
+      "strand": "Engineering design",
+      "summary": "Weigh a design against cost, safety, reliability, and its effect on people."
+    }
+  ]
+}

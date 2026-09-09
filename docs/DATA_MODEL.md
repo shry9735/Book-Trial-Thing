@@ -101,6 +101,7 @@ sessions and org membership, and differ only in `role`.
 | `terms_accepted_at` | |
 | `must_change_password` | Somebody else chose this password. Holds the account on `/settings/first-password` |
 | `created_by` | The teacher who provisioned this account, if anyone. `SET NULL` |
+| `grade_level` | Which US grade a student is in, 0-12. **Nullable, and NULL is a real answer** |
 
 `session_epoch` is the mechanism that makes a password reset actually
 throw an attacker out. The session cookie carries the epoch it was issued
@@ -115,6 +116,14 @@ account has `email IS NULL`, `must_change_password = true` and a
 verification check entirely when there is no address to verify — see
 `app.login` — while an account that *does* carry an email is gated exactly
 as before.
+
+`grade_level` exists for the [curriculum tracker](STANDARDS.md), which
+measures a child against standards written per grade. It is deliberately a
+grade somebody states rather than a date of birth we derive: a birthday is
+the kind of data a product for children should not collect if it can avoid
+it, and it would not settle the question anyway, because cut-off dates vary
+by state and children are held back and skipped ahead. NULL means nobody
+has said, and the tracker asks rather than guessing silently.
 
 `must_change_password` is set two ways: at provisioning, and whenever a
 teacher resets a student who forgot theirs. While it is true the only page

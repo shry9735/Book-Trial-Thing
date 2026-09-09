@@ -10,36 +10,36 @@
   "examples": [
     {
       "id": "p1",
-      "prompt": "A 6V battery pushes current through a 200\u03a9 resistor. How much current flows?",
+      "prompt": "A 6V battery pushes current through a 200Ω resistor. How much current flows?",
       "choices": [
         "0.03 A",
         "30 A",
         "1200 A"
       ],
       "answer": 0,
-      "explain": "I = V \u00f7 R = 6 \u00f7 200 = 0.03 A."
+      "explain": "I = V ÷ R = 6 ÷ 200 = 0.03 A."
     },
     {
       "id": "p2",
-      "prompt": "3 A flows through a 10\u03a9 resistor. What's the voltage across it?",
+      "prompt": "3 A flows through a 10Ω resistor. What's the voltage across it?",
       "choices": [
         "3.33 V",
         "30 V",
         "13 V"
       ],
       "answer": 1,
-      "explain": "V = I \u00d7 R = 3 \u00d7 10 = 30 V."
+      "explain": "V = I × R = 3 × 10 = 30 V."
     },
     {
       "id": "p3",
       "prompt": "A resistor has 5V across it and 0.5A flowing through it. What's its resistance?",
       "choices": [
-        "2.5 \u03a9",
-        "10 \u03a9",
-        "0.1 \u03a9"
+        "2.5 Ω",
+        "10 Ω",
+        "0.1 Ω"
       ],
       "answer": 1,
-      "explain": "R = V \u00f7 I = 5 \u00f7 0.5 = 10 \u03a9."
+      "explain": "R = V ÷ I = 5 ÷ 0.5 = 10 Ω."
     }
   ],
   "quiz": [
@@ -52,7 +52,7 @@
         "Add I and R"
       ],
       "answer": 0,
-      "explain": "Covering V leaves I and R side by side \u2014 side by side means multiply: V = I \u00d7 R.",
+      "explain": "Covering V leaves I and R side by side — side by side means multiply: V = I × R.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
@@ -64,68 +64,75 @@
         "V over I, so divide V by I"
       ],
       "answer": 1,
-      "explain": "Covering I leaves V stacked over R \u2014 stacked means divide: I = V \u00f7 R.",
+      "explain": "Covering I leaves V stacked over R — stacked means divide: I = V ÷ R.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
       "id": "m1",
-      "prompt": "A 12V battery pushes current through a 4\u03a9 resistor. Cover I on the triangle \u2014 how much current flows?",
+      "prompt": "A 12V battery pushes current through a 4Ω resistor. Cover I on the triangle — how much current flows?",
       "choices": [
         "3 A",
         "8 A",
         "48 A"
       ],
       "answer": 0,
-      "explain": "Covering I leaves V over R: I = 12 \u00f7 4 = 3 A.",
+      "explain": "Covering I leaves V over R: I = 12 ÷ 4 = 3 A.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
       "id": "m2",
-      "prompt": "2 A flows through a 6\u03a9 resistor. Cover V on the triangle \u2014 what's the voltage?",
+      "prompt": "2 A flows through a 6Ω resistor. Cover V on the triangle — what's the voltage?",
       "choices": [
         "3 V",
         "8 V",
         "12 V"
       ],
       "answer": 2,
-      "explain": "Covering V leaves I and R side by side: V = 2 \u00d7 6 = 12 V.",
+      "explain": "Covering V leaves I and R side by side: V = 2 × 6 = 12 V.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
       "id": "m3",
-      "prompt": "A resistor has 20V across it with 4 A flowing through it. Cover R on the triangle \u2014 what's the resistance?",
+      "prompt": "A resistor has 20V across it with 4 A flowing through it. Cover R on the triangle — what's the resistance?",
       "choices": [
-        "5 \u03a9",
-        "16 \u03a9",
-        "80 \u03a9"
+        "5 Ω",
+        "16 Ω",
+        "80 Ω"
       ],
       "answer": 0,
-      "explain": "Covering R leaves V over I: R = 20 \u00f7 4 = 5 \u03a9.",
+      "explain": "Covering R leaves V over I: R = 20 ÷ 4 = 5 Ω.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
       "id": "m4",
-      "prompt": "A 10V battery pushes current through a 2\u03a9 resistor. Cover I on the triangle \u2014 how much current flows?",
+      "prompt": "A 10V battery pushes current through a 2Ω resistor. Cover I on the triangle — how much current flows?",
       "choices": [
         "2 A",
         "5 A",
         "20 A"
       ],
       "answer": 1,
-      "explain": "Covering I leaves V over R: I = 10 \u00f7 2 = 5 A.",
+      "explain": "Covering I leaves V over R: I = 10 ÷ 2 = 5 A.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     },
     {
       "id": "m5",
-      "prompt": "0.5 A flows through a 20\u03a9 resistor. Cover V on the triangle \u2014 what's the voltage?",
+      "prompt": "0.5 A flows through a 20Ω resistor. Cover V on the triangle — what's the voltage?",
       "choices": [
         "0.025 V",
         "10 V",
         "40 V"
       ],
       "answer": 1,
-      "explain": "Covering V leaves I and R side by side: V = 0.5 \u00d7 20 = 10 V.",
+      "explain": "Covering V leaves I and R side by side: V = 0.5 × 20 = 10 V.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
     }
+  ],
+  "standards": [
+    "MS-PS2-3",
+    "MS-PS3-5",
+    "7.RP.A.2",
+    "6.EE.B.7",
+    "HSA.CED.A.4"
   ]
 }

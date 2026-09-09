@@ -41,9 +41,9 @@ PACKAGE = REPO / "game"
 LAYERS: list[tuple[str, list[str]]] = [
     ("entrypoint", ["wsgi", "manage", "migrate_json", "import_assets",
                     "selftest", "selftest_billing", "selftest_classrooms",
-                    "selftest_accounts"]),
+                    "selftest_accounts", "selftest_standards"]),
     ("web",        ["app"]),
-    ("service",    ["billing", "security", "emailer", "tracks"]),
+    ("service",    ["billing", "security", "emailer", "tracks", "standards"]),
     ("data",       ["db"]),
     ("platform",   ["config", "logsetup"]),
 ]

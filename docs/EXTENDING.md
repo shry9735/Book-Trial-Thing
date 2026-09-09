@@ -214,6 +214,41 @@ does not pass through the menu.
 
 ---
 
+## Align a lesson to a standard
+
+Add the codes to the lesson's own manifest:
+
+```json
+{ "title": "Voltage & Ohm's Law", "standards": ["MS-PS2-3", "7.RP.A.2"] }
+```
+
+Then check it, because a mistyped code fails silently — the lesson stops
+counting towards anything and the tracker shows a gap that is not real:
+
+```bash
+python scripts/check_standards.py           # exits non-zero on a bad code
+python scripts/check_standards.py --list    # the whole catalogue, with hit counts
+```
+
+To add a standard the catalogue does not have, append it to the framework's
+file in `game/standards/` with `code`, `grades` (0 is kindergarten),
+`strand`, and a `summary` **in your own words**.
+
+That last part is a licensing rule, not a style preference. CSTA's
+standards are CC BY-NC-SA — NonCommercial — and Common Core's licence
+forbids condensing; pasting either publisher's wording in would be a
+problem for a product that charges money. The checks in
+`scripts/check_standards.py` and `selftest_standards.py` both reject a
+summary that reads like the original. [docs/STANDARDS.md](STANDARDS.md) has
+the full picture, including what CSTA requires before you may publicly
+claim alignment at all.
+
+Be conservative about what a lesson claims. A lesson that mentions a thing
+in passing does not cover the standard, and over-claiming is exactly what
+would make the tracker worthless to the parent reading it.
+
+---
+
 ## Add a classroom feature
 
 A classroom is the roster a teacher is assigned to, and it decides which

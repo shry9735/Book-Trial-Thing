@@ -1,0 +1,80 @@
+{
+  "id": "ccss-math",
+  "name": "Common Core State Standards for Mathematics",
+  "short": "Common Core math",
+  "subject": "Mathematics",
+  "url": "https://www.thecorestandards.org/Math/",
+  "owner": "© 2010 National Governors Association Center for Best Practices and Council of Chief State School Officers. All rights reserved.",
+  "claim_status": "self_assessed",
+  "licence_note": "The Common Core public license permits copying and display with the notice above, but expressly forbids revising, editing, or condensing the standards in ways that alter their meaning. The summaries here are our own separate descriptions written for parents, not condensed versions of the standards, and the official text is one click away on every row.",
+  "adoption": "Adopted by forty-one states, the District of Columbia, four territories and the Department of Defense schools. Five states adopted and later withdrew, and several others rewrote them under a new name.",
+  "code_help": "7.RP.A.2 reads as: grade 7, Ratios and Proportional Relationships, cluster A, standard 2.",
+  "standards": [
+    {
+      "code": "6.EE.B.6",
+      "grades": [6],
+      "strand": "Expressions and equations",
+      "summary": "Use a letter to stand for a number that can change."
+    },
+    {
+      "code": "6.EE.B.7",
+      "grades": [6],
+      "strand": "Expressions and equations",
+      "summary": "Solve a simple one-step equation to find an unknown value."
+    },
+    {
+      "code": "6.EE.C.9",
+      "grades": [6],
+      "strand": "Expressions and equations",
+      "summary": "Write an equation linking two quantities where one depends on the other."
+    },
+    {
+      "code": "6.RP.A.3",
+      "grades": [6],
+      "strand": "Ratios and proportional relationships",
+      "summary": "Use ratios and rates to solve real problems."
+    },
+    {
+      "code": "7.RP.A.2",
+      "grades": [7],
+      "strand": "Ratios and proportional relationships",
+      "summary": "Recognise when two quantities rise together in a fixed ratio, and find that ratio."
+    },
+    {
+      "code": "7.EE.B.4",
+      "grades": [7],
+      "strand": "Expressions and equations",
+      "summary": "Set up and solve an equation from a word problem."
+    },
+    {
+      "code": "8.F.A.1",
+      "grades": [8],
+      "strand": "Functions",
+      "summary": "Understand a function as a rule giving exactly one output for each input."
+    },
+    {
+      "code": "8.F.B.4",
+      "grades": [8],
+      "strand": "Functions",
+      "summary": "Work out the rate of change between two quantities and use it to predict."
+    },
+    {
+      "code": "8.EE.B.5",
+      "grades": [8],
+      "strand": "Expressions and equations",
+      "summary": "Read a proportional relationship off a graph and interpret its steepness."
+    },
+    {
+      "code": "HSA.CED.A.4",
+      "grades": [9, 10, 11, 12],
+      "strand": "Creating equations",
+      "summary": "Rearrange a formula to solve for whichever quantity you need."
+    },
+    {
+      "code": "HSA.SSE.A.1",
+      "grades": [9, 10, 11, 12],
+      "strand": "Seeing structure in expressions",
+      "summary": "Read a formula and say what each part of it means."
+    }
+  ]
+}

@@ -18,7 +18,7 @@
         "Six times"
       ],
       "answer": 1,
-      "explain": "i takes the values 0, 1, 2, 3, 4 \u2014 that's five passes. It stops the moment i reaches 5."
+      "explain": "i takes the values 0, 1, 2, 3, 4 — that's five passes. It stops the moment i reaches 5."
     },
     {
       "id": "q2",
@@ -36,11 +36,15 @@
       "prompt": "A while loop checks the sensor, but you forgot to re-read it inside the loop. What happens?",
       "choices": [
         "It runs once and stops",
-        "It never ends \u2014 the condition can never change",
+        "It never ends — the condition can never change",
         "The Arduino restarts"
       ],
       "answer": 1,
       "explain": "That's an infinite loop. Before writing one, always ask: what inside this loop will eventually make the condition false?"
     }
+  ],
+  "standards": [
+    "2-AP-11",
+    "2-AP-12"
   ]
 }

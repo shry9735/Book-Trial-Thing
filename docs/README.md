@@ -13,6 +13,7 @@ where things are and want to make a change.
 | [Deploying](../DEPLOY.md) | You are putting it on a server, or it is misbehaving on one |
 | [AWS readiness](AWS_READINESS.md) | Before you move it onto AWS — what will break, and why |
 | [Legal pages](LEGAL.md) | The Terms and Privacy wording, filling it in, and what still needs a lawyer |
+| [Curriculum standards](STANDARDS.md) | How the tracker measures a child against US standards, and why it ships no standards text |
 | [Game README](../game/README.md) | You want the short version of what the app does |
 
 ---

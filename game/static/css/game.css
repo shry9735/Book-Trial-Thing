@@ -1562,3 +1562,71 @@ a.role-tab         { text-decoration: none; display: inline-flex;
 .legal-links       { margin-top: 14px; text-align: center; font-size: 0.8rem;
                      color: var(--ink-dim); }
 .legal-links a     { color: var(--ink-mid); }
+
+/* ── Curriculum tracker ────────────────────────────────────────────────────
+   A dense table a parent reads down looking for gaps, so the state marker
+   has to be legible at a glance and the row has to stay quiet otherwise. */
+
+/* The "no national curriculum" note. Sits above the numbers on purpose and
+   is styled to be read, not skipped. */
+.std-caveat        { max-width: 60rem; margin: 0 0 16px; padding: 13px 18px;
+                     background: var(--accent-lt); border-left: 4px solid var(--accent);
+                     border-radius: 5px; font-size: 0.9rem; line-height: 1.55;
+                     color: var(--ink); }
+
+.std-summary       { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 14px; }
+.std-stat          { min-width: 92px; }
+.std-stat-num      { font-size: 1.7rem; font-weight: 700; line-height: 1.1; }
+.std-stat-lbl      { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+                     color: var(--ink-dim); font-weight: 700; margin-top: 2px; }
+.std-stat-num.done { color: var(--good); }
+.std-stat-num.part { color: var(--gold-deep); }
+.std-stat-num.open { color: var(--accent); }
+.std-stat-num.none { color: var(--ink-dim); }
+
+.std-about p       { margin: 0 0 8px; }
+.std-about p:last-child { margin-bottom: 0; }
+
+/* Strand heading between tables inside one panel. */
+.std-strand        { padding: 12px 14px 6px; font-size: 11px; font-weight: 700;
+                     text-transform: uppercase; letter-spacing: .07em;
+                     color: var(--frame); border-top: 1px solid var(--border-lt); }
+.panel .std-strand:first-of-type { border-top: none; }
+
+.std-table td      { vertical-align: top; padding: 9px 14px; }
+.std-mark          { width: 34px; }
+.std-code          { width: 118px; white-space: nowrap; }
+.std-code code     { font-size: 11px; color: var(--ink-mid); }
+.std-summary-text  { color: var(--ink); line-height: 1.45; }
+.std-lessons       { margin-top: 3px; font-size: 0.82rem; }
+.std-lessons a     { color: var(--brand); }
+.std-lessons.dim   { color: var(--ink-dim); font-style: italic; }
+
+/* A standard nothing here teaches is greyed rather than alarming — it is
+   information, not a failure. Ours is an electronics course, not a school. */
+.std-row.uncovered .std-summary-text { color: var(--ink-dim); }
+
+.std-dot           { display: inline-flex; align-items: center; justify-content: center;
+                     width: 22px; height: 22px; border-radius: 50%;
+                     font-size: 12px; font-weight: 700; line-height: 1; }
+.std-dot.done      { background: var(--good); color: #fff; }
+.std-dot.part      { background: var(--gold); color: var(--ink); }
+.std-dot.open      { background: var(--accent-lt); color: var(--accent-dk);
+                     border: 1px solid var(--accent-pale); }
+.std-dot.none      { background: var(--border-lt); color: var(--ink-dim); }
+
+.std-footer        { max-width: 60rem; margin: 18px 0 0; line-height: 1.5; }
+
+
+/* The student page's heading now carries an action as well as the join
+   code, so they need to sit together rather than fight for the corner. */
+.head-actions      { display: flex; align-items: center; gap: 14px; }
+
+/* The two grade controls sit side by side and are labelled, because one
+   only changes the page and the other changes the child's record. */
+.grade-controls    { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 4px; }
+.grade-label       { display: block; font-size: 0.72rem; font-weight: 700;
+                     text-transform: uppercase; letter-spacing: .08em;
+                     color: var(--ink-mid); margin-bottom: 5px; }
+.grade-row         { display: flex; align-items: center; gap: 8px; }
+.grade-hint        { margin-top: 4px; font-size: 11px; color: var(--ink-dim); }

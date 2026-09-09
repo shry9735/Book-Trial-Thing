@@ -484,6 +484,22 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         # stop the cascade sequentially scanning users on every delete.
         "CREATE INDEX users_created_by_idx ON users (created_by) WHERE created_by IS NOT NULL",
     ]),
+    # ── 5. Grade level, for the curriculum tracker ──────────────────────────
+    #
+    # US standards are written per grade, and a parent wants to see their
+    # child against the grade they are actually in. We do not hold a date of
+    # birth and are not going to start — a birthday is exactly the kind of
+    # data a product for children should not collect if it can avoid it, and
+    # a grade cannot be derived from an age anyway: cut-off dates vary by
+    # state, and children get held back and skipped ahead.
+    #
+    # So it is a nullable integer somebody sets on purpose, 0 for
+    # kindergarten through 12. NULL means nobody has said, and the tracker
+    # asks rather than guessing.
+    (5, [
+        "ALTER TABLE users ADD COLUMN grade_level smallint "
+        "CHECK (grade_level IS NULL OR (grade_level BETWEEN 0 AND 12))",
+    ]),
 ]
 
 
@@ -592,7 +608,7 @@ USER_COLUMNS = """
     id, org_id, username, email, password_hash, role, name, avatar,
     session_epoch, email_verified, is_active, link_code, org_admin,
     membership_status, age_confirmed_at, terms_accepted_at,
-    must_change_password, created_by, created_at, last_login_at
+    must_change_password, created_by, grade_level, created_at, last_login_at
 """
 
 
@@ -708,6 +724,27 @@ def mark_verified(cur, user_id: int) -> None:
 def touch_login(user_id: int) -> None:
     with write() as cur:
         cur.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user_id,))
+
+
+def set_grade_level(student_id: int, grade: int | None) -> None:
+    """
+    Record which US grade a student is in, or clear it.
+
+    Set by a parent or a teacher, never inferred: the tracker needs a grade
+    to know which standards to measure against, and guessing one from an
+    age gets it wrong often enough to matter — cut-off dates vary by state
+    and children are held back and skipped ahead. NULL is a real answer
+    meaning "nobody has said", and the tracker asks rather than assuming.
+
+    The column's CHECK constraint is what actually enforces the 0-12 range;
+    this only refuses obvious nonsense early so the caller can say so
+    nicely.
+    """
+    if grade is not None and not 0 <= grade <= 12:
+        raise ValueError(f"grade {grade} is outside 0-12")
+    with write() as cur:
+        cur.execute("UPDATE users SET grade_level = %s WHERE id = %s AND role = 'student'",
+                    (grade, student_id))
 
 
 def clear_must_change_password(user_id: int) -> None:

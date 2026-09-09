@@ -28,7 +28,7 @@
         "How hot it can get"
       ],
       "answer": 1,
-      "explain": "The first two bands are digits, and the third is the multiplier \u2014 the number of zeros to write after them."
+      "explain": "The first two bands are digits, and the third is the multiplier — the number of zeros to write after them."
     },
     {
       "id": "q3",
@@ -41,5 +41,8 @@
       "answer": 1,
       "explain": "A resistor is a few millimetres wide and lands in random orientations. Bands stay readable however it sits."
     }
+  ],
+  "standards": [
+    "MS-PS2-3"
   ]
 }

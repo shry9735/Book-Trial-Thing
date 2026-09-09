@@ -397,6 +397,7 @@ responsible:
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |
+| Where does this child stand against their grade? | `standards.report()` |
 | May this account move around yet? | `app._force_password_change()` |
 | May this account be deleted? | `app._deletion_blocker()` |
 | What does deleting an account remove? | `db.delete_user()` |

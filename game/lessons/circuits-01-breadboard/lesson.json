@@ -38,10 +38,14 @@
       "choices": [
         "The breadboard shows an error",
         "It sparks",
-        "Nothing tells you \u2014 the circuit just doesn't work"
+        "Nothing tells you — the circuit just doesn't work"
       ],
       "answer": 2,
       "explain": "This is why the tug test matters. A breadboard never warns you about a wrong connection, so you have to check it yourself."
     }
+  ],
+  "standards": [
+    "2-CS-02",
+    "MS-ETS1-1"
   ]
 }

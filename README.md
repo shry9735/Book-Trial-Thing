@@ -62,6 +62,7 @@ There are no default accounts.
 | [**Deploying**](DEPLOY.md) | Docker, AWS, backups, payments, operations |
 | [**AWS readiness**](docs/AWS_READINESS.md) | What will break on AWS, and what to do about it |
 | [**Legal pages**](docs/LEGAL.md) | The Terms and Privacy text, and what a lawyer needs to look at |
+| [**Curriculum standards**](docs/STANDARDS.md) | The parent-facing tracker, and the licensing that shaped it |
 
 Build the browsable API reference from the source docstrings:
 
@@ -108,10 +109,11 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 .venv/bin/python game/selftest.py             # 35  core, auth, hardening
 .venv/bin/python game/selftest_billing.py     # 34  subscriptions, orgs, net-30
 .venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
-.venv/bin/python game/selftest_accounts.py    # 41  provisioning, resets, deletion
+.venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
+.venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
 ```
 
-134 checks. They wipe the database they point at, so aim them at a scratch
+177 checks. They wipe the database they point at, so aim them at a scratch
 one. All four refuse to run with `APP_ENV=production`.
 
 ---

@@ -123,6 +123,7 @@ import billing
 import db
 import emailer
 import security
+import standards
 import tracks
 from config import validate as load_config
 from logsetup import configure_logging
@@ -132,6 +133,7 @@ BASE_DIR    = Path(__file__).parent
 ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
 TRACKS_DIR  = BASE_DIR / "tracks"     # one folder per track
+STANDARDS_DIR = BASE_DIR / "standards"  # one JSON per curriculum framework
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
 DATA_DIR    = BASE_DIR / "data"       # content only: item and classroom catalogs
 
@@ -253,6 +255,16 @@ def refresh_catalog() -> None:
         _catalog["track_by_id"] = {t["id"]: t for t in built}
         _catalog["track_of_lesson"] = {
             lesson_id: t for t in built for lesson_id in t["lesson_ids"]}
+        # Standards are content too. Loaded here so a lesson pointing at a
+        # code that does not exist gets reported at boot — that failure is
+        # invisible in the UI, where the lesson just silently stops counting
+        # towards anything, which is exactly why it is worth shouting about.
+        frameworks = standards.load(STANDARDS_DIR)
+        _catalog["frameworks"] = frameworks
+        _catalog["standard_by_code"] = standards.index(frameworks)
+        for lesson_id, code in standards.unknown_codes(
+                lessons, _catalog["standard_by_code"]):
+            log.warning("lesson %s claims unknown standard %s", lesson_id, code)
 
 
 def load_lessons() -> list[dict]:
@@ -274,6 +286,16 @@ def load_room() -> dict:
 
 def load_tracks() -> list[dict]:
     return _catalog["tracks"]
+
+
+def load_frameworks() -> list[dict]:
+    with _catalog_lock:
+        return _catalog["frameworks"]
+
+
+def standard_by_code() -> dict[str, dict]:
+    with _catalog_lock:
+        return _catalog["standard_by_code"]
 
 
 def track_of(lesson_id: str) -> dict | None:
@@ -1820,6 +1842,112 @@ def student_detail(username: str):
                            custom_assignment=assigned_ids is not None)
 
 
+# ── Curriculum tracker ──────────────────────────────────────────────────────────
+#
+# The parent-facing question this answers: "for a kid this age, what is a
+# US student expected to be able to do, and where has mine actually got to?"
+#
+# Everything here leans on standards.py, which carries the long version of
+# why this is harder than it sounds. The short version, which the screen
+# itself also says: there is no national curriculum, so "the standards" are
+# whichever ones a state adopted, and the alignment between our lessons and
+# any of them is our own reading.
+
+@app.route("/grownup/student/<username>/standards")
+@login_required("parent", "teacher")
+@membership_required
+def student_standards(username: str):
+    """
+    One student against one grade's standards.
+
+    Visibility runs through _visible_student_or_404() like every other
+    student screen, so a parent sees only their own children and a teacher
+    only the classrooms they are assigned to. The tracker adds no new way
+    to see a child.
+
+    The grade comes from ?grade= if given, else the student's recorded
+    grade, else a guess from the age floor — and which of those three it
+    was is passed to the template, because "we guessed" and "their parent
+    told us" should not look the same on screen.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    grade, source = _grade_for(student, request.args.get("grade"))
+
+    lessons = load_lessons()
+    statuses = db.lesson_statuses(student["id"], [l["id"] for l in lessons])
+    report = standards.report(load_frameworks(), lessons, grade, statuses)
+
+    return render_template("standards.html",
+                           student=student,
+                           report=report,
+                           grade_source=source,
+                           grades=list(range(0, standards.LAST_GRADE + 1)),
+                           grade_label=standards.grade_label,
+                           is_teacher=user["role"] == "teacher")
+
+
+def _grade_for(student: dict, requested: str | None) -> tuple[int, str]:
+    """
+    Which grade to measure against, and where that number came from.
+
+    Three sources, worst last. The guess exists so the page shows something
+    useful before anyone has set a grade, but it is labelled as a guess
+    every time: we hold no date of birth, only the age floor a student
+    attested to at signup, and grade cut-offs vary by state anyway.
+    """
+    if requested:
+        try:
+            asked = int(requested)
+        except ValueError:
+            asked = None
+        if asked is not None and 0 <= asked <= standards.LAST_GRADE:
+            return asked, "chosen"
+
+    if student.get("grade_level") is not None:
+        return student["grade_level"], "recorded"
+
+    return standards.grade_for_age(cfg.MIN_AGE), "guessed"
+
+
+@app.route("/grownup/student/<username>/grade", methods=["POST"])
+@login_required("parent", "teacher")
+@membership_required
+def set_student_grade(username: str):
+    """
+    Record which grade a student is in.
+
+    Open to a parent as well as a teacher: for a homeschooling family the
+    parent is the only person who knows, and this is the one fact the
+    tracker cannot work properly without. Clearing it back to "not set" is
+    allowed — an empty answer is better than a wrong one.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    raw = (request.form.get("grade_level") or "").strip()
+    grade = None
+    if raw:
+        try:
+            grade = int(raw)
+        except ValueError:
+            flash("Pick a grade from the list.", "error")
+            return redirect(url_for("student_standards", username=username))
+
+    try:
+        db.set_grade_level(student["id"], grade)
+    except ValueError:
+        flash("That is not a grade between kindergarten and 12.", "error")
+        return redirect(url_for("student_standards", username=username))
+
+    if grade is None:
+        flash(f"Cleared {student['name']}'s grade.", "success")
+    else:
+        flash(f"{student['name']} is in {standards.grade_label(grade)}.", "success")
+    return redirect(url_for("student_standards", username=username))
+
+
 @app.route("/grownup/student/<username>/assign", methods=["POST"])
 @login_required("teacher", "parent")
 def student_assign(username: str):
@@ -2864,8 +2992,10 @@ def init_app() -> None:
             log.info("applied %d migration(s)", applied)
 
     refresh_catalog()
-    log.info("catalog loaded: %d lesson(s) across %d track(s)",
-             len(load_lessons()), len(load_tracks()))
+    log.info("catalog loaded: %d lesson(s) across %d track(s), "
+             "%d standard(s) in %d framework(s)",
+             len(load_lessons()), len(load_tracks()),
+             len(_catalog["standard_by_code"]), len(_catalog["frameworks"]))
 
 
 def main() -> None:

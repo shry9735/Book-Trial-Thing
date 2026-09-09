@@ -8,13 +8,18 @@
     <div class="crumb"><a href="{{ url_for('grownup_home') }}">← All students</a></div>
     <h1>{{ student.name }}</h1>
   </div>
-  {% if is_teacher and student.link_code %}
-    {# A parent types this to attach themselves to this child. #}
-    <div class="student-code">
-      <div class="join-label">Student code</div>
-      <code class="join-code">{{ student.link_code }}</code>
-    </div>
-  {% endif %}
+  <div class="head-actions">
+    <a class="btn sm ghost" href="{{ url_for('student_standards', username=student.username) }}">
+      📐 Against the standards
+    </a>
+    {% if is_teacher and student.link_code %}
+      {# A parent types this to attach themselves to this child. #}
+      <div class="student-code">
+        <div class="join-label">Student code</div>
+        <code class="join-code">{{ student.link_code }}</code>
+      </div>
+    {% endif %}
+  </div>
 </div>
 
 {# Plain-language verdict first. Everything below is the evidence for it. #}
