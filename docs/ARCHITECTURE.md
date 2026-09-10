@@ -49,20 +49,20 @@ connections" under exactly the load you were scaling for.
 ## Modules
 
 Everything lives in `game/` as a flat set of modules. There is no package
-nesting, because at 8,000 lines it would be filing rather than
+nesting, because at ~13,000 lines it would be filing rather than
 organisation.
 
 | Module | Layer | What it owns |
 |---|---|---|
 | `wsgi.py` | entrypoint | Production import target. Calls `init_app()` once per worker. |
-| `manage.py` | entrypoint | Operator CLI — invoice approval, comps, seat sync, deactivation. |
+| `manage.py` | entrypoint | Operator CLI — invoice approval, comps, seat sync, deactivation, erasure. |
 | `migrate_json.py` | entrypoint | One-way import from the old JSON store. |
-| `selftest.py` | entrypoint | Auth, tenancy, concurrency, web-surface tests. |
-| `selftest_billing.py` | entrypoint | Subscriptions, entitlement, org admin, webhooks. |
-| `selftest_classrooms.py` | entrypoint | Classroom isolation and track staging. |
+| `import_assets.py` | entrypoint | Sorts a folder of artwork into `static/art/`. |
+| `selftest*.py` | entrypoint | Seven suites — see [the roster](../README.md#tests). |
 | `app.py` | web | Every route. Request lifecycle, template data, HTTP status. |
 | `billing.py` | service | Stripe, and the single answer to "is this account paid up?". |
-| `tracks.py` | service | Lessons in a deliberate order, and which ones a student has reached. |
+| `tracks.py` | service | Lessons in a deliberate order, who they are for, and what blocks them. |
+| `standards.py` | service | US curriculum frameworks, and where a student lands against a grade. |
 | `security.py` | service | CSRF, rate limiting, redirect safety, headers, input rules. |
 | `emailer.py` | service | Verification and reset mail. Console or SMTP. |
 | `db.py` | data | Schema migrations and every SQL statement in the system. |

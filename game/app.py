@@ -238,7 +238,19 @@ def _build_lessons() -> list[dict]:
 
 
 def refresh_catalog() -> None:
-    """Re-read every content file.  Called at boot and by --reload-catalog."""
+    """
+    Re-read every content file.
+
+    Called once at boot, and by the test suites between fixtures. There is
+    deliberately no way to trigger it over HTTP: content ships in the image,
+    so "reload the content" is a deploy.
+
+    The lock is held across the whole swap so a reader cannot see half of
+    one catalog and half of another. Readers below do NOT take it: a single
+    dict lookup is atomic under the GIL, so the worst a concurrent reader
+    can get is the previous value of one key — never a torn one — and
+    nothing writes here while requests are being served anyway.
+    """
     lessons = _build_lessons()
     with _catalog_lock:
         _catalog["lessons"] = lessons
@@ -312,13 +324,11 @@ def _without_resources(lesson: dict) -> dict:
 
 
 def load_frameworks() -> list[dict]:
-    with _catalog_lock:
-        return _catalog["frameworks"]
+    return _catalog["frameworks"]
 
 
 def standard_by_code() -> dict[str, dict]:
-    with _catalog_lock:
-        return _catalog["standard_by_code"]
+    return _catalog["standard_by_code"]
 
 
 def track_of(lesson_id: str) -> dict | None:
@@ -713,6 +723,19 @@ def membership_required(fn):
     They have a real account and can sign in — they just cannot reach any
     classroom until an org admin lets them through. Bouncing them to a
     holding page rather than a 403 keeps it obvious that nothing is broken.
+
+    This belongs on EVERY authenticated route except the handful that are
+    about the account itself (settings, password, billing) or about the
+    holding pen (/pending, /locked). It was missing from eight of them —
+    including /grownup/link, which let a parent an admin had not approved
+    attach themselves to a child with that child's link code and then read
+    the child's progress. On an approval-gated organisation that is the
+    exact thing approval exists to prevent.
+
+    selftest.t_membership_gate_is_complete() walks the route table and
+    fails on any authenticated route that neither carries this nor is on
+    its documented exemption list, so the next one cannot be forgotten
+    quietly.
     """
     @functools.wraps(fn)
     def wrapper(*fargs, **fkwargs):
@@ -792,6 +815,17 @@ def home():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    """
+    Sign in, without telling an attacker anything they did not already know.
+
+    The order of what follows is deliberate. Rate limiting comes before the
+    password check so a locked-out attacker learns nothing from timing. The
+    password is then verified even when the username does not exist, against
+    a throwaway hash, so a wrong username and a wrong password cost the same
+    and the response cannot be used to enumerate accounts. Only after both
+    is the account's own state — verification, and later the forced password
+    change — allowed to produce a different message.
+    """
     if request.method != "POST":
         if current_user():
             return redirect(url_for("home"))
@@ -988,6 +1022,14 @@ def verify_email(token: str):
 
 @app.route("/verify/resend", methods=["POST"])
 def resend_verification():
+    """
+    Send another confirmation link, and say nothing about who has an account.
+
+    Like /forgot below, the response is identical whether or not the address
+    exists. A different message here would turn this form into a way to test
+    which email addresses have accounts — and this one is reachable without
+    signing in, so that list would be free to anybody.
+    """
     email = request.form.get("email", "").strip()
     ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
@@ -1012,6 +1054,14 @@ def resend_verification():
 
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
+    """
+    Start a password reset.
+
+    The rate limit wraps the lookup rather than sitting after it, so a
+    throttled request does no database work and takes the same path whether
+    the address exists or not. Asking again retires any previous link, and
+    the flash at the end is identical either way — see the note there.
+    """
     if request.method != "POST":
         return render_template("forgot.html")
 
@@ -1664,6 +1714,7 @@ def satchel():
 
 @app.route("/api/progress", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_progress():
     """Called by the lesson player, and by lessons via the kit's postMessage."""
     user = current_user()
@@ -1694,6 +1745,7 @@ def api_progress():
 
 @app.route("/api/quiz", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_quiz():
     """
     Check one answer and record the attempt.  The answer key never leaves
@@ -1731,6 +1783,7 @@ def api_quiz():
 
 @app.route("/api/examples/<lesson_id>")
 @login_required("student")
+@membership_required
 def api_examples(lesson_id: str):
     """
     Prompts and choices for a lesson's practice examples, answer key
@@ -1751,6 +1804,7 @@ def api_examples(lesson_id: str):
 
 @app.route("/api/example", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_example():
     """
     Record one practice-example answer and hand back the same
@@ -1790,6 +1844,7 @@ def api_example():
 
 @app.route("/api/quiz/finish", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_quiz_finish():
     """Score the quiz, complete the lesson, and hand back any reward earned."""
     user = current_user()
@@ -1891,6 +1946,7 @@ def _visible_student_or_404(user: dict, username: str) -> dict:
 
 @app.route("/grownup/student/<username>")
 @login_required("teacher", "parent")
+@membership_required
 def student_detail(username: str):
     """One student's full progress, for a grown-up.
 
@@ -1990,6 +2046,15 @@ _FIT_TITLES = {
 
 
 def _fit(band: dict | None, grade: int) -> str:
+    """
+    Where a lesson's age band sits relative to the grade being viewed.
+
+    "Above" means the lesson is aimed HIGHER than this grade — it is ahead
+    of them, not beneath them — which is the opposite of what the word
+    suggests if you read it as a position in a list. No band at all is
+    FIT_UNKNOWN rather than a guess, so the page can say nothing instead of
+    filing the lesson under a grade nobody chose for it.
+    """
     if not band or not band.get("grades"):
         return FIT_UNKNOWN
     grades = band["grades"]
@@ -2292,6 +2357,7 @@ def set_student_grade(username: str):
 
 @app.route("/grownup/student/<username>/assign", methods=["POST"])
 @login_required("teacher", "parent")
+@membership_required
 def student_assign(username: str):
     """Narrow (or re-widen) which lessons show up on one student's menu."""
     user = current_user()
@@ -2312,6 +2378,7 @@ def student_assign(username: str):
 
 @app.route("/grownup/link", methods=["POST"])
 @login_required("parent")
+@membership_required
 def link_child():
     """
     A parent attaches themselves to a student with the student's link
@@ -2977,6 +3044,14 @@ def org_approve_member(member_id: str):
 @app.route("/org/members/<member_id>/remove", methods=["POST"])
 @org_admin_required
 def org_remove_member(member_id: str):
+    """
+    Put a member out of the organisation.
+
+    Removing yourself is refused: an admin who did it by accident would
+    lock themselves out of the org they administer, and there is no
+    self-service way back in. Their work is untouched — the membership goes,
+    not the account, which is what /settings/delete is for.
+    """
     user = current_user()
     member = _member_or_404(user, member_id)
 
@@ -2998,6 +3073,14 @@ def org_remove_member(member_id: str):
 @app.route("/org/members/<member_id>/admin", methods=["POST"])
 @org_admin_required
 def org_set_admin(member_id: str):
+    """
+    Promote a teacher to admin, or demote one.
+
+    Two guards. An organisation must keep at least one admin, or nobody can
+    manage its roster or its billing and there is no way to appoint someone
+    from inside. And only teachers can hold it: admin carries sight of every
+    student in the org, which is not a thing to hand a student or a parent.
+    """
     user = current_user()
     member = _member_or_404(user, member_id)
     make_admin = request.form.get("admin") == "1"
@@ -3232,6 +3315,25 @@ Approve with:  python game/manage.py approve-invoice {org['id']}
 @app.route("/stripe/webhook", methods=["POST"])
 @security.csrf_exempt
 def stripe_webhook():
+    """
+    Stripe telling us something changed.
+
+    The only route in the app exempt from CSRF, because the caller is Stripe
+    and has no session or token to present. What replaces CSRF is the
+    signature check below: the body is verified against the exact bytes
+    Stripe sent, so anything that re-reads or re-encodes it first breaks
+    verification.
+
+    Then idempotency. Stripe retries, and retries can arrive out of order or
+    twice, so the event id is CLAIMED in the database before any work
+    happens and released again if that work throws. Applying one event
+    twice would double-count a seat or extend a subscription that never
+    renewed.
+
+    Failures answer 500 on purpose: Stripe treats that as "try again",
+    which is what we want. A 200 would tell it the event was handled and it
+    would never come back.
+    """
     if not billing.enabled(cfg):
         abort(404)
 

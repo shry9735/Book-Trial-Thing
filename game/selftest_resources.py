@@ -355,6 +355,44 @@ def t_binary_redirects():
         appmod.refresh_catalog()
 
 
+@check("a guide to a paid lesson needs the subscription, and a free one does not")
+def t_paywall():
+    """
+    The branch every other test misses.
+
+    Billing is off in the suite (no Stripe key), and with billing off every
+    lesson is free — so _resource_paywalled() never returns True and the
+    whole gate is dead code as far as the rest of this file is concerned.
+    Turning billing on for the length of this check is the only way to
+    exercise it.
+    """
+    lesson = appmod.get_lesson("circuits-04-voltage")
+    saved = dict(lesson)
+    appmod.cfg.STRIPE_SECRET_KEY = "sk_test_notreal"
+    appmod.cfg.STRIPE_WEBHOOK_SECRET = "whsec_notreal"
+    lesson["access"] = "subscriber"
+    try:
+        c = signed_in("pat")
+        for url in (download_url(ANSWER_KEY), download_url(ANSWER_KEY) + "/read"):
+            response = c.get(url, follow_redirects=False)
+            assert response.status_code == 302, f"{url} -> {response.status_code}"
+            assert "/locked" in response.headers["Location"], response.headers["Location"]
+
+        # Still listed, so a parent can see it exists and why they cannot
+        # have it — silently hiding it would just look broken.
+        index = c.get("/grownup/resources").get_data(as_text=True)
+        assert "answers and reasoning" in index, "the paid guide vanished from the index"
+        assert "Needs a subscription" in index, "no explanation of why it is shut"
+
+        # A guide to a lesson that is still free is unaffected.
+        assert c.get(download_url(TRACK_GUIDE) + "/read").status_code == 200
+    finally:
+        lesson.clear()
+        lesson.update(saved)
+        appmod.cfg.STRIPE_SECRET_KEY = ""
+        appmod.cfg.STRIPE_WEBHOOK_SECRET = ""
+
+
 # ── Plumbed into the lesson ─────────────────────────────────────────────────────
 
 @check("resources hang off the lesson and the track that declare them")
@@ -450,7 +488,7 @@ TESTS = [
     t_filter_is_absolute, t_not_via_lesson_assets, t_not_under_static,
     t_whitelist, t_traversal, t_manifest_paths_dropped, t_unknown_owner,
     t_parent_reads, t_teacher_reads, t_parent_only, t_index_lists,
-    t_answers_labelled, t_no_cache, t_binary_redirects,
+    t_answers_labelled, t_no_cache, t_binary_redirects, t_paywall,
     t_attached_to_content, t_no_resources, t_stripped_from_student_context,
     t_on_student_page, t_student_page_role_filtered, t_nav,
     t_files_present, t_pages_render,

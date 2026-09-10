@@ -615,6 +615,98 @@ def t_head_not_post():
     assert after == before, "a HEAD request recorded a failed-login attempt"
 
 
+@check("a pending member is held out of everything but their own account")
+def t_membership_gate_is_complete():
+    """
+    Walk the route table rather than testing routes one at a time.
+
+    This exists because eight routes were missing @membership_required at
+    once, and the worst of them let a parent an org admin had NOT approved
+    link themselves to a child with that child's link code and then read
+    that child's progress — precisely what approval exists to prevent.
+
+    Asserting on the decorator catches the next one the moment it is
+    written, which testing behaviour route-by-route does not: the route
+    nobody thinks to test is exactly the one that will be missing its gate.
+    """
+    import inspect
+
+    # Routes that legitimately skip it, each for a reason that has to stay
+    # true. Anything else must carry the gate.
+    exempt = {
+        "pending":            "it IS the holding pen",
+        "logout":             "you can always leave",
+        "settings_home":      "your own account, not the org's content",
+        "change_password":    "your own account",
+        "first_password":     "has to work before anything else does",
+        "delete_own_account": "your own account",
+        "billing_home":       "a pending admin may still need to pay",
+        "billing_subscribe":  "a pending admin may still need to pay",
+        "billing_portal":     "a pending admin may still need to pay",
+        "billing_return":     "returns from Stripe",
+        "billing_invoice_request": "a pending admin may still need to pay",
+        "locked":             "explains why something is shut",
+        "resend_verification": "happens before approval by nature",
+        "verify_email":       "happens before approval by nature",
+        "legal":              "public",
+        "home":               "routes onward, including to /pending",
+    }
+
+    pattern = (r"((?:@app\.route\([^)]*\)\s*\n)+"
+               r"(?:@[\w_]+(?:\([^)]*\))?\s*\n)*)def (\w+)\(")
+    ungated = []
+    for match in re.finditer(pattern, inspect.getsource(appmod)):
+        decorators, name = match.group(1), match.group(2)
+        if "@org_admin_required" in decorators:
+            continue          # implies an already-approved admin
+        if "@login_required" not in decorators:
+            continue          # public
+        if "@membership_required" in decorators or name in exempt:
+            continue
+        ungated.append(name)
+
+    assert not ungated, (
+        f"authenticated route(s) with no membership gate and no documented "
+        f"reason: {ungated}. Add @membership_required, or add the route to "
+        f"the exemption list here together with why.")
+
+
+@check("an unapproved parent cannot reach a child, even with the link code")
+def t_pending_parent_blocked():
+    """The concrete hole the audit above was written for."""
+    head = db.user_by_username("ms_chen")
+    original = db.org_by_id(head["org_id"])["join_policy"]
+    db.set_join_policy(head["org_id"], "approval")
+    try:
+        signup(client(), "parent", username="unapproved",
+               email="unapproved@example.com", join_code=join_code_for("ms_chen"))
+        snooper = db.user_by_username("unapproved")
+        assert snooper["membership_status"] == "pending", snooper["membership_status"]
+
+        child = db.user_by_username("alex")
+        c = client()
+        login(c, "unapproved")
+
+        # Linking is refused while pending...
+        page = c.get("/pending").get_data(as_text=True)
+        c.post("/grownup/link",
+               data={"csrf_token": token_from(page), "link_code": child["link_code"]},
+               follow_redirects=False)
+        assert not db.can_see_student(db.user_by_username("unapproved"), child["id"]), \
+            "a pending parent linked themselves to a child"
+
+        # ...and so is every way of reading that child.
+        for path in (f"/grownup/student/{child['username']}",
+                     f"/grownup/student/{child['username']}/standards",
+                     "/grownup", "/grownup/resources"):
+            response = c.get(path, follow_redirects=False)
+            assert response.status_code == 302, f"{path} -> {response.status_code}"
+            assert "pending" in response.headers["Location"], \
+                f"{path} went to {response.headers['Location']}, not the holding pen"
+    finally:
+        db.set_join_policy(head["org_id"], original)
+
+
 @check("every page renders for every role")
 def t_pages_render():
     """
@@ -929,6 +1021,7 @@ TESTS = [
     t_dashboard_queries,
     t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
     t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post,
+    t_membership_gate_is_complete, t_pending_parent_blocked,
     t_pages_render,
     t_local_stack_boots, t_app_env_validated,
     t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,

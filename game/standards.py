@@ -158,7 +158,10 @@ def lessons_by_code(lessons: list[dict]) -> dict[str, list[dict]]:
     """
     mapping: dict[str, list[dict]] = {}
     for lesson in lessons:
-        for code in lesson.get("standards") or []:
+        # A lesson listing the same code twice is a content slip, not a
+        # claim to have taught it twice — without this the tracker prints
+        # the lesson's name twice under that standard.
+        for code in dict.fromkeys(lesson.get("standards") or []):
             mapping.setdefault(code, []).append(lesson)
     return mapping
 

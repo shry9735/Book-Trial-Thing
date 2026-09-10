@@ -42,8 +42,11 @@ There are no default accounts.
 |---|---|
 | `game/` | The web app. Start at [`game/README.md`](game/README.md). |
 | `game/lessons/` | One folder per lesson. Drop a folder in, it appears. |
+| `game/tracks/` | One folder per track — order, staging, age band, prep skills. |
+| `game/standards/` | US curriculum frameworks the [tracker](docs/STANDARDS.md) measures against. |
+| `game/resources/` | Parent guides and answer keys. **Never served without a grown-up session** — see its README. |
 | `docs/` | [Architecture, data model, extension guides](docs/README.md). |
-| `scripts/` | Doc generation, call graph, database backups. |
+| `scripts/` | Content and layering checks, doc generation, database backups. |
 | `deploy/` | nginx config and TLS certificate mount point. |
 | `make_epub.py` | Builds an EPUB from the same Markdown the lessons use. |
 | `ingest.py`, `query.py`, `webserver/` | Local RAG authoring tools — **not** part of the hosted app. |
@@ -106,17 +109,26 @@ exists in the interaction with the real thing.
 ```bash
 createdb ignite_test
 export DATABASE_URL=postgresql://localhost/ignite_test
-.venv/bin/python game/selftest.py             # 35  core, auth, hardening
+.venv/bin/python game/selftest.py             # 37  core, auth, hardening, route gates
 .venv/bin/python game/selftest_billing.py     # 34  subscriptions, orgs, net-30
 .venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
 .venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
 .venv/bin/python game/selftest_gating.py      # 36  age bands, prep skills, four block reasons
-.venv/bin/python game/selftest_resources.py   # 26  grown-up material, and the wall around it
+.venv/bin/python game/selftest_resources.py   # 27  grown-up material, and the wall around it
 ```
 
-239 checks. They wipe the database they point at, so aim them at a scratch
-one. All four refuse to run with `APP_ENV=production`.
+242 checks. They wipe the database they point at, so aim them at a scratch
+one. All seven refuse to run with `APP_ENV=production`.
+
+Three static checks need no database at all, and are the ones that catch
+content mistakes CI would otherwise ship:
+
+```bash
+.venv/bin/python scripts/check_content.py     # dangling requirements, cycles, missing files
+.venv/bin/python scripts/check_standards.py   # standard codes, and borrowed wording
+.venv/bin/python scripts/callgraph.py --check # the layering rule still holds
+```
 
 ---
 

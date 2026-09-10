@@ -49,17 +49,29 @@ To import from somewhere other than the inbox: `python import_assets.py path/to/
 | Path | Used for |
 |---|---|
 | `backgrounds/classroom.*` | The classroom scene the student lands on |
-| `characters/avatar-student.*` | HUD portrait for `student` |
-| `characters/avatar-student2.*` | HUD portrait for `student2` |
-| `characters/avatar-teacher.*` | HUD portrait for `teacher` |
+| `characters/avatar-student.*` | HUD portrait for a student |
+| `characters/avatar-parent.*` | HUD portrait for a parent |
+| `characters/avatar-teacher.*` | HUD portrait for a teacher |
 | `characters/dude-ad.*` | DUDE_Ad, the classroom mascot |
 | `ui/logo.*` | Login crest — replaces the 🔥 mark if present |
 | `lessons/<lesson-id>.*` | Lesson card thumbnail / video poster |
+| `tracks/<track-id>.*` | Track thumbnail |
 | `lessons/<name>.mp4` | Video lesson source files |
 | `games/<name>/index.html` | Embedded HTML5 games, one folder each |
 
-Avatar and thumbnail names come from `data/users.json` and `data/lessons.json`
-respectively — change the name there and the lookup follows.
+Where those names come from:
+
+- **Avatars** are the `avatar` column on the account, set at signup to
+  `characters/avatar-<role>` — so the three files above cover every account
+  without anything else being configured.
+- **Lesson thumbnails** default to `lessons/<lesson-id>`, which is why the
+  table above keys on the lesson's folder name. A lesson can override it
+  with `"thumb"` in its `lesson.json`; a track can with `"thumb"` in its
+  `track.json`.
+
+Nothing here is looked up from a file on disk any more — the old
+`data/users.json` and `data/lessons.json` stores were replaced by Postgres
+and the per-lesson manifests. See `game/README.md`.
 
 ## Sizes
 

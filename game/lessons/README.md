@@ -84,7 +84,8 @@ as every other lesson, with none of their JavaScript.
 | Field | Meaning |
 |---|---|
 | `type` | `interactive` (your `index.html`), `video`, or `reading` |
-| `order` | Sort position in the lesson list |
+| `track` | Which track it belongs to. Falls back to a slug of `subject`. |
+| `order` | Sort position **within the track** |
 | `reward` | An id from `data/items.json` — the trinket earned |
 | `quiz` | Required. See below. |
 
@@ -92,6 +93,42 @@ as every other lesson, with none of their JavaScript.
 `reading` lessons add `"content": "01-breadboard.md"`, pointing into
 `game/content/` — the same Markdown `make_epub.py` builds into a book
 chapter.
+
+### The optional half
+
+None of these is needed to ship a lesson, and a lesson inherits the middle
+three from its track when it stays quiet. Full detail in
+[`../tracks/README.md`](../tracks/README.md) and
+[`../../docs/EXTENDING.md`](../../docs/EXTENDING.md).
+
+| Field | Meaning |
+|---|---|
+| `access` | `free` (the default) or `subscriber` |
+| `kit` | There is a hands-on kit for this one. **Informational — never gates.** |
+| `ages` / `grades` | Who it is for. `[12, 15]` and `"grades": [7, 8]` are the same kind of thing; give either and the other is derived. |
+| `skills` | What a student wants to be able to do already, e.g. "Rearrange a formula". **Advisory; never gates.** |
+| `standards` | Curriculum codes it covers, e.g. `["MS-PS2-3", "7.RP.A.2"]`. See [the tracker](../../docs/STANDARDS.md). |
+| `requires` | What must be finished first, elsewhere: `{"tracks": [], "lessons": [], "assignment": false}`. **This one does gate.** |
+| `resources` | Grown-up guides and answer keys. **Never shown to students** — see [`../resources/README.md`](../resources/README.md). |
+
+```json
+{
+  "ages": [13, 16],
+  "standards": ["2-AP-17", "MS-ETS1-2"],
+  "skills": [
+    { "name": "Compare two options against the same criteria", "subject": "Science" }
+  ],
+  "requires": { "tracks": ["basic-electricity"], "assignment": true },
+  "resources": [
+    { "file": "debugging-together.md", "title": "Debugging together" }
+  ]
+}
+```
+
+Run `python ../../scripts/check_content.py` and
+`python ../../scripts/check_standards.py` after editing — a mistyped
+standard code or requirement fails **silently** at runtime, which is
+exactly why both checks exist.
 
 ## Quizzes
 
@@ -149,3 +186,5 @@ itself** — it reports what happened and the host decides what it's worth.
 - [ ] Art goes through `Ignite.art()`, never a hardcoded path
 - [ ] `Ignite.ready()` on load, `Ignite.complete()` when finished
 - [ ] Nothing imported from another lesson's folder
+- [ ] `python ../../scripts/check_content.py` passes
+- [ ] `python ../../scripts/check_standards.py` passes

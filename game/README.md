@@ -49,13 +49,24 @@ production.
 
 ```bash
 createdb ignite_test
-DATABASE_URL=postgresql://localhost/ignite_test python selftest.py
-DATABASE_URL=postgresql://localhost/ignite_test python selftest_billing.py
+export DATABASE_URL=postgresql://localhost/ignite_test
+for suite in selftest*.py; do python "$suite" || break; done
 ```
 
-Both run against a real database and wipe it, so point them at a scratch
-one. The billing suite never calls Stripe — it drives the code around
-Stripe with genuine Stripe-shaped payloads.
+Seven suites, 242 checks — the roster is in [the top-level
+README](../README.md#tests). They run against a real database and wipe it,
+so point them at a scratch one, and all seven refuse to run against
+`APP_ENV=production`. The billing suite never calls Stripe: it drives the
+code around Stripe with genuine Stripe-shaped payloads.
+
+Three more checks need no database and catch the content mistakes a test
+suite would not:
+
+```bash
+python ../scripts/check_content.py      # dangling requirements, cycles, missing files
+python ../scripts/check_standards.py    # standard codes, and borrowed wording
+python ../scripts/callgraph.py --check  # the layering rule still holds
+```
 
 ## Paying
 
@@ -151,10 +162,29 @@ there is no catalog to update.
 
 ```
 lessons/circuits-03-resistor/
-├── lesson.json     manifest: title, quiz, reward
+├── lesson.json     manifest — see below
 ├── index.html      the lesson (interactive types)
 └── ...             its own js/css/assets
 ```
+
+The manifest carries more than the lesson itself. Everything past `title`
+is optional, and a lesson inherits most of it from its track when it stays
+quiet:
+
+| Field | What it does |
+|---|---|
+| `track`, `order` | Which track it belongs to, and where in it |
+| `quiz`, `examples`, `reward` | The questions, the practice set, the trinket |
+| `access` | `free` (default) or `subscriber` |
+| `kit` | There is a hands-on kit. **Informational — it never gates** |
+| `ages` / `grades` | Who it is for. Either spelling; each derives the other |
+| `skills` | What a student wants to be able to do already. **Advisory only** |
+| `standards` | Curriculum codes it covers — see [the tracker](../docs/STANDARDS.md) |
+| `requires` | What must be finished first, elsewhere. **This one does gate** |
+| `resources` | Grown-up guides and answer keys. **Never shown to students** |
+
+`python scripts/check_content.py` validates the lot and fails on a
+requirement or a resource that names something which does not exist.
 
 | Type | Content comes from | Unlocks the quiz when |
 |---|---|---|
@@ -232,6 +262,46 @@ That boundary is enforced in exactly two places, `db.visible_students()` and
 outside it returns 404 rather than 403, so the response cannot be used to
 discover which usernames exist elsewhere.
 
+A member an org admin has not yet approved reaches none of this — they get
+the holding page instead. `@membership_required` belongs on every
+authenticated route except the handful about the account itself, and
+`selftest.py` walks the route table to make sure it is on all of them.
+
+### Organised around the grade, not around our lessons
+
+The question a grown-up arrives with is "is my kid where they should be",
+so the student page answers that first and lists our lessons second.
+
+- **A grade banner** — how many standards for that grade this child has
+  met, how many we teach at all, and how many exist. Both denominators,
+  because either alone flatters us.
+- **Lessons grouped by fit** — at this grade, ahead of it, below it. The
+  grade selector regroups the page without changing what is recorded.
+- **Each row** carries the lesson's age band, the standards it claims, the
+  maths it leans on, and — if it will not open — which of the four reasons
+  is holding it and what clears that.
+
+The full breakdown, standard by standard, is at
+`/grownup/student/<name>/standards`. What it can and cannot honestly claim
+is in [docs/STANDARDS.md](../docs/STANDARDS.md); the short version is that
+the US has no national curriculum and the page says so above the numbers.
+
+### Helping at home
+
+`/grownup/resources` is downloadable material attached to a lesson or a
+track: what it is really about, the maths it needs, how to help without
+taking over — and, where it earns its place, the answer key.
+
+**Students cannot reach any of it**, and where those files live is the
+whole design. Two ways of serving a file in this app have no login on them
+at all: nginx aliases `/static/` straight off disk, and `/lessons/<id>/<file>`
+is deliberately open so artwork loads inside the game frame. A guide in
+either would be public. They live in `resources/` instead, behind a route
+that requires a grown-up session and serves only files a manifest names.
+
+Marking one `"audience": "parent"` hides it from teachers too. See
+[`resources/README.md`](resources/README.md).
+
 ## Book ↔ web crossover
 
 Reading lessons keep their prose in `content/` as plain Markdown, which is
@@ -257,22 +327,37 @@ game, EPUB builder, and RAG index — without conversion.
 
 ```
 game/
-├── app.py                    Flask server — auth, routes, art resolver
-├── content/                  Lesson prose (Markdown) — also make_epub.py input
-│   ├── 01-breadboard.md
-│   └── 02-loops.md
+├── wsgi.py                   Production import target — gunicorn starts here
+├── app.py                    Flask server — every route, request lifecycle
 ├── db.py                     Every SQL statement, and the schema migrations
 ├── billing.py                Stripe, and "is this account paid up?"
-├── tracks.py                 Lessons in order, and which ones a student has reached
+├── tracks.py                 Order, staging, age bands, prep skills, what blocks what
+├── standards.py              US curriculum frameworks, and where a student lands
 ├── security.py               CSRF, rate limiting, redirect safety, headers
+├── emailer.py                Verification and reset mail — console or SMTP
+├── config.py  logsetup.py    Environment parsing; log formatting
+├── manage.py                 Operator CLI — comps, seats, erasure, invoices
+├── import_assets.py          Sorts a folder of artwork into static/art/
+├── migrate_json.py           One-way import from the pre-Postgres JSON store
+├── selftest*.py              Seven suites; see ../README.md
+├── content/                  Lesson prose and the legal pages (Markdown)
+│   ├── 01-breadboard.md
+│   └── legal/                Terms and Privacy — see ../docs/LEGAL.md
 ├── lessons/                  One folder per lesson — drop-in, iframe-isolated
 │   ├── README.md             How to write one
 │   └── circuits-03-resistor/
-│       ├── lesson.json       Manifest + quiz + track membership
+│       ├── lesson.json       Manifest — quiz, track, ages, skills, standards, requires
 │       └── index.html        Sandboxed lesson code
-├── tracks/                   One folder per track — ordering and staging
-│   ├── README.md             How to write one
+├── tracks/                   One folder per track — ordering, staging, age band
+│   ├── README.md
 │   └── circuits/track.json
+├── standards/                One JSON per curriculum framework
+│   ├── README.md             Why no standards TEXT ships here
+│   └── ngss.json  csta.json  ccss-math.json
+├── resources/                Parent guides and answer keys
+│   ├── README.md             Why these are NOT under static/ or lessons/
+│   ├── lessons/<id>/         Material for one lesson
+│   └── tracks/<id>/          Material for a whole track
 ├── data/
 │   ├── items.json            Trinket catalog (committed)
 │   └── classroom.json        Game-room hotspot layout (committed)
@@ -282,18 +367,31 @@ game/
 │   └── css/game.css          Arcade chrome over the Ignite palette
 └── templates/
     ├── base.html             960×600 stage, scaled to viewport
-    ├── login.html            Student / Parent-Teacher tabs
+    ├── teacher_base.html     Grown-up chrome (normal scrolling page)
+    ├── login.html  signup.html  forgot.html  reset.html
+    ├── first_password.html   The one page a handed-out password can reach
+    ├── settings.html         Account — password, deletion (grown-ups)
+    ├── settings_student.html The same, in the game chrome
     ├── classroom.html        Hotspot scene
     ├── lessons.html          Lesson grid
     ├── lesson.html           Player — video, game, or reader
+    ├── locked.html           Why something will not open — four reasons
     ├── satchel.html          Trinket inventory
-    ├── teacher_base.html     Grown-up chrome (normal scrolling page)
     ├── grownup.html          Parent/teacher home — plain-language status
+    ├── student.html          One student, organised against their grade
+    ├── standards.html        The full standard-by-standard breakdown
+    ├── resources.html        Helping at home — guides and answer keys
+    ├── resource.html         One guide, rendered
     ├── classrooms.html       Classroom list (admins see the whole school)
-    ├── classroom_detail.html Roster, assigned teachers, progress table
+    ├── classroom_detail.html Roster, assigned teachers, enrolment
+    ├── roster_import.html    Paste or upload a class
+    ├── roster_result.html    Printable usernames and first passwords
     ├── org.html              Members, join policy, admin controls
     ├── billing.html          Subscription, invoices, purchase orders
-    └── student.html          Per-student detail — what they got wrong
+    ├── billing_return.html   Landing page back from Stripe Checkout
+    ├── legal.html            Terms and Privacy
+    ├── pending.html          The holding pen
+    └── error.html
 ```
 
 Student screens run inside a fixed 960×600 stage that scales to fit the window —

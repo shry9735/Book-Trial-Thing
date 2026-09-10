@@ -155,7 +155,11 @@ def main() -> int:
             rel = path.relative_to(RESOURCES_DIR).parts
             if len(rel) != 3:
                 continue
-            kind = rel[0].rstrip("s")
+            # Not rstrip("s"): that strips every trailing s, so a directory
+            # named "less" would become "le". Only two are valid anyway.
+            kind = {"lessons": "lesson", "tracks": "track"}.get(rel[0])
+            if kind is None:
+                continue
             if (kind, rel[1], rel[2]) not in declared:
                 orphans.append("/".join(rel))
     print(f"  {res_count} grown-up resource(s) declared")
