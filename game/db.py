@@ -31,6 +31,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 log = logging.getLogger("ignite.db")
@@ -499,6 +500,33 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (5, [
         "ALTER TABLE users ADD COLUMN grade_level smallint "
         "CHECK (grade_level IS NULL OR (grade_level BETWEEN 0 AND 12))",
+    ]),
+    # ── 6. Sub-app state ────────────────────────────────────────────────────
+    #
+    # A lesson or game gets one JSON blob per student to keep whatever it
+    # needs between visits: a half-built circuit, which levels are open,
+    # where the player left off. Before this a sub-app could report a
+    # percentage and "done" and nothing else, which is enough for a reading
+    # and hopeless for a game.
+    #
+    # Deliberately opaque to the platform. We never read inside it, never
+    # index it, never report on it — progress, scores and awards all have
+    # their own tables with their own rules. This is scratch space the
+    # sub-app owns, and keeping it structureless is what lets a sub-app
+    # change its own format without a migration in here.
+    (6, [
+        """
+        CREATE TABLE lesson_state (
+            student_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            lesson_id  text   NOT NULL,
+            -- Size is capped in the route, not by a CHECK here: a constraint
+            -- violation would surface as a 500, and a sub-app writing too
+            -- much deserves an error it can actually handle.
+            data       jsonb  NOT NULL DEFAULT '{}'::jsonb,
+            updated_at timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY (student_id, lesson_id)
+        )
+        """,
     ]),
 ]
 
@@ -997,6 +1025,69 @@ def set_lesson_status(student_id: int, lesson_id: str, status: str,
         )
         row = cur.fetchone()
         return [row["item_id"]] if row else []
+
+
+def grant_items(student_id: int, item_ids: list[str]) -> list[str]:
+    """
+    Put items in a student's satchel, at most once each. Returns only the
+    ones this call actually granted.
+
+    The primary key on `inventory` decides the winner, so a double-click, a
+    retry, or two tabs racing cannot award the same trinket twice — and the
+    RETURNING clause is what tells the client which ones are new, without a
+    read-compare-write that could interleave.
+
+    **Whether the student has EARNED these is not decided here.** The route
+    checks the lesson declares them; this only records the grant. A sub-app
+    runs in the student's own browser, so nothing it asks for can be taken
+    on trust — see app.api_award.
+    """
+    if not item_ids:
+        return []
+    granted: list[str] = []
+    with write() as cur:
+        for item_id in dict.fromkeys(item_ids):
+            cur.execute(
+                "INSERT INTO inventory (student_id, item_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING RETURNING item_id",
+                (student_id, item_id),
+            )
+            row = cur.fetchone()
+            if row:
+                granted.append(row["item_id"])
+    return granted
+
+
+def get_lesson_state(student_id: int, lesson_id: str) -> dict:
+    """Whatever a sub-app last saved for this student, or {}."""
+    with query() as cur:
+        cur.execute(
+            "SELECT data FROM lesson_state WHERE student_id = %s AND lesson_id = %s",
+            (student_id, lesson_id),
+        )
+        row = cur.fetchone()
+        return row["data"] if row else {}
+
+
+def set_lesson_state(student_id: int, lesson_id: str, data: dict) -> None:
+    """
+    Replace a sub-app's saved state for this student.
+
+    A whole-blob replace rather than a merge, because the sub-app owns the
+    shape and merging two versions of a format we do not understand is a
+    good way to corrupt it. A sub-app that wants to merge can read, merge
+    and write — it has the only copy that matters.
+    """
+    with write() as cur:
+        cur.execute(
+            """
+            INSERT INTO lesson_state (student_id, lesson_id, data, updated_at)
+            VALUES (%s, %s, %s, now())
+            ON CONFLICT (student_id, lesson_id) DO UPDATE SET
+                data = EXCLUDED.data, updated_at = now()
+            """,
+            (student_id, lesson_id, Json(data)),
+        )
 
 
 def record_answer(student_id: int, lesson_id: str, question_id: str,

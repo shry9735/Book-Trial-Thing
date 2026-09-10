@@ -45,6 +45,7 @@ There are no default accounts.
 | `game/tracks/` | One folder per track — order, staging, age band, prep skills. |
 | `game/standards/` | US curriculum frameworks the [tracker](docs/STANDARDS.md) measures against. |
 | `game/resources/` | Parent guides and answer keys. **Never served without a grown-up session** — see its README. |
+| `game/static/kit/` | The [sub-app bridge](docs/SUBAPPS.md) — the only thing a lesson or game needs to know about the platform. |
 | `docs/` | [Architecture, data model, extension guides](docs/README.md). |
 | `scripts/` | Content and layering checks, doc generation, database backups. |
 | `deploy/` | nginx config and TLS certificate mount point. |
@@ -66,6 +67,7 @@ There are no default accounts.
 | [**AWS readiness**](docs/AWS_READINESS.md) | What will break on AWS, and what to do about it |
 | [**Legal pages**](docs/LEGAL.md) | The Terms and Privacy text, and what a lawyer needs to look at |
 | [**Curriculum standards**](docs/STANDARDS.md) | The parent-facing tracker, and the licensing that shaped it |
+| [**Sub-apps**](docs/SUBAPPS.md) | The platform/content seam — build a lesson or game elsewhere and drop it in |
 
 Build the browsable API reference from the source docstrings:
 
@@ -116,9 +118,10 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
 .venv/bin/python game/selftest_gating.py      # 36  age bands, prep skills, four block reasons
 .venv/bin/python game/selftest_resources.py   # 27  grown-up material, and the wall around it
+.venv/bin/python game/selftest_subapp.py      # 29  the platform/content seam
 ```
 
-242 checks. They wipe the database they point at, so aim them at a scratch
+275 checks. They wipe the database they point at, so aim them at a scratch
 one. All seven refuse to run with `APP_ENV=production`.
 
 Three static checks need no database at all, and are the ones that catch

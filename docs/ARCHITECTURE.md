@@ -427,6 +427,8 @@ responsible:
 | Is that a sequence, a prerequisite or an unassigned lesson? | `tracks.requirement_block()`, then `tracks.gate()` |
 | Who is this lesson for, and what does it lean on? | `tracks.band()`, `tracks.skills()` |
 | May this person see this guide? | `tracks.visible_resources()`, then `app._resource_or_404()` |
+| May this sub-app award that? | `app.api_award()` — the lesson's own manifest, never the request |
+| Which file does this art name point at? | `app.find_art()` + `app.static_url()` |
 | Is this request authentic? | `security.check_csrf()` |
 | Who is signed in? | `app.current_user()` |
 | Is this lesson free? | `billing.lesson_access()` |

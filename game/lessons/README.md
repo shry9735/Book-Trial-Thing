@@ -110,6 +110,8 @@ three from its track when it stays quiet. Full detail in
 | `standards` | Curriculum codes it covers, e.g. `["MS-PS2-3", "7.RP.A.2"]`. See [the tracker](../../docs/STANDARDS.md). |
 | `requires` | What must be finished first, elsewhere: `{"tracks": [], "lessons": [], "assignment": false}`. **This one does gate.** |
 | `resources` | Grown-up guides and answer keys. **Never shown to students** — see [`../resources/README.md`](../resources/README.md). |
+| `awards` | Item ids this lesson may hand out through `Ignite.award()`. The server refuses anything not on this list. |
+| `bridge` | Which kit version it was built against. See [docs/SUBAPPS.md](../../docs/SUBAPPS.md). |
 
 ```json
 {
@@ -129,6 +131,17 @@ Run `python ../../scripts/check_content.py` and
 `python ../../scripts/check_standards.py` after editing — a mistyped
 standard code or requirement fails **silently** at runtime, which is
 exactly why both checks exist.
+
+## Starting one
+
+```bash
+python ../../scripts/new_subapp.py my-game --title "My Game" --track code
+python ../../scripts/new_subapp.py --list-art     # what art already exists
+```
+
+Writes a folder that already works. The full contract — shared assets,
+awards, saved state, versioning, and why the server trusts nothing a
+sub-app says — is in [docs/SUBAPPS.md](../../docs/SUBAPPS.md).
 
 ## Quizzes
 

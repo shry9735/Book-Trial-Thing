@@ -97,6 +97,7 @@ from __future__ import annotations
 import argparse
 import csv
 import functools
+import hashlib
 import io
 import json
 import logging
@@ -227,6 +228,16 @@ def _build_lessons() -> list[dict]:
         data.setdefault("quiz",     [])
         data.setdefault("examples", [])
         data.setdefault("thumb",    f"lessons/{folder.name}")
+        # Which kit version this sub-app was built against, and every item
+        # it is allowed to hand out. `reward` is the older single-item form
+        # granted by the host on quiz completion; `awards` is the list a
+        # sub-app may grant itself through /api/award. The reward is folded
+        # in so a lesson does not have to name it twice.
+        data.setdefault("bridge", BRIDGE_VERSION)
+        awards = [a for a in (data.get("awards") or []) if isinstance(a, str)]
+        if data.get("reward") and data["reward"] not in awards:
+            awards.append(data["reward"])
+        data["awards"] = awards
         # Resolved once here rather than in each template: "access" carries
         # the back-compat with the older "free" boolean, and "kit" gets
         # normalised from either `true` or an object.
@@ -287,6 +298,18 @@ def refresh_catalog() -> None:
         # is if it is said out loud here.
         for problem in tracks.check_requirements(built):
             log.warning("content: %s", problem)
+        # A sub-app built against a newer kit than this server ships would
+        # half-work: the parts it calls that exist would run, and the parts
+        # that do not would fail silently in an iframe nobody is watching.
+        items = _catalog["items"]
+        for lesson in lessons:
+            if lesson["bridge"] > BRIDGE_VERSION:
+                log.error("lesson %s needs kit bridge v%s; this server has v%s",
+                          lesson["id"], lesson["bridge"], BRIDGE_VERSION)
+            for item_id in lesson["awards"]:
+                if item_id not in items:
+                    log.warning("lesson %s can award %r, which is in no item catalog",
+                                lesson["id"], item_id)
 
 
 def load_lessons() -> list[dict]:
@@ -460,11 +483,51 @@ def find_art(name: str) -> str | None:
     return None
 
 
+# Content fingerprints for files under static/, computed once at boot.
+#
+# This is what makes "replace the character, every lesson updates" true.
+# Without it, /static/ is served with a 30-day max-age and a browser that
+# already has spark.png keeps showing the old one for a month — so the
+# shared-asset promise held on the server and quietly failed in front of
+# the student, which is the worst place for it to fail.
+_FINGERPRINTS: dict[str, str] = {}
+_FINGERPRINT_LOCK = threading.Lock()
+
+
+def fingerprint(filename: str) -> str:
+    """
+    Eight hex characters of the file's content hash, or "" if unreadable.
+
+    Cached, because this runs for every image on the lesson menu. Content
+    ships in the image and cannot change under a running process, so a
+    boot-time cache is exactly as fresh as the files are.
+    """
+    with _FINGERPRINT_LOCK:
+        if filename in _FINGERPRINTS:
+            return _FINGERPRINTS[filename]
+    path = BASE_DIR / "static" / filename
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        digest = ""
+    with _FINGERPRINT_LOCK:
+        _FINGERPRINTS[filename] = digest
+    return digest
+
+
 def static_url(filename: str) -> str:
-    """Route static files through the CDN when one is configured."""
+    """
+    A cache-busting URL for a static file, through the CDN if one is set.
+
+    The ?v= is the file's content hash, so replacing a shared character
+    changes every URL that points at it and every browser and CDN fetches
+    the new one immediately. Same file, same URL, still cached for a month.
+    """
+    mark = fingerprint(filename)
+    query = f"?v={mark}" if mark else ""
     if cfg.CDN_URL:
-        return f"{cfg.CDN_URL}/static/{filename}"
-    return url_for("static", filename=filename)
+        return f"{cfg.CDN_URL}/static/{filename}{query}"
+    return url_for("static", filename=filename) + query
 
 
 def art(name: str) -> str:
@@ -1862,6 +1925,174 @@ def api_example():
         "answer":  example["answer"],
         "explain": example.get("explain", ""),
     })
+
+
+# ── The sub-app bridge ──────────────────────────────────────────────────────────
+#
+# A lesson or game is a folder that knows nothing about this application
+# beyond /kit/. These three routes are everything it can ask the platform
+# for, and each one re-derives its answer from the catalog rather than
+# believing the caller.
+#
+# That distrust is not paranoia about content authors. A sub-app runs in
+# the student's own browser, so "the lesson said so" and "the student's
+# devtools said so" are the same sentence arriving over the same wire.
+# Anything a sub-app can ask for, a bored thirteen-year-old can ask for.
+
+# One bump per breaking change to the kit's own surface. A sub-app declares
+# the major version it was written against and boot refuses to load one
+# built for a future it does not know about, rather than half-working.
+BRIDGE_VERSION = 1
+
+# Room for a save file, not a database. A game keeping levels, positions and
+# a half-built circuit fits in a few kilobytes; anything approaching this is
+# a sub-app using the platform as storage it should not have.
+MAX_STATE_BYTES = 64 * 1024
+
+
+def _open_lesson_or_error(user: dict, lesson_id: str):
+    """
+    Resolve a lesson this student may actually be working on right now.
+
+    Every sub-app route runs this: the same subscription, prerequisite and
+    assignment checks the lesson page itself applies. Without it, a sub-app
+    could act on a lesson its student was never allowed to open — and the
+    caller is a browser, so it will.
+
+    Returns (lesson, None) or (None, an error response).
+    """
+    found = get_lesson(lesson_id)
+    if not found:
+        return None, (jsonify({"error": "Unknown lesson."}), 400)
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return None, (jsonify({"error": "That lesson needs an active subscription."}), 402)
+    if prerequisite_block(user["id"], found):
+        return None, (jsonify({"error": "You haven't reached this lesson yet."}), 403)
+    return found, None
+
+
+@app.route("/api/award", methods=["POST"])
+@login_required("student")
+@membership_required
+def api_award():
+    """
+    A sub-app awarding something it declared it could award.
+
+    The rule that makes this safe: a lesson may only grant items listed in
+    its own manifest's `awards`. The request names an item; the server looks
+    up what THAT lesson is allowed to give and refuses anything else. So the
+    worst a tampered-with sub-app can do is grant its own rewards early —
+    which is the same thing finishing it does — and it can never mint the
+    rare trinket from a lesson it has not opened.
+
+    Granting is idempotent by primary key, so replaying this hands back an
+    empty list rather than a second trinket.
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    found, error = _open_lesson_or_error(user, body.get("lesson_id", ""))
+    if error:
+        return error
+
+    allowed = set(found.get("awards") or [])
+    wanted = body.get("items")
+    if isinstance(wanted, str):
+        wanted = [wanted]
+    if not isinstance(wanted, list):
+        return jsonify({"error": "Send items as a list."}), 400
+
+    refused = [i for i in wanted if i not in allowed]
+    if refused:
+        # Loud, because in normal use it cannot happen: either the manifest
+        # and the sub-app disagree, or somebody is trying it on.
+        log.warning("lesson %s tried to award items it does not declare",
+                    found["id"], extra={"username": user["username"]})
+        return jsonify({"error": "That lesson doesn't award that.",
+                        "refused": refused}), 403
+
+    catalog = load_items()
+    granted = db.grant_items(user["id"], [i for i in wanted if i in catalog])
+    return jsonify({
+        "ok": True,
+        "granted": [{**catalog[i], "id": i} for i in granted],
+    })
+
+
+@app.route("/api/state/<lesson_id>")
+@login_required("student")
+@membership_required
+def api_state_read(lesson_id: str):
+    """Hand a sub-app back whatever it last saved for this student."""
+    user = current_user()
+    found, error = _open_lesson_or_error(user, lesson_id)
+    if error:
+        return error
+    return jsonify({"ok": True, "state": db.get_lesson_state(user["id"], found["id"])})
+
+
+@app.route("/api/state", methods=["POST"])
+@login_required("student")
+@membership_required
+def api_state_write():
+    """
+    Save a sub-app's own state for this student.
+
+    The platform never looks inside the blob — see the note on migration 6.
+    It only enforces that it is a JSON object and that it is small: a save
+    file, not a database. A sub-app that needs more than that is asking for
+    something this seam does not offer, and should say so out loud rather
+    than growing into the platform's storage.
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    found, error = _open_lesson_or_error(user, body.get("lesson_id", ""))
+    if error:
+        return error
+
+    state = body.get("state")
+    if not isinstance(state, dict):
+        return jsonify({"error": "State must be a JSON object."}), 400
+
+    encoded = json.dumps(state)
+    if len(encoded.encode("utf-8")) > MAX_STATE_BYTES:
+        return jsonify({"error": f"State is over the {MAX_STATE_BYTES // 1024}KB limit.",
+                        "limit_bytes": MAX_STATE_BYTES}), 413
+
+    db.set_lesson_state(user["id"], found["id"], state)
+    return jsonify({"ok": True})
+
+
+@app.route("/art/manifest.json")
+def art_manifest():
+    """
+    Everything under static/art/, so a sub-app author can find out what
+    already exists instead of inventing a second Spark.
+
+    Shared art is the point: one file, every lesson, and replacing it
+    updates all of them at once (static_url fingerprints the URL, so that
+    actually reaches the browser). None of which helps if the person
+    building the next game has no way to know the file is there.
+
+    Public and cacheable — it is a directory listing of files that are
+    themselves public.
+    """
+    names: dict[str, list[str]] = {}
+    if ART_DIR.is_dir():
+        for path in sorted(ART_DIR.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in ART_EXTS:
+                continue
+            rel = path.relative_to(ART_DIR)
+            name = str(rel.with_suffix("")).replace("\\", "/")
+            names.setdefault(rel.parts[0] if len(rel.parts) > 1 else "", []).append(name)
+
+    return _cached(jsonify({
+        "bridge": BRIDGE_VERSION,
+        "usage": "Ignite.art('<name>') — no extension, the server resolves it",
+        "groups": names,
+        "count": sum(len(v) for v in names.values()),
+    }))
 
 
 @app.route("/api/quiz/finish", methods=["POST"])

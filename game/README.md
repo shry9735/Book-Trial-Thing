@@ -192,7 +192,13 @@ requirement or a resource that names something which does not exist.
 | `video` | an `.mp4` in `static/art/lessons/` or a URL | the video ends |
 | `interactive` | the folder's own `index.html` | it calls `Ignite.complete()` |
 
-**Full authoring guide: [`lessons/README.md`](lessons/README.md)**
+A lesson or game is a **sub-app**: a folder built somewhere else that knows
+nothing about this application beyond `/kit/`. It can use the shared
+characters, hand out awards it declares, and keep its own saved state.
+
+**Full authoring guide: [`lessons/README.md`](lessons/README.md)** ·
+**the platform/content contract: [`docs/SUBAPPS.md`](../docs/SUBAPPS.md)** ·
+start one with `python scripts/new_subapp.py`
 
 ### Lesson code cannot cross between lessons
 
@@ -215,9 +221,18 @@ reaches art through one namespace:
 img.src = Ignite.art('characters/spark-cheer');   // → /art/characters/spark-cheer
 ```
 
-The server resolves the extension, so re-exporting a `.png` as `.webp` updates
-every lesson at once. Pair with `/kit/lesson-kit.css` for shared fonts,
-colours, buttons and panels — same look, none of their code.
+The server resolves the extension **and fingerprints the URL with the
+file's content hash**, so re-exporting a `.png` as `.webp` — or simply
+replacing the `.png` — updates every lesson at once, including in browsers
+that already cached the old one. `/static` is served with a month-long
+max-age, so without the fingerprint that promise would hold on the server
+and quietly fail in front of the student.
+
+`GET /art/manifest.json` lists everything available, so whoever builds the
+next game can find Spark rather than drawing a second one.
+
+Pair with `/kit/lesson-kit.css` for shared fonts, colours, buttons and
+panels — same look, none of their code.
 
 ## Quizzes
 

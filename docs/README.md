@@ -14,6 +14,7 @@ where things are and want to make a change.
 | [AWS readiness](AWS_READINESS.md) | Before you move it onto AWS — what will break, and why |
 | [Legal pages](LEGAL.md) | The Terms and Privacy wording, filling it in, and what still needs a lawyer |
 | [Curriculum standards](STANDARDS.md) | How the tracker measures a child against US standards, and why it ships no standards text |
+| [Sub-apps](SUBAPPS.md) | Build a lesson or game somewhere else and drop it in — shared assets, awards, state, and why the server trusts none of it |
 | [Game README](../game/README.md) | You want the short version of what the app does |
 
 ---

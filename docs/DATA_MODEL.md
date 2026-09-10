@@ -30,6 +30,7 @@ erDiagram
     users ||--o{ quiz_answers : answers
     users ||--o{ example_answers : practises
     users ||--o{ inventory : earns
+    users ||--o{ lesson_state : "saves (sub-app)"
     users ||--o| assignments : "restricted by"
     users ||--o{ classroom_students : "enrolled in"
     users ||--o{ classroom_teachers : teaches
@@ -173,6 +174,20 @@ overwritten, so a score means "got it right without help" rather than
 Practice attempts. Same shape, no `first_try` — practice is never graded
 back to the student. It exists so a parent can see how practice is
 actually going.
+
+### `lesson_state`
+
+One JSON blob per (student, lesson): a sub-app's own save file. A half-built
+circuit, which levels are open, where the player left off.
+
+**Deliberately opaque.** The platform never reads inside it, never indexes
+it and never reports on it — progress, scores and awards all have their own
+tables with their own rules. Keeping it structureless is what lets a game
+change its own save format without a migration in here.
+
+Capped at 64KB by the route rather than a `CHECK`, so a sub-app writing too
+much gets a 413 it can handle instead of a 500 it cannot. Cascades on
+`users(id)` like everything else, so an erasure request takes it too.
 
 ### `inventory`
 
