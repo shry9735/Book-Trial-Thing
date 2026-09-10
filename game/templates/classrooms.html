@@ -25,7 +25,6 @@
   <div class="lesson-grid">
     {% for room in classrooms %}
       <a class="panel kid-card" href="{{ url_for('classroom_detail', classroom_id=room.id) }}">
-        <div class="kid-card-body">
           <div class="kid-name">{{ room.name }}</div>
           <div class="kid-headline">
             {{ room.students }} student{{ '' if room.students == 1 else 's' }}
@@ -41,7 +40,6 @@
               <div class="kid-stat-lbl">Still stuck on</div>
             </div>
           </div>
-        </div>
       </a>
     {% endfor %}
   </div>

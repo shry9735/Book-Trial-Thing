@@ -178,8 +178,22 @@
   /* Interactive lessons report in through the kit's postMessage bridge.
      That "done" click already happened inside the lesson, so move straight
      on instead of making the student find a second button below the
-     iframe to press. */
+     iframe to press.
+
+     Only this page's own lesson frame is listened to. Nothing here grants
+     anything — unlock() enables a button and the server re-checks every
+     answer in /api/quiz — so a stray message was never a security problem,
+     and X-Frame-Options plus frame-ancestors 'self' already stop this page
+     being embedded anywhere. But a page that opened this one with
+     window.open keeps a handle to it and can post to it, and "some other
+     window can drive the quiz button" is not a thing worth leaving true
+     for the sake of one comparison. */
   window.addEventListener('message', function (e) {
+    /* iframe#player specifically: a video lesson renders a <video> under
+       the same id in the other branch of this template, and asking that
+       for a contentWindow is a confusing way to get undefined. */
+    var frame = document.querySelector('iframe#player');
+    if (!frame || e.source !== frame.contentWindow) return;
     var d = e.data || {};
     if (d.type === 'lesson:complete') {
       unlock(d.score);

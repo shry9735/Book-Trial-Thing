@@ -615,6 +615,49 @@ def t_head_not_post():
     assert after == before, "a HEAD request recorded a failed-login attempt"
 
 
+@check("no page that varies by session is publicly cacheable")
+def t_cache_headers():
+    """
+    `public` on a response whose body depends on who is looking invites a
+    shared cache to hand one visitor's copy to another.
+
+    /legal shipped that way: the content only changes on deploy, but the
+    page says "Back" to somebody signed in and "Sign in" to somebody who is
+    not. Nothing in front of this app caches today, so it was latent — and
+    it would have become a real leak the first time anyone put a name on
+    that page.
+    """
+    anon = client()
+
+    for path in ("/legal/terms", "/legal/privacy"):
+        out = anon.get(path)
+        cache = out.headers.get("Cache-Control", "")
+        assert "public" not in cache, f"{path} is publicly cacheable: {cache!r}"
+        assert "private" in cache, f"{path}: {cache!r}"
+        assert "Cookie" in out.headers.get("Vary", ""), \
+            f"{path} varies by session but does not say so"
+
+        # What makes the header matter: the page really is session-aware.
+        # Asserted on the anonymous side only, because comparing two whole
+        # bodies makes this test depend on the fixture's login still
+        # working, which earlier checks in this file deliberately break.
+        assert "Sign in" in out.get_data(as_text=True), \
+            f"{path} no longer varies by session — the rule can be relaxed"
+
+    # The genuinely identical-for-everyone responses may stay public.
+    for path in ("/kit/lesson-kit.js", "/art-placeholder/missing/thing"):
+        cache = anon.get(path).headers.get("Cache-Control", "")
+        assert "public" in cache, f"{path} lost its public cache: {cache!r}"
+
+    # And nothing behind a login is ever publicly cacheable.
+    signed_in = client()
+    login(signed_in, "racer0")
+    assert signed_in.get("/classroom").status_code == 200, "fixture login failed"
+    for path in ("/classroom", "/lessons", "/satchel"):
+        cache = signed_in.get(path).headers.get("Cache-Control", "")
+        assert "public" not in cache, f"{path} is publicly cacheable: {cache!r}"
+
+
 @check("a pending member is held out of everything but their own account")
 def t_membership_gate_is_complete():
     """
@@ -1021,7 +1064,7 @@ TESTS = [
     t_dashboard_queries,
     t_reset_single_use, t_session_epoch, t_expired_token, t_no_enumeration,
     t_assignments, t_classroom_tenancy, t_http_error_codes, t_head_not_post,
-    t_membership_gate_is_complete, t_pending_parent_blocked,
+    t_cache_headers, t_membership_gate_is_complete, t_pending_parent_blocked,
     t_pages_render,
     t_local_stack_boots, t_app_env_validated,
     t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,

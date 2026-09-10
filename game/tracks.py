@@ -488,7 +488,8 @@ def required_lesson_ids(items: list[dict], by_track: dict[str, dict]) -> set[str
 
 def requirement_block(item: dict, entries: dict[str, dict],
                       by_track: dict[str, dict], by_lesson: dict[str, dict],
-                      assigned_ids: set[str] | None = None) -> dict | None:
+                      assigned_ids: set[str] | None = None,
+                      available_ids: set[str] | None = None) -> dict | None:
     """
     What is standing in the way of this lesson or track, from elsewhere.
 
@@ -502,6 +503,15 @@ def requirement_block(item: dict, entries: dict[str, dict],
     has no entry at all, and reading absence as "unknown, do not block"
     would let every prerequisite through until the student happened to
     start it — exactly backwards.
+
+    `available_ids` is that student's own menu, and applies the same rule
+    gate() does one paragraph up: **a lesson a teacher has hidden cannot
+    block anything.** Without it, assigning a student only the capstone
+    leaves them told to "finish Debug D.U.D.E.A.D. first" with no way to
+    reach Debug D.U.D.E.A.D. — a dead end they cannot get out of and the
+    teacher cannot see. A track requirement is judged over its available
+    lessons for the same reason; a track nothing in is reachable stops
+    being a requirement at all rather than becoming a permanent wall.
 
     Deliberately independent of gate(), which only stages lessons inside
     one track. A lesson can be held by both, and app.prerequisite_block()
@@ -534,10 +544,15 @@ def requirement_block(item: dict, entries: dict[str, dict],
                 "remedy": "Your teacher hasn't set this one yet.",
             }
 
+    def reachable(lesson_id: str) -> bool:
+        return available_ids is None or lesson_id in available_ids
+
     for lesson_id in requires.get("lessons") or []:
         lesson = by_lesson.get(lesson_id)
         if lesson is None:
             continue                     # not in the catalog: see the docstring
+        if not reachable(lesson_id):
+            continue                     # not on this student's menu: ditto
         if not _is_complete(entries.get(lesson_id)):
             title = lesson.get("title") or lesson_id
             return {
@@ -550,9 +565,11 @@ def requirement_block(item: dict, entries: dict[str, dict],
         track = by_track.get(track_id)
         if track is None:
             continue                     # not in the catalog: see the docstring
-        done = progress(track, entries)
-        if not done["finished"]:
-            left = done["total"] - done["completed"]
+        reachable_lessons = [l for l in track["lessons"] if reachable(l["id"])]
+        if not reachable_lessons:
+            continue                     # nothing in it is on their menu
+        left = sum(1 for l in reachable_lessons if not _is_complete(entries.get(l["id"])))
+        if left:
             return {
                 "reason": BLOCK_PREREQUISITE,
                 "title": track["title"],

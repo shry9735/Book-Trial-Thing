@@ -370,6 +370,9 @@ def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
 
     assigned = db.assigned_lesson_ids(student_id)
     assigned_ids = None if assigned is None else set(assigned)
+    # The student's own menu. A lesson a teacher has hidden must not be
+    # able to block anything — see the note on requirement_block.
+    available_ids = assigned_ids
 
     # One query for every status any of the checks below could want, rather
     # than one per requirement: this runs on /api/quiz, once per answered
@@ -378,7 +381,8 @@ def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
     entries = {lesson_id: {"status": status} for lesson_id, status in statuses.items()}
 
     for item in gated:
-        block = tracks.requirement_block(item, entries, by_track, by_lesson, assigned_ids)
+        block = tracks.requirement_block(item, entries, by_track, by_lesson,
+                                         assigned_ids, available_ids)
         if block:
             return {"track": track, "after": block["title"],
                     "reason": block["reason"], "remedy": block["remedy"]}
@@ -413,7 +417,15 @@ def assigned_lessons(student_id: int, catalog: list[dict]) -> list[dict]:
 # ── Static asset routes ─────────────────────────────────────────────────────────
 
 def _cached(response):
-    """Content-addressed enough for a long max-age; it only changes on deploy."""
+    """
+    A long, PUBLIC max-age. Only for responses that are the same for
+    everybody: static kit files, lesson assets, generated placeholders.
+
+    A page whose body depends on who is looking must not use this — `public`
+    lets a shared cache serve one visitor's copy to another. Set
+    `private` (and `Vary: Cookie`) on those instead; /legal is the worked
+    example.
+    """
     response.headers["Cache-Control"] = f"public, max-age={cfg.STATIC_MAX_AGE}"
     return response
 
@@ -1188,9 +1200,19 @@ def legal(page: str):
         abort(404)
 
     body = render_markdown(_fill_tokens(path.read_text(encoding="utf-8")))
-    return _cached(make_response(render_template(
+    response = make_response(render_template(
         "legal.html", title=title, body=body, page=page,
-        reviewed=cfg.LEGAL_REVIEWED)))
+        reviewed=cfg.LEGAL_REVIEWED))
+    # NOT _cached(). The content only changes on deploy, but the page shows
+    # "Back" to somebody signed in and "Sign in" to somebody who is not, so
+    # it varies by session — and _cached() says `public`, which invites a
+    # shared cache to hand one visitor's copy to another. Nothing in front
+    # of this app caches today, so that is latent rather than live; it is
+    # still the wrong header, and it would become a real leak the first
+    # time anyone puts a name on this page.
+    response.headers["Cache-Control"] = f"private, max-age={cfg.STATIC_MAX_AGE}"
+    response.headers["Vary"] = "Cookie"
+    return response
 
 
 # ── Account settings ────────────────────────────────────────────────────────────
@@ -1586,7 +1608,7 @@ def lessons():
         # A requirement on the track holds every lesson in it, so it is
         # evaluated once here rather than per card.
         track_block = tracks.requirement_block(
-            track, entries, by_track, by_lesson, assigned_ids)
+            track, entries, by_track, by_lesson, assigned_ids, available_ids)
 
         cards = []
         for lesson in track["lessons"]:
@@ -1594,7 +1616,7 @@ def lessons():
                 continue
 
             block = track_block or tracks.requirement_block(
-                lesson, entries, by_track, by_lesson, assigned_ids)
+                lesson, entries, by_track, by_lesson, assigned_ids, available_ids)
             if not block:
                 prereq = gates.get(lesson["id"], {"locked": False, "after": None})
                 if prereq["locked"]:
@@ -1972,13 +1994,12 @@ def student_detail(username: str):
     rows = []
     for track in all_tracks:
         track_block = tracks.requirement_block(
-            track, entries, by_track, by_lesson, assigned_ids)
-        gates = tracks.gate(track, entries,
-                            None if assigned_ids is None else assigned_ids)
+            track, entries, by_track, by_lesson, assigned_ids, assigned_ids)
+        gates = tracks.gate(track, entries, assigned_ids)
         for item in track["lessons"]:
             entry = entries.get(item["id"], {"status": "not_started"})
             block = track_block or tracks.requirement_block(
-                item, entries, by_track, by_lesson, assigned_ids)
+                item, entries, by_track, by_lesson, assigned_ids, assigned_ids)
             if not block:
                 state = gates.get(item["id"], {"locked": False, "after": None})
                 if state["locked"]:

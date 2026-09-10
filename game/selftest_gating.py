@@ -125,9 +125,10 @@ def build_world():
            org_name="Rivera Middle", name="Head Teacher")
     head = db.user_by_username("head")
     code = db.org_by_id(head["org_id"])["join_code"]
-    # "seq" stays untouched by every other test, so the in-track sequence
-    # case is not judged against a student an earlier check advanced.
-    for username in ("kid", "keen", "fresh", "seq"):
+    # "seq" and "solo" stay untouched by every other test. Shared fixtures
+    # that earlier checks advance are how two of these tests first failed
+    # for reasons that had nothing to do with the code under test.
+    for username in ("kid", "keen", "fresh", "seq", "solo"):
         signup(client(), "student", username=username, email=f"{username}@h.test",
                join_code=code, name=username.title())
     WORLD.update(org=head["org_id"], code=code)
@@ -321,6 +322,65 @@ def t_no_assignment_row():
     assert block and block["reason"] == tracks.BLOCK_UNASSIGNED, block
 
 
+@check("a hidden prerequisite does not become a dead end")
+def t_hidden_prerequisite_opens():
+    """
+    The bug: a teacher assigns only the capstone, and the student is told
+    to "finish Debug D.U.D.E.A.D. first" — a lesson that is not on their
+    menu and that they therefore cannot reach. A wall with no door, and
+    invisible to the teacher who built it.
+
+    gate() has always applied this rule inside a track ("a hidden lesson
+    must not become an impassable gate"). requirement_block() has to apply
+    it across tracks for the same reason.
+    """
+    kid = db.user_by_username("kid")
+    original = db.assigned_lesson_ids(kid["id"])
+    try:
+        db.set_assignment(kid["id"], ["story-science-fair"], kid["id"])
+        assert block_for("kid", "story-science-fair") is None, \
+            "assigning only the capstone left the student with nowhere to go"
+    finally:
+        db.set_assignment(kid["id"], original, kid["id"])
+
+
+@check("a prerequisite that IS on the menu still blocks")
+def t_visible_prerequisite_still_blocks():
+    # The other half: the rule above must not become "assignments switch
+    # requirements off".
+    kid = db.user_by_username("kid")
+    original = db.assigned_lesson_ids(kid["id"])
+    try:
+        db.set_assignment(kid["id"], ["story-science-fair", "code-02-debug"], kid["id"])
+        block = block_for("kid", "story-science-fair")
+        assert block, "a reachable prerequisite stopped blocking"
+        assert "Debug" in block["remedy"], block["remedy"]
+
+        db.set_lesson_status(kid["id"], "code-02-debug", "completed", None)
+        assert block_for("kid", "story-science-fair") is None, \
+            "finishing the prerequisite did not open it"
+    finally:
+        db.set_assignment(kid["id"], original, kid["id"])
+
+
+@check("a partly hidden track counts only the lessons the student can reach")
+def t_partial_track_requirement():
+    # basic-electricity requires the whole circuits track. With half of
+    # circuits hidden, "finish circuits" has to mean the half they can see,
+    # or the count is a promise the student cannot keep.
+    solo = db.user_by_username("solo")
+    db.set_assignment(solo["id"],
+                      ["circuits-01-breadboard", "circuits-04-voltage"], solo["id"])
+    # circuits holds two lessons; only one of them is on this menu.
+    block = block_for("solo", "circuits-04-voltage")
+    assert block and "1 lesson to go" in block["remedy"], \
+        f"counted hidden lessons: {block['remedy'] if block else None}"
+
+    db.set_lesson_status(solo["id"], "circuits-01-breadboard", "completed", None)
+    assert block_for("solo", "circuits-04-voltage") is None, \
+        "the track stayed shut after every reachable lesson was done"
+
+
 # ── In-track sequence, still working ────────────────────────────────────────────
 
 @check("the sequence gate still stages lessons inside a track")
@@ -468,7 +528,7 @@ def t_pages_render():
     for grade in range(0, 13):
         response = c.get(f"/grownup/student/kid?grade={grade}")
         assert response.status_code == 200, f"grade {grade} -> {response.status_code}"
-    for username in ("kid", "keen", "fresh", "seq"):
+    for username in ("kid", "keen", "fresh", "seq", "solo"):
         assert c.get(f"/grownup/student/{username}").status_code == 200, username
     student = signed_in("fresh")
     for path in ("/lessons", "/classroom", "/satchel"):
@@ -484,6 +544,8 @@ TESTS = [
     t_cycle_caught, t_shipped_content_clean,
     t_assignment_required, t_assignment_clears, t_assignment_reported_first,
     t_no_assignment_row,
+    t_hidden_prerequisite_opens, t_visible_prerequisite_still_blocks,
+    t_partial_track_requirement,
     t_sequence_still_works, t_prerequisite_beats_sequence, t_non_sequential,
     t_url_enforced, t_locked_page_explains, t_api_enforced,
     t_menu_shows_reasons, t_no_bypass,

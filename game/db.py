@@ -554,6 +554,20 @@ def _code(length: int = 8) -> str:
 
 
 def _unique_code(cur, table: str, column: str, length: int) -> str:
+    """
+    A short code nothing in `table.column` is using yet.
+
+    `table` and `column` are interpolated into the SQL, because an
+    identifier cannot be a bound parameter. **Both must be literals written
+    here in this file** — all three call sites pass constants, and passing
+    anything derived from a request would turn this into an injection
+    point. There is no need for it to be dynamic; it is only shaped this
+    way to serve join codes and link codes from one place.
+
+    Ten attempts is generous: the alphabet is 31 characters, so even the
+    6-character link codes have ~887 million values and a collision needs
+    the table to be enormous before a retry is likely at all.
+    """
     for _ in range(10):
         candidate = _code(length)
         cur.execute(f"SELECT 1 FROM {table} WHERE {column} = %s", (candidate,))
