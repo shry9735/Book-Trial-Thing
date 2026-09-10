@@ -789,18 +789,6 @@ def set_grade_level(student_id: int, grade: int | None) -> None:
                     (grade, student_id))
 
 
-def clear_must_change_password(user_id: int) -> None:
-    """Drop the forced-change flag without touching the password or epoch.
-
-    Used only where the password itself was just set by its owner through
-    a path that already rotated the epoch, so this is the one remaining
-    bit of state to clear.
-    """
-    with write() as cur:
-        cur.execute(
-            "UPDATE users SET must_change_password = false WHERE id = %s", (user_id,))
-
-
 def delete_user(user_id: int) -> dict | None:
     """
     Erase an account and everything belonging to it.  Returns the deleted
@@ -875,12 +863,6 @@ def link_parent(parent_id: int, student_id: int) -> None:
             "ON CONFLICT DO NOTHING",
             (parent_id, student_id),
         )
-
-
-def unlink_parent(parent_id: int, student_id: int) -> None:
-    with write() as cur:
-        cur.execute("DELETE FROM parent_links WHERE parent_id = %s AND student_id = %s",
-                    (parent_id, student_id))
 
 
 # ── Who can see whom ────────────────────────────────────────────────────────────
@@ -1507,21 +1489,6 @@ def classroom_teachers(classroom_id: int) -> list[dict]:
             ORDER BY lower(u.name)
             """,
             (classroom_id,),
-        )
-        return cur.fetchall()
-
-
-def classrooms_of_student(student_id: int) -> list[dict]:
-    with query() as cur:
-        cur.execute(
-            """
-            SELECT c.id, c.name
-            FROM classroom_students cs
-            JOIN classrooms c ON c.id = cs.classroom_id
-            WHERE cs.student_id = %s
-            ORDER BY lower(c.name)
-            """,
-            (student_id,),
         )
         return cur.fetchall()
 

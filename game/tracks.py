@@ -76,7 +76,6 @@ from pathlib import Path
 log = logging.getLogger("ignite.tracks")
 
 DEFAULT_TRACK_ID = "general"
-DEFAULT_TRACK_TITLE = "General"
 
 # Tracks with no explicit order sort after those that have one, but before
 # the synthesised catch-all.
@@ -623,17 +622,6 @@ def check_requirements(built: list[dict]) -> list[str]:
                 stack.append(nxt)
 
     return problems
-
-
-def next_lesson(track: dict, entries: dict[str, dict],
-                available_ids: set[str] | None = None) -> dict | None:
-    """The first lesson in this track the student has not finished."""
-    for lesson in track["lessons"]:
-        if available_ids is not None and lesson["id"] not in available_ids:
-            continue
-        if not _is_complete(entries.get(lesson["id"])):
-            return lesson
-    return None
 
 
 def progress(track: dict, entries: dict[str, dict]) -> dict:

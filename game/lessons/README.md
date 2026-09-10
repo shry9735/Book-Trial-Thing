@@ -63,8 +63,10 @@ every lesson at once, and a missing file shows a placeholder naming the
 path instead of a broken image.
 
 Add `<link rel="stylesheet" href="/kit/lesson-kit.css">` for the shared
-fonts, colours, buttons, panels and drag-and-drop styles — the same look
-as every other lesson, with none of their JavaScript.
+fonts, colours, buttons, sprites and layout helpers — the same look as
+every other lesson, with none of their JavaScript. Read the file for the
+full list of `lk-` classes; it is short, and nothing in it is kept around
+for a lesson that might one day want it.
 
 ## The manifest
 

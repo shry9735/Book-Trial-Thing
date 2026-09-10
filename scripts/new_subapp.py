@@ -203,8 +203,8 @@ def main() -> int:
     print(f"    index.html    a working sub-app: art, state, complete"
           f"{', awards' if args.awards else ''}")
     print("\n  Next:")
-    print(f"    python scripts/check_content.py        # confirm it is valid")
-    print(f"    docker compose restart app             # or restart your dev server")
+    print("    python scripts/check_content.py        # confirm it is valid")
+    print("    docker compose restart app             # or restart your dev server")
     print(f"    open /lesson/{lesson_id}")
     if not track:
         print(f"\n  No track given, so it lands in a synthesised one. Add"

@@ -1769,7 +1769,7 @@ def lesson(lesson_id: str):
     # endpoint or a new partial cannot quietly put an answer key in front of
     # the child it is an answer key for.
     return render_template("lesson.html", lesson=_without_resources(found),
-                           entry=entry, body=body, quiz=quiz,
+                           body=body, quiz=quiz,
                            summary=summarise(user["id"]))
 
 
@@ -2177,8 +2177,7 @@ def grownup_home():
                            cards=cards,
                            needs_attention=needs_attention,
                            is_teacher=user["role"] == "teacher",
-                           org=org,
-                           lesson_count=len(load_lessons()))
+                           org=org)
 
 
 def _visible_student_or_404(user: dict, username: str) -> dict:
@@ -2452,7 +2451,9 @@ def resource_download(kind: str, owner_id: str, filename: str):
     or browser cache holding an answer key would undo the whole point.
     """
     user = current_user()
-    owner, resource = _resource_or_404(kind, owner_id, filename, user["role"])
+    # The manifest entry itself is not needed here — only that the lookup
+    # succeeded, which is what proves this grown-up may have the file.
+    owner, _ = _resource_or_404(kind, owner_id, filename, user["role"])
 
     if _resource_paywalled(owner, kind):
         return redirect(url_for("locked", lesson_id=owner_id))
@@ -2543,8 +2544,7 @@ def student_standards(username: str):
                            report=report,
                            grade_source=source,
                            grades=list(range(0, standards.LAST_GRADE + 1)),
-                           grade_label=standards.grade_label,
-                           is_teacher=user["role"] == "teacher")
+                           grade_label=standards.grade_label)
 
 
 def _grade_for(student: dict, requested: str | None) -> tuple[int, str]:
@@ -2711,9 +2711,7 @@ def classrooms_home():
     return render_template("classrooms.html",
                            classrooms=cards,
                            is_admin=is_admin,
-                           unplaced=db.unplaced_students(user["org_id"]) if is_admin else [],
-                           student_count=len(students),
-                           lesson_count=len(load_lessons()))
+                           unplaced=db.unplaced_students(user["org_id"]) if is_admin else [])
 
 
 def _classroom_or_404(user: dict, classroom_id: int) -> dict:
@@ -3229,16 +3227,13 @@ def locked():
 def org_home():
     user = current_user()
     org = db.org_by_id(user["org_id"])
-    subscription = db.subscription_for_org(org["id"])
 
     return render_template("org.html",
                            org=org,
                            members=db.org_members(org["id"]),
                            pending=db.pending_members(org["id"]),
                            seats=db.count_billable_seats(org["id"]),
-                           subscription=subscription,
-                           entitlement=entitlement(),
-                           admin_count=db.count_org_admins(org["id"]))
+                           entitlement=entitlement())
 
 
 def _member_or_404(user: dict, raw_id: str) -> dict:

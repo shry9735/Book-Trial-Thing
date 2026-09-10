@@ -50,35 +50,6 @@ body {
   text-align: center;
 }
 
-/* ── Panels ─────────────────────────────────────────────────────────── */
-
-.lk-panel {
-  background: linear-gradient(180deg, var(--surface) 0%, var(--paper) 100%);
-  border: 2px solid var(--frame);
-  border-radius: 6px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -2px 6px rgba(58, 36, 24, 0.09),
-    0 3px 10px rgba(0, 0, 0, 0.22);
-}
-
-.lk-panel-head {
-  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-dk) 100%);
-  color: #fff;
-  padding: 8px 14px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  border-bottom: 2px solid var(--frame);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-.lk-panel-head.teal {
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dk) 100%);
-}
-.lk-panel-body { padding: 16px; }
-
 /* ── Buttons ────────────────────────────────────────────────────────── */
 
 .lk-btn {
@@ -162,56 +133,11 @@ body {
   user-select: none;
   -webkit-user-drag: none;
 }
-.lk-sprite.pixel { image-rendering: pixelated; }
 
 .lk-float { animation: lk-float 3.2s ease-in-out infinite; }
 @keyframes lk-float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-9px); }
-}
-
-/* ── Drag and drop ──────────────────────────────────────────────────── */
-
-.lk-drag {
-  cursor: grab;
-  transition: transform 0.12s, box-shadow 0.12s;
-  touch-action: none;
-}
-.lk-drag:active  { cursor: grabbing; }
-.lk-drag.dragging {
-  transform: scale(1.08) rotate(-2deg);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
-  z-index: 50;
-}
-
-.lk-slot {
-  border: 3px dashed var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.55);
-  transition: border-color 0.14s, background 0.14s, transform 0.14s;
-}
-.lk-slot.over {
-  border-color: var(--gold);
-  background: rgba(240, 168, 48, 0.14);
-  transform: scale(1.04);
-}
-.lk-slot.filled { border-style: solid; border-color: var(--good); background: var(--good-lt); }
-
-/* ── Progress ───────────────────────────────────────────────────────── */
-
-.lk-bar {
-  height: 13px;
-  background: #1b1119;
-  border: 2px solid var(--gold-dk);
-  border-radius: 7px;
-  overflow: hidden;
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
-}
-.lk-bar > div {
-  height: 100%;
-  background: linear-gradient(180deg, var(--good-glow) 0%, var(--good) 55%, var(--good-deep) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  transition: width 0.35s ease;
 }
 
 /* ── Layout helpers ─────────────────────────────────────────────────── */

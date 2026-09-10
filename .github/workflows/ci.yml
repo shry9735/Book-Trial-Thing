@@ -63,3 +63,15 @@ jobs:
           python game/selftest.py
           python game/selftest_billing.py
           python game/selftest_classrooms.py
+          python game/selftest_accounts.py
+          python game/selftest_standards.py
+          python game/selftest_gating.py
+          python game/selftest_resources.py
+          python game/selftest_subapp.py
+
+      # Content is data, so these catch a broken lesson.json or a standards
+      # code pointing at nothing without needing a database.
+      - name: Content
+        run: |
+          python scripts/check_content.py
+          python scripts/check_standards.py
