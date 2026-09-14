@@ -1053,6 +1053,39 @@ def t_health():
     assert res.get_json() == {"status": "ok", "database": True}, res.get_json()
 
 
+@check("opening a lesson does not invent a score of zero")
+def t_no_phantom_score():
+    """
+    set_lesson_status() is called with no score every time a student opens
+    a lesson. It used to COALESCE that NULL to 0 and take the GREATEST,
+    which stored a real zero — so a lesson somebody had merely started
+    reported "scored 0%" on the grown-up activity feed, indistinguishable
+    from a lesson they had sat and failed.
+    """
+    # Its own student, untouched by any other check. Sharing one across
+    # tests is how three earlier fixtures in this repo broke: a test that
+    # advanced progress silently changed what a later assertion measured.
+    signup(client(), "student", username="scorer", email="scorer@example.com",
+           join_code=join_code_for("ms_chen"))
+    student = db.user_by_username("scorer")
+    assert student, "fixture student not created"
+    lesson = "circuits-01-breadboard"
+
+    db.set_lesson_status(student["id"], lesson, "in_progress")
+    entry = db.lesson_entries(student["id"])[lesson]
+    assert entry["score"] is None, f"opening a lesson stored score={entry['score']!r}"
+
+    # A real score still lands, and still only ever goes up.
+    db.set_lesson_status(student["id"], lesson, "completed", score=70)
+    assert db.lesson_entries(student["id"])[lesson]["score"] == 70
+    db.set_lesson_status(student["id"], lesson, "completed", score=40)
+    assert db.lesson_entries(student["id"])[lesson]["score"] == 70, "a worse score won"
+
+    # And a later scoreless touch does not wipe the score that is there.
+    db.set_lesson_status(student["id"], lesson, "in_progress")
+    assert db.lesson_entries(student["id"])[lesson]["score"] == 70, "a scoreless call cleared it"
+
+
 # ── Runner ──────────────────────────────────────────────────────────────────────
 
 TESTS = [
@@ -1068,7 +1101,7 @@ TESTS = [
     t_pages_render,
     t_local_stack_boots, t_app_env_validated,
     t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,
-    t_health,
+    t_health, t_no_phantom_score,
 ]
 
 

@@ -990,7 +990,16 @@ def set_lesson_status(student_id: int, lesson_id: str, status: str,
                 -- Never walk a completed lesson back to in_progress.
                 status = CASE WHEN lesson_progress.status = 'completed'
                               THEN 'completed' ELSE EXCLUDED.status END,
-                score = GREATEST(COALESCE(lesson_progress.score, 0), COALESCE(EXCLUDED.score, 0)),
+                -- Keep the higher score, but never invent one. COALESCE-ing
+                -- the incoming NULL to zero turned "opened this lesson" into
+                -- "scored zero" on the activity feed, because opening a
+                -- lesson calls this with no score at all.
+                -- (No per-cent sign in this comment on purpose: psycopg
+                -- scans the whole string for placeholders, comments and all.)
+                score = CASE
+                    WHEN EXCLUDED.score IS NULL THEN lesson_progress.score
+                    ELSE GREATEST(COALESCE(lesson_progress.score, 0), EXCLUDED.score)
+                END,
                 quiz_seconds = COALESCE(EXCLUDED.quiz_seconds, lesson_progress.quiz_seconds),
                 updated_at = now()
             """,

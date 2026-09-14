@@ -1,9 +1,16 @@
 # Ignite Academy — the whole stack on one machine.
 #
+#   ./demo.sh                 generates .env, builds, waits, seeds, prints logins
+#
+# or by hand:
+#
 #   cp .env.example .env      # then edit: SECRET_KEY and POSTGRES_PASSWORD
 #   docker compose up -d
 #   docker compose logs -f app
 #   open http://localhost:8000
+#
+# Runs on arm64 as well as x86-64 — every image below is multi-arch, so a
+# 64-bit Raspberry Pi needs no separate compose file. See docs/DEMO.md.
 #
 # That is the "prove it works" setup: real Postgres, real gunicorn, real
 # migrations, no TLS anywhere. APP_ENV=local waives the checks a laptop
@@ -65,8 +72,13 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ignite}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ignite}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       BASE_URL: ${BASE_URL:-http://localhost:8000}
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
-      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      # Two workers, three connections each. The old default of 4x5 meant
+      # twenty Postgres connections on a machine that is also running
+      # Postgres — fine on a server, wasteful on a Pi, and this is the
+      # configuration people actually run first. Raise it in .env when the
+      # box is bigger than the demo.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      DB_POOL_MAX: ${DB_POOL_MAX:-3}
       # 0 because nothing is in front by default. Set it to 1 when you
       # turn the tls profile on, or every user shares a rate-limit
       # bucket — the app logs an error if it spots that.

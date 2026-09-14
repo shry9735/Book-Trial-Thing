@@ -15,6 +15,21 @@ Flask · Postgres · Stripe · gunicorn behind nginx
 
 ## Quick start
 
+Docker, and one command. Works on an x86-64 laptop and on a 64-bit
+Raspberry Pi 5 alike.
+
+```bash
+./demo.sh
+```
+
+It generates `.env`, builds, waits for the app to report ready, loads a
+demo school with a fortnight of history, and prints the URL and the
+logins. First run takes 4–6 minutes on a Pi, most of it pulling images;
+after that, about 20 seconds. Full runbook: [`docs/DEMO.md`](docs/DEMO.md).
+
+<details>
+<summary>Or run it from source, without Docker</summary>
+
 Needs Python 3.11+ and a Postgres database. Everything else is `pip`.
 
 ```bash
@@ -32,7 +47,10 @@ The schema is created on first start. Open
 teacher signup creates an **organisation** and prints its **join code**,
 which students and parents need in order to sign up.
 
-There are no default accounts.
+There are no default accounts — `game/seed_demo.py` makes a school full of
+them if you want something to look at.
+
+</details>
 
 ---
 
@@ -40,6 +58,7 @@ There are no default accounts.
 
 | Path | What it is |
 |---|---|
+| `demo.sh` | One command from a fresh clone to a seeded, running demo. See [`docs/DEMO.md`](docs/DEMO.md). |
 | `game/` | The web app. Start at [`game/README.md`](game/README.md). |
 | `game/lessons/` | One folder per lesson. Drop a folder in, it appears. |
 | `game/tracks/` | One folder per track — order, staging, age band, prep skills. |
@@ -47,7 +66,8 @@ There are no default accounts.
 | `game/resources/` | Parent guides and answer keys. **Never served without a grown-up session** — see its README. |
 | `game/static/kit/` | The [sub-app bridge](docs/SUBAPPS.md) — the only thing a lesson or game needs to know about the platform. |
 | `docs/` | [Architecture, data model, extension guides](docs/README.md). |
-| `scripts/` | Content and layering checks, doc generation, database backups. |
+| `game/seed_demo.py` | Builds the demo school — eight students, each in a different state. |
+| `scripts/` | Content and layering checks, doc generation, stand-in artwork, database backups. |
 | `deploy/` | nginx config and TLS certificate mount point. |
 | `make_epub.py` | Builds an EPUB from the same Markdown the lessons use. |
 | `ingest.py`, `query.py`, `webserver/` | Local RAG authoring tools — **not** part of the hosted app. |
@@ -59,6 +79,7 @@ There are no default accounts.
 
 | Start here | For |
 |---|---|
+| [**Running a demo**](docs/DEMO.md) | One command to a populated school, on a Pi or a laptop — accounts, a run of show, and what to do when it misbehaves |
 | [**Architecture**](docs/ARCHITECTURE.md) | How it fits together, and why |
 | [**Data model**](docs/DATA_MODEL.md) | Every table and the constraint that makes it correct |
 | [**Extending it**](docs/EXTENDING.md) | Recipes: add a lesson, route, migration, command |
@@ -111,17 +132,17 @@ exists in the interaction with the real thing.
 ```bash
 createdb ignite_test
 export DATABASE_URL=postgresql://localhost/ignite_test
-.venv/bin/python game/selftest.py             # 37  core, auth, hardening, route gates
+.venv/bin/python game/selftest.py             # 39  core, auth, hardening, route gates
 .venv/bin/python game/selftest_billing.py     # 34  subscriptions, orgs, net-30
 .venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
 .venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
-.venv/bin/python game/selftest_gating.py      # 36  age bands, prep skills, four block reasons
+.venv/bin/python game/selftest_gating.py      # 39  age bands, prep skills, four block reasons
 .venv/bin/python game/selftest_resources.py   # 27  grown-up material, and the wall around it
 .venv/bin/python game/selftest_subapp.py      # 29  the platform/content seam
 ```
 
-275 checks. They wipe the database they point at, so aim them at a scratch
+276 checks. They wipe the database they point at, so aim them at a scratch
 one. All seven refuse to run with `APP_ENV=production`.
 
 Three static checks need no database at all, and are the ones that catch

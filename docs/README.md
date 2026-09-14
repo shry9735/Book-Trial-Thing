@@ -6,6 +6,7 @@ where things are and want to make a change.
 
 | Document | Read it when |
 |---|---|
+| [Running a demo](DEMO.md) | You have to show this to somebody — one command, the demo accounts, and a run of show |
 | [Architecture](ARCHITECTURE.md) | You want to understand how the pieces fit and why |
 | [Data model](DATA_MODEL.md) | You are touching the schema or wondering what a table is for |
 | [Extending it](EXTENDING.md) | You are adding a lesson, route, migration or command |

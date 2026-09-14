@@ -1,19 +1,26 @@
-# ── RAG pipeline (ingest.py + query.py) ────────────────────────────────────────
-ebooklib>=0.18
-beautifulsoup4>=4.12
-qdrant-client>=1.9
-requests>=2.31
+# Ignite Academy — what the web application needs, and nothing else.
+#
+# This is the file the Docker image installs, so every line here is weight
+# on a Raspberry Pi's build. Everything below has a pure-Python wheel or an
+# aarch64 wheel on PyPI, which is what keeps `docker compose build` on a
+# Pi 5 down to a couple of minutes instead of a Rust toolchain and a nap.
+#
+# The authoring pipeline (ingest.py, query.py, make_epub.py, generate_art.py,
+# webserver/) is NOT here — it is a local tool, it pulls in qdrant-client and
+# grpcio, and it has no business in a server image. See requirements-authoring.txt.
 
-# ── EPUB builder (make_epub.py) ────────────────────────────────────────────────
-markdown>=3.5
-
-# ── Game server (game/) ────────────────────────────────────────────────────────
 flask>=3.0
 # psycopg 3. [binary] ships the libpq wheel so no local Postgres dev headers
 # are needed; [pool] is the connection pool each worker process owns.
+# The binary wheel covers x86-64 and aarch64 — a 64-bit Pi is fine, a 32-bit
+# one is not and would try to compile libpq from source.
 psycopg[binary,pool]>=3.1
 # WSGI server. The Flask dev server is single-threaded and must not face users.
 gunicorn>=21.2
+# Lesson prose, the legal pages and the grown-up resource guides are all
+# Markdown rendered at request time.
+markdown>=3.5
 # Payments. Card data never reaches this server — Checkout and the Customer
 # Portal are hosted on Stripe's domain and we hold only their ids.
+# Imported lazily, so a demo with no Stripe keys never touches it.
 stripe>=12.0

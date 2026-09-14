@@ -1,0 +1,21 @@
+# Ignite Academy — the local authoring pipeline.
+#
+#     pip install -r requirements.txt -r requirements-authoring.txt
+#
+# Needed only by the tools that turn manuscript source into a book and a
+# searchable index:
+#
+#     ingest.py       chunks EPUBs into Qdrant for the RAG chat
+#     query.py        asks questions of that index
+#     make_epub.py    builds an EPUB from game/content/
+#     generate_art.py drives a local ComfyUI to illustrate chapters
+#     webserver/      the local chat UI over ingest.py's index
+#
+# Deliberately not in requirements.txt: none of this runs on the server, and
+# qdrant-client alone drags in grpcio, which is a long build on a Pi and a
+# large layer everywhere. See docker-compose.rag.yml for the Qdrant service.
+
+ebooklib>=0.18
+beautifulsoup4>=4.12
+qdrant-client>=1.9
+requests>=2.31

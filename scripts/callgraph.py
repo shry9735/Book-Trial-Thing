@@ -39,7 +39,7 @@ PACKAGE = REPO / "game"
 # depend on anything in a LOWER layer, never a higher one — so db.py must
 # never import app.py, and billing.py must never reach for a request.
 LAYERS: list[tuple[str, list[str]]] = [
-    ("entrypoint", ["wsgi", "manage", "migrate_json", "import_assets",
+    ("entrypoint", ["wsgi", "manage", "migrate_json", "import_assets", "seed_demo",
                     "selftest", "selftest_billing", "selftest_classrooms",
                     "selftest_accounts", "selftest_standards",
                     "selftest_gating", "selftest_resources", "selftest_subapp"]),

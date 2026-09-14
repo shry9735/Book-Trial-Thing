@@ -530,7 +530,24 @@ def static_url(filename: str) -> str:
     return url_for("static", filename=filename) + query
 
 
+# What art() falls back to when the caller has no name to give it at all.
+# Distinct from "this file is missing": a student who never picked an avatar
+# is not an authoring mistake, and should not be shown a "drop a graphic
+# here" card in the page header.
+DEFAULT_ART = "ui/avatar-default"
+
+
 def art(name: str) -> str:
+    """
+    URL for a piece of shared art, by name and without an extension.
+
+    A blank name is the case worth spelling out. `avatar` defaults to the
+    empty string for every account, so url_for("art_placeholder", name="")
+    builds "/art-placeholder/" — which matches no route, because <path:>
+    will not match an empty segment — and every page carrying a user's
+    avatar quietly 404s in the background. Fall back to the default instead.
+    """
+    name = (name or "").strip() or DEFAULT_ART
     found = find_art(name)
     if found:
         return static_url(found)

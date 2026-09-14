@@ -53,7 +53,7 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 for suite in selftest*.py; do python "$suite" || break; done
 ```
 
-Seven suites, 242 checks — the roster is in [the top-level
+Eight suites, 276 checks — the roster is in [the top-level
 README](../README.md#tests). They run against a real database and wipe it,
 so point them at a scratch one, and all seven refuse to run against
 `APP_ENV=production`. The billing suite never calls Stripe: it drives the
@@ -352,9 +352,10 @@ game/
 ├── emailer.py                Verification and reset mail — console or SMTP
 ├── config.py  logsetup.py    Environment parsing; log formatting
 ├── manage.py                 Operator CLI — comps, seats, erasure, invoices
+├── seed_demo.py              A demo school to show the app against
 ├── import_assets.py          Sorts a folder of artwork into static/art/
 ├── migrate_json.py           One-way import from the pre-Postgres JSON store
-├── selftest*.py              Seven suites; see ../README.md
+├── selftest*.py              Eight suites; see ../README.md
 ├── content/                  Lesson prose and the legal pages (Markdown)
 │   ├── 01-breadboard.md
 │   └── legal/                Terms and Privacy — see ../docs/LEGAL.md

@@ -58,7 +58,8 @@ organisation.
 | `manage.py` | entrypoint | Operator CLI — invoice approval, comps, seat sync, deactivation, erasure. |
 | `migrate_json.py` | entrypoint | One-way import from the old JSON store. |
 | `import_assets.py` | entrypoint | Sorts a folder of artwork into `static/art/`. |
-| `selftest*.py` | entrypoint | Seven suites — see [the roster](../README.md#tests). |
+| `selftest*.py` | entrypoint | Eight suites — see [the roster](../README.md#tests). |
+| `seed_demo.py` | entrypoint | Builds the demo school — see [docs/DEMO.md](DEMO.md). |
 | `app.py` | web | Every route. Request lifecycle, template data, HTTP status. |
 | `billing.py` | service | Stripe, and the single answer to "is this account paid up?". |
 | `tracks.py` | service | Lessons in a deliberate order, who they are for, and what blocks them. |
