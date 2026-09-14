@@ -16,9 +16,10 @@
 #     ./demo.sh --stop     stop everything, keep the data
 #     ./demo.sh --logins   reprint the accounts and the URL
 #
-# Tested on a Raspberry Pi 5 (64-bit Raspberry Pi OS) and on an x86-64
-# laptop. It needs Docker with the Compose v2 plugin and nothing else —
-# no Python on the host, no Postgres on the host.
+# Runs on a Raspberry Pi 5 (64-bit Raspberry Pi OS), on Linux and macOS
+# laptops, and on Windows from inside WSL2. It needs Docker with the
+# Compose v2 plugin and nothing else — no Python on the host, no Postgres
+# on the host.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -97,8 +98,20 @@ lan_ip() {
   if [ -z "$ip" ] && command -v ip >/dev/null 2>&1; then
     ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')" || true
   fi
-  if [ -z "$ip" ] && command -v ipconfig >/dev/null 2>&1; then     # macOS
-    ip="$(ipconfig getifaddr en0 2>/dev/null)" || true
+  # macOS. Ask the routing table which interface actually carries traffic
+  # rather than assuming en0: that is Wi-Fi on most MacBooks, but a docked
+  # or Ethernet-connected one answers on a different en*, and guessing
+  # wrong silently drops BASE_URL back to localhost — which still demos on
+  # the laptop itself, but nothing else on the wifi can reach it.
+  if [ -z "$ip" ] && command -v ipconfig >/dev/null 2>&1; then
+    local iface
+    iface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')" || true
+    [ -n "$iface" ] && ip="$(ipconfig getifaddr "$iface" 2>/dev/null)" || true
+    if [ -z "$ip" ]; then
+      for iface in en0 en1 en2 en3 en4 en5; do
+        ip="$(ipconfig getifaddr "$iface" 2>/dev/null)" && [ -n "$ip" ] && break
+      done
+    fi
   fi
   printf '%s' "${ip:-127.0.0.1}"
 }

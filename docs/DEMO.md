@@ -25,6 +25,25 @@ halve both.
 
 ---
 
+## On a laptop
+
+The same `./demo.sh`, and usually faster — about 2–3 minutes for a first
+run, ten seconds after that. Every image in the stack is multi-arch, so
+Apple Silicon and x86-64 both pull a native build with nothing to
+configure.
+
+| | What you need |
+|---|---|
+| **macOS** | Docker Desktop. Run `./demo.sh` in Terminal. |
+| **Linux** | Docker Engine plus the Compose v2 plugin, same as the Pi. |
+| **Windows** | Docker Desktop with the WSL2 backend, and **run `./demo.sh` from inside WSL** — it is a bash script, and the paths and networking work there. Cloning into the WSL filesystem rather than `/mnt/c` also makes the build noticeably faster. |
+
+Running it on both the Pi and a laptop at once is fine — they are separate
+databases and neither knows about the other. Worth doing if the Pi is the
+demo and the laptop is the backup.
+
+---
+
 ## What you need on the Pi
 
 64-bit Raspberry Pi OS, and Docker with the Compose v2 plugin:
