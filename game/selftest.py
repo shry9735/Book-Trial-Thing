@@ -15,6 +15,7 @@ scratch database and never at production.  It refuses to run if
 APP_ENV=production.
 """
 
+import gzip
 import os
 import re
 import sys
@@ -1053,6 +1054,41 @@ def t_health():
     assert res.get_json() == {"status": "ok", "database": True}, res.get_json()
 
 
+@check("responses are compressed, and Vary keeps caches honest")
+def t_compression():
+    """
+    The default deployment publishes gunicorn straight onto a port with
+    nothing in front, so compression has to happen here or not at all.
+
+    The Vary half matters more than the bytes: several pages already vary
+    on Cookie, and overwriting that with a bare "Accept-Encoding" would
+    let a shared cache hand one account's page to another.
+    """
+    c = client()
+    login(c, "ms_chen")
+
+    packed = c.get("/grownup", headers={"Accept-Encoding": "gzip"})
+    assert packed.headers.get("Content-Encoding") == "gzip", dict(packed.headers)
+    vary = packed.headers.get("Vary", "")
+    assert "accept-encoding" in vary.lower(), vary
+    body = gzip.decompress(packed.get_data())
+    assert b"<html" in body.lower(), "compressed body is not the page"
+    assert int(packed.headers["Content-Length"]) == len(packed.get_data()), \
+        "Content-Length does not match the compressed body"
+
+    # A client that did not ask gets it uncompressed, and the same bytes.
+    plain = c.get("/grownup", headers={"Accept-Encoding": "identity"})
+    assert "Content-Encoding" not in plain.headers, dict(plain.headers)
+    assert plain.get_data() == body, "compressed and plain bodies differ"
+    assert len(packed.get_data()) < len(plain.get_data()), "compression made it bigger"
+
+    # A page that varies on Cookie must still say so after compressing.
+    legal = c.get("/legal/terms", headers={"Accept-Encoding": "gzip"})
+    vary = legal.headers.get("Vary", "").lower()
+    assert "cookie" in vary, f"Vary lost Cookie: {vary!r}"
+    assert "accept-encoding" in vary, f"Vary lost Accept-Encoding: {vary!r}"
+
+
 @check("opening a lesson does not invent a score of zero")
 def t_no_phantom_score():
     """
@@ -1101,7 +1137,7 @@ TESTS = [
     t_pages_render,
     t_local_stack_boots, t_app_env_validated,
     t_livez, t_production_guards, t_proxy_warning, t_rate_events_trim,
-    t_health, t_no_phantom_score,
+    t_health, t_no_phantom_score, t_compression,
 ]
 
 

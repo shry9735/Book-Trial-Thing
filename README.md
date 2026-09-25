@@ -67,7 +67,7 @@ them if you want something to look at.
 | `game/static/kit/` | The [sub-app bridge](docs/SUBAPPS.md) — the only thing a lesson or game needs to know about the platform. |
 | `docs/` | [Architecture, data model, extension guides](docs/README.md). |
 | `game/seed_demo.py` | Builds the demo school — eight students, each in a different state. |
-| `scripts/` | Content and layering checks, doc generation, stand-in artwork, database backups. |
+| `scripts/` | Content and layering checks, doc generation, stand-in artwork, art re-encoding, database backups. |
 | `deploy/` | nginx config and TLS certificate mount point. |
 | `make_epub.py` | Builds an EPUB from the same Markdown the lessons use. |
 | `ingest.py`, `query.py`, `webserver/` | Local RAG authoring tools — **not** part of the hosted app. |
@@ -132,17 +132,17 @@ exists in the interaction with the real thing.
 ```bash
 createdb ignite_test
 export DATABASE_URL=postgresql://localhost/ignite_test
-.venv/bin/python game/selftest.py             # 39  core, auth, hardening, route gates
+.venv/bin/python game/selftest.py             # 40  core, auth, hardening, route gates
 .venv/bin/python game/selftest_billing.py     # 34  subscriptions, orgs, net-30
 .venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
 .venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
 .venv/bin/python game/selftest_gating.py      # 39  age bands, prep skills, four block reasons
 .venv/bin/python game/selftest_resources.py   # 27  grown-up material, and the wall around it
-.venv/bin/python game/selftest_subapp.py      # 29  the platform/content seam
+.venv/bin/python game/selftest_subapp.py      # 32  the platform/content seam, content caches
 ```
 
-276 checks. They wipe the database they point at, so aim them at a scratch
+280 checks. They wipe the database they point at, so aim them at a scratch
 one. All seven refuse to run with `APP_ENV=production`.
 
 Three static checks need no database at all, and are the ones that catch

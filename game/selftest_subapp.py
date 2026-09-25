@@ -342,8 +342,14 @@ def t_art_fingerprinted():
     that promise holds on the server and quietly fails in every browser
     that already has the old file — the worst place for it to fail.
     """
+    # Resolve the extension rather than naming one. These two checks used
+    # to say "spark.png" and broke the day that file became spark.webp —
+    # hardcoding an extension in a test for the machinery whose entire job
+    # is to hide extensions.
+    found = appmod.find_art("characters/spark")
+    assert found, "no art for characters/spark"
     with appmod.app.test_request_context("/"):
-        url = appmod.static_url("art/characters/spark.png")
+        url = appmod.static_url(found)
     assert "?v=" in url, url
     digest = url.split("?v=")[1]
     assert len(digest) == 8, digest
@@ -352,15 +358,17 @@ def t_art_fingerprinted():
 @check("changing the bytes changes the URL")
 def t_art_fingerprint_changes():
     from pathlib import Path
-    path = Path(appmod.BASE_DIR) / "static" / "art" / "characters" / "spark.png"
+    found = appmod.find_art("characters/spark")
+    assert found, "no art for characters/spark"
+    path = Path(appmod.BASE_DIR) / "static" / found
     original = path.read_bytes()
     with appmod.app.test_request_context("/"):
-        before = appmod.static_url("art/characters/spark.png")
+        before = appmod.static_url(found)
     try:
         path.write_bytes(original + b"\n<!-- new export -->")
         appmod._FINGERPRINTS.clear()          # a restart is what does this in production
         with appmod.app.test_request_context("/"):
-            after = appmod.static_url("art/characters/spark.png")
+            after = appmod.static_url(found)
         assert before != after, "replacing the file did not change its URL"
     finally:
         path.write_bytes(original)
@@ -466,6 +474,86 @@ def t_scaffold_validates():
     assert not (Path(appmod.BASE_DIR) / "lessons" / "bad-probe").exists()
 
 
+# ── The per-process content caches ──────────────────────────────────────────────
+
+@check("resolved art paths are cached, misses included")
+def t_art_cache():
+    """
+    find_art() is six filesystem probes per image in the worst case, and
+    the lesson menu draws nine. That was 54 syscalls to render one page,
+    repeated on every request, for files that ship in the image.
+
+    A miss has to be cached too: "no art here" is the placeholder path,
+    and re-probing six extensions to rediscover it is the most expensive
+    way to learn nothing.
+    """
+    import pathlib
+    real = pathlib.Path.is_file
+    probes = {"n": 0}
+
+    def counting(self):
+        probes["n"] += 1
+        return real(self)
+
+    appmod._ART_PATHS.clear()
+    pathlib.Path.is_file = counting
+    try:
+        first_hit = appmod.find_art("characters/spark")
+        after_first = probes["n"]
+        assert after_first > 0, "a cold lookup touched no files at all"
+
+        probes["n"] = 0
+        for _ in range(20):
+            assert appmod.find_art("characters/spark") == first_hit
+        assert probes["n"] == 0, f"{probes['n']} probes for a cached hit"
+
+        # And the same for something that does not exist.
+        assert appmod.find_art("characters/no-such-thing") is None
+        probes["n"] = 0
+        for _ in range(20):
+            assert appmod.find_art("characters/no-such-thing") is None
+        assert probes["n"] == 0, f"{probes['n']} probes for a cached miss"
+    finally:
+        pathlib.Path.is_file = real
+        appmod._ART_PATHS.clear()
+
+
+@check("rendered content is cached, and a missing file is not")
+def t_render_cache():
+    first = appmod.render_content("01-breadboard.md")
+    assert "<" in first, "content did not render to HTML"
+    assert appmod.render_content("01-breadboard.md") == first, "second render differed"
+    assert "01-breadboard.md" in appmod._RENDERED, "render was not cached"
+
+    # The "create this file" notice is what an author stares at while
+    # creating it. Caching that would keep showing it after they had.
+    missing = appmod.render_content("no-such-file.md")
+    assert "No content file yet" in missing, missing
+    assert "no-such-file.md" not in appmod._RENDERED, "cached a missing file"
+
+
+@check("reloading the catalog drops the content caches with it")
+def t_reload_clears_caches():
+    """
+    refresh_catalog() is the documented "I changed content" path. If it
+    reloaded lesson.json but kept serving the old prose, the old resolved
+    art path and the old content hash, it would be the confusing half of a
+    reload rather than a reload.
+    """
+    appmod.render_content("01-breadboard.md")
+    appmod.find_art("characters/spark")
+    with appmod.app.test_request_context("/"):
+        appmod.static_url(appmod.find_art("characters/spark"))
+    assert appmod._RENDERED and appmod._ART_PATHS and appmod._FINGERPRINTS, \
+        "nothing was cached, so this check proves nothing"
+
+    appmod.refresh_catalog()
+
+    assert not appmod._RENDERED, "rendered content survived a reload"
+    assert not appmod._ART_PATHS, "resolved art paths survived a reload"
+    assert not appmod._FINGERPRINTS, "content hashes survived a reload"
+
+
 TESTS = [
     t_reward_folds_in, t_bridge_declared, t_no_awards_declared,
     t_award_declared, t_award_undeclared, t_award_mixed, t_award_idempotent,
@@ -477,6 +565,7 @@ TESTS = [
     t_art_fingerprinted, t_art_fingerprint_changes, t_art_missing,
     t_art_manifest, t_art_manifest_cacheable,
     t_kit_surface, t_kit_version_matches, t_scaffold, t_scaffold_validates,
+    t_art_cache, t_render_cache, t_reload_clears_caches,
 ]
 
 

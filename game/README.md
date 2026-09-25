@@ -53,7 +53,7 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 for suite in selftest*.py; do python "$suite" || break; done
 ```
 
-Eight suites, 276 checks — the roster is in [the top-level
+Eight suites, 280 checks — the roster is in [the top-level
 README](../README.md#tests). They run against a real database and wipe it,
 so point them at a scratch one, and all seven refuse to run against
 `APP_ENV=production`. The billing suite never calls Stripe: it drives the

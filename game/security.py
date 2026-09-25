@@ -21,6 +21,7 @@ different worker.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import hmac
 import logging
@@ -225,6 +226,83 @@ def safe_next(target: str | None, fallback: str = "/") -> str:
 
 
 # ── Response headers ────────────────────────────────────────────────────────────
+
+# Types worth compressing. Everything else is either already compressed
+# (webp, png, woff2) or too small to be worth the CPU.
+COMPRESSIBLE = (
+    "text/html", "text/css", "text/plain", "text/markdown",
+    "application/javascript", "text/javascript",
+    "application/json", "image/svg+xml",
+)
+
+# Matches nginx's gzip_min_length. Below roughly this, the gzip header and
+# trailer eat the saving and a small response gets slower, not smaller.
+COMPRESS_MIN_BYTES = 1024
+
+# Ceiling for buffering a streamed file in order to compress it. send_file()
+# hands back a response in direct-passthrough mode so a large file is never
+# held in memory; overriding that is right for a 60KB stylesheet and wrong
+# for a video, so it only happens below this size.
+COMPRESS_MAX_BUFFER = 512 * 1024
+
+
+def compress(response, request):
+    """
+    gzip a response when the client asked for it and it is worth doing.
+
+    This lives in the app because the default deployment has nothing in
+    front of it: `docker compose up` publishes gunicorn straight onto a
+    port, and nginx only appears under `--profile tls`. Measured across
+    the real pages, HTML compresses about 81% and the stylesheet 80%, for
+    0.2-0.5ms of CPU — which is the difference between a snappy demo and a
+    sluggish one over conference wifi or a phone hotspot.
+
+    Behind nginx this is not wasted: nginx sees a Content-Encoding it did
+    not set and passes the body straight through rather than compressing
+    it a second time.
+
+    Vary is appended rather than set, because some responses already vary
+    on Cookie and clobbering that would let a shared cache serve one
+    account's page to another.
+    """
+    if response.status_code < 200 or response.status_code >= 300:
+        return response
+    if "Content-Encoding" in response.headers:
+        return response
+    if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+        return response
+    if response.mimetype not in COMPRESSIBLE:
+        return response
+    if response.content_length is not None and response.content_length < COMPRESS_MIN_BYTES:
+        return response
+
+    if response.direct_passthrough:
+        # send_file() streams rather than buffering, which is right for
+        # media and wrong for the 60KB stylesheet that every page loads.
+        # Take it out of passthrough only when we know the size and it is
+        # small enough to hold; anything larger keeps streaming uncompressed.
+        if response.content_length is None or response.content_length > COMPRESS_MAX_BUFFER:
+            return response
+        response.direct_passthrough = False
+
+    body = response.get_data()
+    if len(body) < COMPRESS_MIN_BYTES:
+        return response
+    packed = gzip.compress(body, 6)
+    if len(packed) >= len(body):
+        # Already-dense content. Shipping it larger would be absurd.
+        return response
+
+    response.set_data(packed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(packed))
+    vary = response.headers.get("Vary")
+    if not vary:
+        response.headers["Vary"] = "Accept-Encoding"
+    elif "accept-encoding" not in vary.lower():
+        response.headers["Vary"] = f"{vary}, Accept-Encoding"
+    return response
+
 
 def apply_headers(response, cfg):
     """

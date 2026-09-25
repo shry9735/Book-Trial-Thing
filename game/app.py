@@ -107,6 +107,7 @@ import re
 import sys
 import threading
 from datetime import datetime, timedelta, timezone
+from html import escape as html_escape
 from pathlib import Path
 
 try:
@@ -119,6 +120,22 @@ try:
     import psycopg
 except ImportError as exc:
     sys.exit(f"Missing dependency ({exc.name}): run  pip install -r ../requirements.txt")
+
+# Imported at module load, not on first use: it costs ~29ms, and paying
+# that lazily just hands the bill to whichever student opens the first
+# reading lesson after a worker starts. Still optional — render_markdown()
+# degrades to escaped source rather than failing — because a lesson page
+# full of asterisks beats a 500.
+try:
+    import markdown as _markdown_mod
+except ImportError:                                  # pragma: no cover
+    _markdown = None
+else:
+    # One parser for the process, reset between documents. Not thread-safe
+    # on its own, hence the lock; contention is nil once render_content()
+    # caches the result anyway.
+    _markdown = _markdown_mod.Markdown(extensions=["extra", "tables"])
+_MARKDOWN_LOCK = threading.Lock()
 
 import billing
 import db
@@ -262,6 +279,18 @@ def refresh_catalog() -> None:
     can get is the previous value of one key — never a torn one — and
     nothing writes here while requests are being served anyway.
     """
+    # The three per-process content caches are part of "the content", so
+    # they are dropped here too. Without this, `--reload-catalog` would
+    # pick up a new lesson.json and keep serving the old prose, the old
+    # resolved art path and the old content hash — the confusing half of a
+    # reload rather than a reload.
+    with _RENDER_LOCK:
+        _RENDERED.clear()
+    with _ART_LOCK:
+        _ART_PATHS.clear()
+    with _FINGERPRINT_LOCK:
+        _FINGERPRINTS.clear()
+
     lessons = _build_lessons()
     with _catalog_lock:
         _catalog["lessons"] = lessons
@@ -476,11 +505,37 @@ def lesson_asset(lesson_id: str, filename: str):
     return _cached(send_from_directory(LESSONS_DIR / lesson_id, filename))
 
 
+# Resolved art paths, memoised for the life of the process — same reasoning
+# as _FINGERPRINTS below, and the same lock discipline.
+_ART_PATHS: dict[str, str | None] = {}
+_ART_LOCK = threading.Lock()
+
+
 def find_art(name: str) -> str | None:
+    """
+    The file behind an art name, or None, trying ART_EXTS in order.
+
+    Memoised because it is a filesystem probe per extension per image, and
+    the lesson menu draws nine of them. ".webp" is first and ".svg" last,
+    so a lesson still showing its generated stand-in costs the full six
+    stats — 54 syscalls to render one menu, every time, for files that
+    cannot change under a running process.
+
+    A None is cached too: a missing file is the placeholder path, and
+    re-probing six extensions to rediscover that on every request is the
+    most expensive way to learn nothing.
+    """
+    with _ART_LOCK:
+        if name in _ART_PATHS:
+            return _ART_PATHS[name]
+    found = None
     for ext in ART_EXTS:
         if (ART_DIR / f"{name}{ext}").is_file():
-            return f"art/{name}{ext}"
-    return None
+            found = f"art/{name}{ext}"
+            break
+    with _ART_LOCK:
+        _ART_PATHS[name] = found
+    return found
 
 
 # Content fingerprints for files under static/, computed once at boot.
@@ -623,6 +678,14 @@ def art_placeholder(name: str):
 
 # ── Reading content (shared with make_epub.py) ──────────────────────────────────
 
+# Rendered content/ files, keyed by path. Lesson prose and the legal pages
+# ship in the image beside the code, so rendering one twice in a process is
+# always wasted work: it was 2.5ms of Markdown parsing plus a file read on
+# every single lesson view, for bytes that cannot have changed.
+_RENDERED: dict[str, str] = {}
+_RENDER_LOCK = threading.Lock()
+
+
 def render_content(source: str) -> str:
     """Render a content/ file to HTML.  Same file is make_epub.py input."""
     path = CONTENT_DIR / source
@@ -631,14 +694,21 @@ def render_content(source: str) -> str:
     except ValueError:
         return "<p>Invalid content path.</p>"
 
+    with _RENDER_LOCK:
+        if source in _RENDERED:
+            return _RENDERED[source]
+
     if not path.is_file():
+        # Deliberately not cached: this is the message an author sees while
+        # creating the file, and it should stop appearing once they have.
         return (f'<p class="content-missing">No content file yet — create '
                 f'<code>game/content/{source}</code>.</p>')
 
     raw = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix.lower() in (".html", ".htm"):
-        return raw
-    return render_markdown(raw)
+    html = raw if path.suffix.lower() in (".html", ".htm") else render_markdown(raw)
+    with _RENDER_LOCK:
+        _RENDERED[source] = html
+    return html
 
 
 def render_markdown(raw: str) -> str:
@@ -649,12 +719,19 @@ def render_markdown(raw: str) -> str:
     differently — the tables in the privacy notice need the same `tables`
     extension a lesson does, and finding that out the hard way is a
     published page full of pipe characters.
+
+    `markdown` is imported at module load rather than here, so the 29ms of
+    import lands at boot instead of on whichever student happens to open
+    the first reading lesson. It stays optional: without it every caller
+    gets escaped source rather than a 500, which is a bad page but a
+    legible one.
     """
-    try:
-        import markdown
-    except ImportError:
-        return f"<pre>{raw}</pre>"
-    return markdown.markdown(raw, extensions=["extra", "tables"])
+    if _markdown is None:
+        return f"<pre>{html_escape(raw)}</pre>"
+    # One parser, reset between documents. Building a fresh Markdown()
+    # per call costs about twice as much and produces identical output.
+    with _MARKDOWN_LOCK:
+        return _markdown.reset().convert(raw)
 
 
 # ── Request lifecycle ───────────────────────────────────────────────────────────
@@ -704,7 +781,7 @@ def _force_password_change():
 
 @app.after_request
 def _headers(response):
-    return security.apply_headers(response, cfg)
+    return security.compress(security.apply_headers(response, cfg), request)
 
 
 @app.teardown_appcontext

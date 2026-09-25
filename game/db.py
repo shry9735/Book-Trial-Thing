@@ -528,6 +528,29 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         )
         """,
     ]),
+
+    # ── 7. The index the authorization check was missing ────────────────────
+    #
+    # classroom_students is keyed (classroom_id, student_id), which answers
+    # "who is in this room" and not "which rooms is this child in". Two
+    # queries ask the second question:
+    #
+    #   can_see_student()     the teacher branch, on every visit to a
+    #                         grown-up view of one student
+    #   unplaced_students()   the NOT EXISTS on the classrooms page
+    #
+    # student_id is the trailing key column, so neither could seek — at a
+    # thousand students across three rooms each, EXPLAIN showed a Seq Scan
+    # removing 741 rows to answer a permission question, and it grows with
+    # the roster. With this index the same query is an Index Only Scan.
+    #
+    # Both sibling tables already had exactly this: classroom_teachers has
+    # classroom_teachers_teacher_idx and parent_links has
+    # parent_links_student_idx. This one was simply missed.
+    (7, [
+        "CREATE INDEX IF NOT EXISTS classroom_students_student_idx "
+        "ON classroom_students(student_id)",
+    ]),
 ]
 
 

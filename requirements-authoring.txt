@@ -11,9 +11,17 @@
 #     generate_art.py drives a local ComfyUI to illustrate chapters
 #     webserver/      the local chat UI over ingest.py's index
 #
+# and by the art tooling:
+#
+#     scripts/optimize_art.py   re-encodes oversized PNG/JPEG to WebP
+#
 # Deliberately not in requirements.txt: none of this runs on the server, and
 # qdrant-client alone drags in grpcio, which is a long build on a Pi and a
 # large layer everywhere. See docker-compose.rag.yml for the Qdrant service.
+
+# Image re-encoding for scripts/optimize_art.py. Authoring only — the
+# server never opens an image, it just serves the bytes.
+Pillow>=10.0
 
 ebooklib>=0.18
 beautifulsoup4>=4.12

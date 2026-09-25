@@ -215,6 +215,23 @@ survive, and backfills each old group's creator as its teacher — otherwise
 every existing group would have come through the upgrade with nobody able
 to see it.
 
+`classroom_students` is keyed `(classroom_id, student_id)`, which answers
+"who is in this room". Two queries ask the opposite question — which rooms
+is this child in — and `student_id` is the trailing key column, so neither
+could seek:
+
+| Query | Runs on |
+|---|---|
+| `can_see_student()`, teacher branch | every grown-up view of one student |
+| `unplaced_students()`, the `NOT EXISTS` | the classrooms page, for an admin |
+
+At a thousand students across three rooms each, `EXPLAIN` showed a **Seq
+Scan removing 741 rows to answer a permission question**, growing with the
+roster. Migration 7 adds `classroom_students(student_id)` and the same
+query becomes an Index Only Scan. Both sibling tables already had exactly
+this index — `classroom_teachers_teacher_idx` and
+`parent_links_student_idx` — so this was an omission, not a new idea.
+
 ### `assignments`
 
 Optional restriction of a student's lesson menu. PK is `student_id`, with

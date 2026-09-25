@@ -19,6 +19,36 @@ match in this order:
 .webp  .png  .jpg  .jpeg  .gif  .svg
 ```
 
+`.webp` is first in that list on purpose, and `.svg` last. Dropping a
+`spark.webp` next to a `spark.png` switches every lesson to the WebP
+without touching a line of code or a single lesson's markup.
+
+## Keep the files small
+
+The four original character and background PNGs totalled **9.1 MB**, and
+`classroom.png` alone was 4.5 MB — the first screen a student ever sees.
+That was not oversized art, it was badly encoded art: re-encoded to WebP
+at the *same* pixel dimensions the whole set is 761 KB, a 92% cut, with
+the alpha channel preserved exactly.
+
+```bash
+pip install -r requirements-authoring.txt
+python scripts/optimize_art.py              # report what it would do
+python scripts/optimize_art.py --write      # write the .webp files
+```
+
+Add `--replace` to delete the original once you are happy with the WebP.
+The originals that were converted this way are still in git history if you
+ever want them back:
+
+```bash
+git log --diff-filter=D --name-only -- 'game/static/art/**/*.png'
+git checkout <that-commit>^ -- game/static/art/backgrounds/classroom.png
+```
+
+Art you draw yourself does not have to go through this — SVG is already
+small, and anything under 200 KB is left alone.
+
 If nothing is there, it draws a placeholder that **prints the exact path you
 need to create**. So you never have to guess a filename — run the game, look at
 the gap, and the gap tells you what to name the file.
