@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16294a"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e2218a"/>
+      <stop offset="52%" stop-color="#ef5d52"/>
+      <stop offset="100%" stop-color="#f5921e"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 L0 0 0 32" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="200" fill="url(#stage)"/>
+  <rect width="800" height="200" fill="url(#grid)"/>
+  <path d="M230 90 L302 90" stroke="#8fa2bd" stroke-width="7"
+        stroke-linecap="round"/>
+  <path d="M498 90 L544 90" stroke="#8fa2bd" stroke-width="7"
+        stroke-linecap="round"/>
+  <rect x="302" y="44" width="196" height="92" rx="34" fill="#d8cbb4"
+        stroke="#a8977c" stroke-width="3"/>
+  <rect x="338" y="52" width="18" height="76" fill="#8a5a2b"/><rect x="372" y="52" width="18" height="76" fill="#111111"/><rect x="406" y="52" width="18" height="76" fill="#e2218a"/><rect x="468" y="52" width="18" height="76" fill="#f5a81c"/>
+  <text x="400" y="168" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="19"
+        fill="#46d89b" font-weight="bold">read left to right</text>
+  <rect x="0" y="194" width="800" height="6" fill="url(#flame)"/>
+</svg>

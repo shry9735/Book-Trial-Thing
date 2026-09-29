@@ -1,0 +1,146 @@
+{
+  "id": "csta",
+  "name": "CSTA K-12 Computer Science Standards",
+  "short": "CSTA",
+  "subject": "Computer science",
+  "url": "https://csteachers.org/k12standards/",
+  "owner": "Computer Science Teachers Association. Licensed CC BY-NC-SA 4.0 — NonCommercial.",
+  "claim_status": "self_assessed",
+  "licence_note": "CSTA asks that a crosswalk be reviewed by their Standards Review Team before a product publicly claims alignment (licensing@csteachers.org). Nothing here reproduces or adapts their licensed text — only the codes, which are identifiers, and our own summaries.",
+  "adoption": "Not adopted by states directly. Most state computer science standards are derived from these and from the K-12 CS Framework they share, so the codes travel well even when a state renumbers them.",
+  "code_help": "2-AP-13 reads as: level 2 (grades 6-8), Algorithms and Programming, standard 13. Levels are 1A (K-2), 1B (3-5), 2 (6-8), 3A (9-10), and 3B (11-12 specialist).",
+  "standards": [
+    {
+      "code": "2-CS-01",
+      "grades": [6, 7, 8],
+      "strand": "Computing systems",
+      "summary": "Suggest improvements to a device's design after watching how people actually use it."
+    },
+    {
+      "code": "2-CS-02",
+      "grades": [6, 7, 8],
+      "strand": "Computing systems",
+      "summary": "Build something that combines hardware and software to collect or exchange data."
+    },
+    {
+      "code": "2-CS-03",
+      "grades": [6, 7, 8],
+      "strand": "Computing systems",
+      "summary": "Track down and fix faults in a device methodically, rather than by guessing."
+    },
+    {
+      "code": "2-NI-04",
+      "grades": [6, 7, 8],
+      "strand": "Networks and the internet",
+      "summary": "Model how data is broken into pieces and reassembled when sent over a network."
+    },
+    {
+      "code": "2-NI-05",
+      "grades": [6, 7, 8],
+      "strand": "Networks and the internet",
+      "summary": "Explain the trade-offs in keeping information secure."
+    },
+    {
+      "code": "2-DA-07",
+      "grades": [6, 7, 8],
+      "strand": "Data and analysis",
+      "summary": "Show how the same information can be stored and represented in different ways."
+    },
+    {
+      "code": "2-DA-08",
+      "grades": [6, 7, 8],
+      "strand": "Data and analysis",
+      "summary": "Collect data, then clean and organise it so it can be used."
+    },
+    {
+      "code": "2-DA-09",
+      "grades": [6, 7, 8],
+      "strand": "Data and analysis",
+      "summary": "Draw a conclusion from data and back it up."
+    },
+    {
+      "code": "2-AP-10",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Compare two ways of solving the same problem and say which is better, and why."
+    },
+    {
+      "code": "2-AP-11",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Use variables to hold and change data inside a program."
+    },
+    {
+      "code": "2-AP-12",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Control what a program does with loops, conditions, and repeated steps."
+    },
+    {
+      "code": "2-AP-13",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Break a problem into smaller named pieces that can be reused."
+    },
+    {
+      "code": "2-AP-15",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Plan a project in stages and keep track of what is done."
+    },
+    {
+      "code": "2-AP-16",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Build on somebody else's code or ideas, and credit them for it."
+    },
+    {
+      "code": "2-AP-17",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Test a program on purpose to find where it breaks, then fix it."
+    },
+    {
+      "code": "2-AP-19",
+      "grades": [6, 7, 8],
+      "strand": "Algorithms and programming",
+      "summary": "Write down how a program works so somebody else can follow it."
+    },
+    {
+      "code": "2-IC-20",
+      "grades": [6, 7, 8],
+      "strand": "Impacts of computing",
+      "summary": "Talk about how computing has changed the way people live and work."
+    },
+    {
+      "code": "3A-CS-01",
+      "grades": [9, 10],
+      "strand": "Computing systems",
+      "summary": "Explain how hardware and software work together to run a program."
+    },
+    {
+      "code": "3A-CS-03",
+      "grades": [9, 10],
+      "strand": "Computing systems",
+      "summary": "Work through a fault systematically using a repeatable process."
+    },
+    {
+      "code": "3A-AP-13",
+      "grades": [9, 10],
+      "strand": "Algorithms and programming",
+      "summary": "Break a big problem down into parts small enough to solve one at a time."
+    },
+    {
+      "code": "3A-AP-17",
+      "grades": [9, 10],
+      "strand": "Algorithms and programming",
+      "summary": "Test and refine a program the way a professional would."
+    },
+    {
+      "code": "3A-AP-21",
+      "grades": [9, 10],
+      "strand": "Algorithms and programming",
+      "summary": "Judge and improve a program for correctness, readability, and usability."
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choose a New Password — Ignite Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}" />
+</head>
+<body>
+
+<div class="login-stage">
+  <div class="login-box">
+
+    <div class="login-crest">
+      <div class="mark">🔥</div>
+      <div class="title">Ignite Academy</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head teal">Choose a New Password</div>
+
+      <form class="login-form" method="POST" action="{{ url_for('reset_password', token=token) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+        {% with msgs = get_flashed_messages(with_categories=true) %}
+          {% if msgs %}
+            <div class="flashes">
+              {% for category, message in msgs %}
+                <div class="flash-msg {{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <p class="login-blurb">
+          Setting a new password signs out every device already using this account.
+        </p>
+
+        <div class="field">
+          <label for="password">New password</label>
+          <input type="password" id="password" name="password"
+                 autocomplete="new-password" minlength="10" autofocus required />
+          <small class="field-note">At least 10 characters.</small>
+        </div>
+
+        <div class="field">
+          <label for="password_confirm">Confirm new password</label>
+          <input type="password" id="password_confirm" name="password_confirm"
+                 autocomplete="new-password" minlength="10" required />
+        </div>
+
+        <button type="submit" class="btn block lg teal">Set Password</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

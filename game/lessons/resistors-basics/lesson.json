@@ -1,6 +1,7 @@
 {
   "title": "Reading Resistors",
   "subject": "Basic Electricity",
+  "track": "basic-electricity",
   "type": "interactive",
   "order": 18,
   "duration_min": 8,
@@ -126,5 +127,10 @@
       "explain": "Violet=7, green=5, so 75 — black means add zero zeros: it stays 75 Ω.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 120\" width=\"180\" height=\"90\"><line x1=\"0\" y1=\"60\" x2=\"42\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><line x1=\"198\" y1=\"60\" x2=\"240\" y2=\"60\" stroke=\"#9a9a9a\" stroke-width=\"5\"/><rect x=\"42\" y=\"28\" width=\"156\" height=\"64\" rx=\"20\" fill=\"#e0c68f\" stroke=\"#a8845a\" stroke-width=\"3\"/><rect x=\"96\" y=\"28\" width=\"14\" height=\"64\" fill=\"#7a4b9e\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"120\" y=\"28\" width=\"14\" height=\"64\" fill=\"#2e8b45\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/><rect x=\"144\" y=\"28\" width=\"14\" height=\"64\" fill=\"#1a1a1a\" stroke=\"rgba(0,0,0,0.2)\" stroke-width=\"1\"/></svg>"
     }
+  ],
+  "standards": [
+    "MS-PS2-3",
+    "2-DA-07",
+    "6.RP.A.3"
   ]
 }

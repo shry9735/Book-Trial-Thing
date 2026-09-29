@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ignite
+          POSTGRES_PASSWORD: ignite
+          POSTGRES_DB: ignite_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://ignite:ignite@localhost:5432/ignite_test
+      APP_ENV: development
+      SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m pyflakes game/*.py scripts/*.py gunicorn.conf.py
+
+      # The direction of dependency is a design decision, and breaking it is
+      # invisible in review — a single `import app` inside db.py reads as
+      # harmless. Cheap to check, so check it.
+      - name: Layering
+        run: python scripts/callgraph.py --check
+
+      # The generated call graph is committed, so a pull request that changes
+      # the module graph must include the regenerated file.
+      - name: Call graph is up to date
+        run: |
+          python scripts/callgraph.py
+          git diff --exit-code docs/CALLGRAPH.md \
+            || { echo "::error::docs/CALLGRAPH.md is stale — run python scripts/callgraph.py"; exit 1; }
+
+      # Against a real Postgres, because every bug worth catching here only
+      # exists in the interaction with the real thing.
+      - name: Tests
+        run: |
+          python game/selftest.py
+          python game/selftest_billing.py
+          python game/selftest_classrooms.py
+          python game/selftest_accounts.py
+          python game/selftest_standards.py
+          python game/selftest_gating.py
+          python game/selftest_resources.py
+          python game/selftest_subapp.py
+
+      # Content is data, so these catch a broken lesson.json or a standards
+      # code pointing at nothing without needing a database.
+      - name: Content
+        run: |
+          python scripts/check_content.py
+          python scripts/check_standards.py

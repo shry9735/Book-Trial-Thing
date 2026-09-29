@@ -1,0 +1,37 @@
+# Local RAG tooling for ingest.py / query.py. Not part of the hosted game
+# — see docker-compose.yml for that.
+#
+#   docker compose -f docker-compose.rag.yml up -d
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST / web UI
+      - "6334:6334"   # gRPC
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:z
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+
+  # Ollama is assumed to be running on the host already.
+  # Uncomment this block only if you want Docker to manage it instead.
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+
+# volumes:
+#   ollama_data:

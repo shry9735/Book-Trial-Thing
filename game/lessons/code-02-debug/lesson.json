@@ -1,12 +1,12 @@
 {
   "title": "Debug D.U.D.E.A.D.",
   "subject": "Code",
+  "track": "code",
   "type": "interactive",
   "order": 50,
   "duration_min": 15,
   "reward": "trinket-wrench",
   "description": "The robot drives in circles. Find out why before the Faire.",
-
   "quiz": [
     {
       "id": "q1",
@@ -29,6 +29,19 @@
       ],
       "answer": 1,
       "explain": "An engineer's first question is never \"what should I change?\" It's \"what is actually happening?\""
+    }
+  ],
+  "standards": [
+    "2-AP-17",
+    "2-CS-03",
+    "3A-CS-03"
+  ],
+  "resources": [
+    {
+      "file": "debugging-together.md",
+      "title": "Debugging together",
+      "kind": "guide",
+      "description": "The one rule: do not tell them what is wrong, even when you can see it."
     }
   ]
 }

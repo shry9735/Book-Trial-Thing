@@ -1,13 +1,13 @@
 {
   "title": "Build a Blinking LED",
   "subject": "Circuits",
+  "track": "circuits",
   "type": "video",
   "source": "lessons/circuits-02.mp4",
   "order": 20,
   "duration_min": 9,
   "reward": "trinket-led",
   "description": "Follow along and wire your first working circuit.",
-
   "quiz": [
     {
       "id": "q1",
@@ -23,9 +23,18 @@
     {
       "id": "q2",
       "prompt": "Which leg of an LED is the positive side?",
-      "choices": ["The shorter one", "The longer one", "Either — it doesn't matter"],
+      "choices": [
+        "The shorter one",
+        "The longer one",
+        "Either — it doesn't matter"
+      ],
       "answer": 1,
       "explain": "The long leg is the anode (positive). LEDs only conduct one way, so backwards means no light at all."
     }
+  ],
+  "standards": [
+    "2-CS-02",
+    "MS-PS3-5",
+    "MS-ETS1-4"
   ]
 }

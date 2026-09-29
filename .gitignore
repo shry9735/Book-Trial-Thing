@@ -10,13 +10,35 @@ qdrant_storage/
 webserver/config.json
 
 # ── Game ─────────────────────────────────────────────────────────────────────────
-# Runtime state — accounts are re-seeded on first run.
-# data/lessons.json and data/classroom.json are content, and stay committed.
+# Runtime state now lives in Postgres, not on disk. These are leftovers from
+# the JSON store — kept ignored so an old checkout does not commit them, and
+# so migrate_json.py has something to read on a box being upgraded.
+# data/items.json and data/classroom.json are content, and stay committed.
 game/data/users.json
 game/data/groups.json
 game/data/progress.json
 game/data/assignments.json
 game/data/secret_key
+
+# ── Documentation ────────────────────────────────────────────────────────────────
+# Generated API reference. Rebuilt by ./scripts/gendocs.sh, and published to
+# GitHub Pages by .github/workflows/docs.yml — committing 3MB of generated
+# HTML would make every diff unreadable.
+# docs/CALLGRAPH.md IS committed: it is Markdown, GitHub renders its Mermaid
+# inline, and its diff shows when a change reshapes the module graph.
+docs/api/
+
+# ── Deployment ───────────────────────────────────────────────────────────────────
+# Secrets and anything derived from them.
+.env
+.env.*
+!.env.example
+# Certificates and dumps are secrets; the directories themselves are not,
+# and docker-compose mounts them, so keep the placeholders.
+deploy/certs/*
+!deploy/certs/.gitkeep
+backups/*
+!backups/.gitkeep
 
 # Drop zone for python game/import_assets.py — sorted files move out of here,
 # so anything left behind is unsorted and shouldn't be committed by accident.

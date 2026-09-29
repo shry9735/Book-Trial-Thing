@@ -63,8 +63,10 @@ every lesson at once, and a missing file shows a placeholder naming the
 path instead of a broken image.
 
 Add `<link rel="stylesheet" href="/kit/lesson-kit.css">` for the shared
-fonts, colours, buttons, panels and drag-and-drop styles — the same look
-as every other lesson, with none of their JavaScript.
+fonts, colours, buttons, sprites and layout helpers — the same look as
+every other lesson, with none of their JavaScript. Read the file for the
+full list of `lk-` classes; it is short, and nothing in it is kept around
+for a lesson that might one day want it.
 
 ## The manifest
 
@@ -84,7 +86,8 @@ as every other lesson, with none of their JavaScript.
 | Field | Meaning |
 |---|---|
 | `type` | `interactive` (your `index.html`), `video`, or `reading` |
-| `order` | Sort position in the lesson list |
+| `track` | Which track it belongs to. Falls back to a slug of `subject`. |
+| `order` | Sort position **within the track** |
 | `reward` | An id from `data/items.json` — the trinket earned |
 | `quiz` | Required. See below. |
 
@@ -92,6 +95,55 @@ as every other lesson, with none of their JavaScript.
 `reading` lessons add `"content": "01-breadboard.md"`, pointing into
 `game/content/` — the same Markdown `make_epub.py` builds into a book
 chapter.
+
+### The optional half
+
+None of these is needed to ship a lesson, and a lesson inherits the middle
+three from its track when it stays quiet. Full detail in
+[`../tracks/README.md`](../tracks/README.md) and
+[`../../docs/EXTENDING.md`](../../docs/EXTENDING.md).
+
+| Field | Meaning |
+|---|---|
+| `access` | `free` (the default) or `subscriber` |
+| `kit` | There is a hands-on kit for this one. **Informational — never gates.** |
+| `ages` / `grades` | Who it is for. `[12, 15]` and `"grades": [7, 8]` are the same kind of thing; give either and the other is derived. |
+| `skills` | What a student wants to be able to do already, e.g. "Rearrange a formula". **Advisory; never gates.** |
+| `standards` | Curriculum codes it covers, e.g. `["MS-PS2-3", "7.RP.A.2"]`. See [the tracker](../../docs/STANDARDS.md). |
+| `requires` | What must be finished first, elsewhere: `{"tracks": [], "lessons": [], "assignment": false}`. **This one does gate.** |
+| `resources` | Grown-up guides and answer keys. **Never shown to students** — see [`../resources/README.md`](../resources/README.md). |
+| `awards` | Item ids this lesson may hand out through `Ignite.award()`. The server refuses anything not on this list. |
+| `bridge` | Which kit version it was built against. See [docs/SUBAPPS.md](../../docs/SUBAPPS.md). |
+
+```json
+{
+  "ages": [13, 16],
+  "standards": ["2-AP-17", "MS-ETS1-2"],
+  "skills": [
+    { "name": "Compare two options against the same criteria", "subject": "Science" }
+  ],
+  "requires": { "tracks": ["basic-electricity"], "assignment": true },
+  "resources": [
+    { "file": "debugging-together.md", "title": "Debugging together" }
+  ]
+}
+```
+
+Run `python ../../scripts/check_content.py` and
+`python ../../scripts/check_standards.py` after editing — a mistyped
+standard code or requirement fails **silently** at runtime, which is
+exactly why both checks exist.
+
+## Starting one
+
+```bash
+python ../../scripts/new_subapp.py my-game --title "My Game" --track code
+python ../../scripts/new_subapp.py --list-art     # what art already exists
+```
+
+Writes a folder that already works. The full contract — shared assets,
+awards, saved state, versioning, and why the server trusts nothing a
+sub-app says — is in [docs/SUBAPPS.md](../../docs/SUBAPPS.md).
 
 ## Quizzes
 
@@ -149,3 +201,5 @@ itself** — it reports what happened and the host decides what it's worth.
 - [ ] Art goes through `Ignite.art()`, never a hardcoded path
 - [ ] `Ignite.ready()` on load, `Ignite.complete()` when finished
 - [ ] Nothing imported from another lesson's folder
+- [ ] `python ../../scripts/check_content.py` passes
+- [ ] `python ../../scripts/check_standards.py` passes

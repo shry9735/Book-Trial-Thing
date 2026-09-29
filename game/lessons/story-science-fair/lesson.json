@@ -1,12 +1,12 @@
 {
   "title": "The Day of the Science Fair",
   "subject": "Code",
+  "track": "code",
   "type": "interactive",
   "order": 60,
   "duration_min": 20,
   "reward": "trinket-clipboard",
   "description": "Judging is in forty-eight minutes and the prototype just died. Every choice you make changes how this ends.",
-
   "examples": [
     {
       "id": "p1",
@@ -41,7 +41,6 @@
       "explain": "Straining motors pull extra current. If the supply can't deliver it, voltage sags and the board reboots. Nothing is wrong with the code at all."
     }
   ],
-
   "quiz": [
     {
       "id": "t1",
@@ -97,6 +96,36 @@
       ],
       "answer": 1,
       "explain": "Judges have seen plenty of things break. An engineer who knows exactly why theirs broke is showing the most valuable skill there is."
+    }
+  ],
+  "standards": [
+    "2-AP-10",
+    "2-AP-17",
+    "MS-ETS1-2",
+    "MS-ETS1-3"
+  ],
+  "ages": [
+    13,
+    16
+  ],
+  "requires": {
+    "tracks": [
+      "basic-electricity"
+    ],
+    "lessons": [
+      "code-02-debug"
+    ],
+    "assignment": true
+  },
+  "skills": [
+    {
+      "name": "Read a multi-step problem and pick what matters",
+      "subject": "General"
+    },
+    {
+      "name": "Compare two options against the same criteria",
+      "subject": "Science",
+      "standard": "MS-ETS1-2"
     }
   ]
 }

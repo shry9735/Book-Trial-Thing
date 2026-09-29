@@ -1,0 +1,114 @@
+{% extends "teacher_base.html" %}
+{% block title %}Helping at home — Ignite Academy{% endblock %}
+
+{% macro resource_row(item, kind, owner_id, locked) %}
+  <div class="res-item{% if locked %} res-locked{% endif %}">
+    <div class="res-icon">
+      {%- if item.kind == 'answers' %}🔑
+      {%- elif item.kind == 'worksheet' %}📝
+      {%- elif item.kind == 'link' %}🔗
+      {%- elif item.kind == 'reading' %}📖
+      {%- else %}🧭{% endif -%}
+    </div>
+    <div class="res-body">
+      <div class="res-title">
+        {{ item.title }}
+        {% if item.audience == 'parent' %}
+          <span class="res-tag" title="Not shown to teachers">For home</span>
+        {% endif %}
+        {% if item.kind == 'answers' %}
+          <span class="res-tag warn" title="Don't let a student read this">Answer key</span>
+        {% endif %}
+      </div>
+      {% if item.description %}
+        <div class="res-desc">{{ item.description }}</div>
+      {% endif %}
+
+      <div class="res-actions">
+        {% if locked %}
+          <span class="dim small">Needs a subscription — same as the lesson.</span>
+        {% elif item.url %}
+          <a class="btn sm ghost" href="{{ item.url }}"
+             target="_blank" rel="noopener noreferrer">Open →</a>
+        {% else %}
+          {% if item.file.endswith('.md') or item.file.endswith('.txt') %}
+            <a class="btn sm" href="{{ url_for('resource_read', kind=kind,
+                  owner_id=owner_id, filename=item.file) }}">Read it</a>
+          {% endif %}
+          <a class="btn sm ghost" href="{{ url_for('resource_download', kind=kind,
+                owner_id=owner_id, filename=item.file) }}">Download</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← Dashboard</a></div>
+    <h1>Helping at home</h1>
+  </div>
+</div>
+
+<div class="std-caveat">
+  <b>None of this is visible to students.</b>
+  These are notes for you — what a lesson is really about, the maths it
+  leans on, and how to help without taking over. Answer keys are in here
+  too, so keep the screen to yourself.
+  {% if role == 'teacher' %}
+    Material a family has marked for home only is not shown to teachers.
+  {% endif %}
+</div>
+
+{% for group in groups %}
+  <div class="panel">
+    <div class="panel-head">
+      {{ group.title }}
+      {% if group.band_label %}<span class="head-note">{{ group.band_label }}</span>{% endif %}
+    </div>
+    <div class="billing-body">
+      {% if group.description %}
+        <p class="login-blurb" style="margin-bottom:10px">{{ group.description }}</p>
+      {% endif %}
+
+      {% if group.skills %}
+        {# The same advisory list the student pages carry. A grown-up
+           deciding whether to sit down with their child wants to know what
+           it leans on before they start, not after. #}
+        <p class="dim small">
+          <b>Leans on:</b>
+          {% for skill in group.skills %}{{ skill.name }}{% if skill.subject %}
+            <span class="skill-subject">{{ skill.subject }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+        </p>
+      {% endif %}
+
+      {% for item in group.resources %}
+        {{ resource_row(item, 'track', group.id, group.locked) }}
+      {% endfor %}
+
+      {% for lesson in group.lessons %}
+        <div class="res-lesson">
+          <div class="res-lesson-head">
+            {{ lesson.title }}
+            {% if lesson.band_label %}<span class="dim small">{{ lesson.band_label }}</span>{% endif %}
+          </div>
+          {% for item in lesson.resources %}
+            {{ resource_row(item, 'lesson', lesson.id, lesson.locked) }}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% else %}
+  <div class="panel">
+    <div class="billing-body">
+      <p class="login-blurb">
+        Nothing here yet. Guides get added alongside the lessons.
+      </p>
+    </div>
+  </div>
+{% endfor %}
+
+{% endblock %}

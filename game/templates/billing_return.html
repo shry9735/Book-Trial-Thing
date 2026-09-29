@@ -1,0 +1,24 @@
+{% extends "teacher_base.html" %}
+{% block title %}Thanks — Ignite Academy{% endblock %}
+
+{% block content %}
+{# Reached by redirect from Stripe. It grants nothing: entitlement flips
+   when the signed webhook lands, which is usually within seconds. #}
+<div class="panel join-panel">
+  <div class="panel-head teal">Thanks — that's gone through</div>
+  <div class="login-form">
+    {% if entitlement.active %}
+      <p class="login-blurb">
+        Your subscription is live. Everything is unlocked.
+      </p>
+    {% else %}
+      <p class="login-blurb">
+        Stripe has taken the payment and is confirming it with us now. This
+        usually takes a few seconds — reload this page and it should show as
+        active.
+      </p>
+    {% endif %}
+    <a class="btn block" href="{{ url_for('billing_home') }}">Go to billing</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,225 @@
+{% extends "teacher_base.html" %}
+{% block title %}{{ student.name }} against the standards{% endblock %}
+
+{% macro state_pill(state) -%}
+  {%- if state == 'covered' %}<span class="std-dot done" title="Finished a lesson for this">✓</span>
+  {%- elif state == 'started' %}<span class="std-dot part" title="Started a lesson for this">⋯</span>
+  {%- elif state == 'available' %}<span class="std-dot open" title="We teach this — not started">○</span>
+  {%- else %}<span class="std-dot none" title="We don't teach this">–</span>{% endif -%}
+{%- endmacro %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb">
+      <a href="{{ url_for('student_detail', username=student.username) }}">← {{ student.name }}</a>
+    </div>
+    <h1>Against the standards</h1>
+  </div>
+</div>
+
+{# ── The caveat, before any number ─────────────────────────────────────
+   Deliberately above the results, not tucked in a footnote. A parent who
+   reads "4 of 34" without knowing whose 34 it is has been misled. #}
+<div class="std-caveat">
+  <b>There is no national curriculum in the United States.</b>
+  Each state sets its own, so what your child is actually held to depends on
+  where you live. What is below are the widely used frameworks most state
+  standards are built from — and our own reading of which of our lessons
+  touch them. Nobody has audited that reading. Treat it as a conversation
+  starter with a teacher, not a report card.
+</div>
+
+{# ── Grade picker ──────────────────────────────────────────────────────── #}
+<div class="panel">
+  <div class="panel-head">
+    Which grade?
+    <span class="head-note">
+      {% if grade_source == 'recorded' %}from {{ student.name }}'s record
+      {% elif grade_source == 'chosen' %}just looking
+      {% else %}a guess{% endif %}
+    </span>
+  </div>
+  <div class="billing-body">
+
+    {% if grade_source == 'guessed' %}
+      <p class="login-blurb">
+        Nobody has told us what grade {{ student.name }} is in, so this is
+        showing <b>{{ report.grade_label }}</b> as a starting point. We don't
+        hold a birthday, and grade cut-offs vary by state — set it below and
+        the tracker stops guessing.
+      </p>
+    {% else %}
+      <p class="login-blurb">
+        Showing <b>{{ report.grade_label }}</b> — where most children are
+        {{ report.ages[0] }} or {{ report.ages[1] }} years old.
+      </p>
+    {% endif %}
+
+    {# Two controls that look alike and do different things, so each says
+       which. The first only changes what is on screen; the second changes
+       the student's record. Getting that backwards would be a parent
+       filing their child in the wrong grade by accident. #}
+    <div class="grade-controls">
+
+      <form method="GET"
+            action="{{ url_for('student_standards', username=student.username) }}">
+        <label class="grade-label" for="peek">Look at another grade</label>
+        <div class="grade-row">
+          <select id="peek" name="grade" onchange="this.form.submit()">
+            {% for g in grades %}
+              <option value="{{ g }}" {% if g == report.grade %}selected{% endif %}>
+                {{ grade_label(g) }}
+              </option>
+            {% endfor %}
+          </select>
+          <noscript><button type="submit" class="btn sm">Show</button></noscript>
+        </div>
+        <div class="grade-hint">Just changes this page.</div>
+      </form>
+
+      <form method="POST"
+            action="{{ url_for('set_student_grade', username=student.username) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label class="grade-label" for="record">
+          {{ student.name.split(' ')[0] }}'s actual grade
+        </label>
+        <div class="grade-row">
+          <select id="record" name="grade_level">
+            <option value="">Nobody has said</option>
+            {% for g in grades %}
+              <option value="{{ g }}"
+                      {% if student.grade_level is not none and g == student.grade_level %}selected{% endif %}>
+                {{ grade_label(g) }}
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn sm">Save</button>
+        </div>
+        <div class="grade-hint">Remembered, and used as the default here.</div>
+      </form>
+
+    </div>
+
+  </div>
+</div>
+
+{# ── Headline ──────────────────────────────────────────────────────────── #}
+{% if report.frameworks %}
+  <div class="panel">
+    <div class="panel-head teal">
+      {{ report.grade_label }} at a glance
+      <span class="head-note">{{ report.total }} standards</span>
+    </div>
+    <div class="billing-body">
+      <div class="std-summary">
+        <div class="std-stat">
+          <div class="std-stat-num done">{{ report.totals.covered }}</div>
+          <div class="std-stat-lbl">Finished</div>
+        </div>
+        <div class="std-stat">
+          <div class="std-stat-num part">{{ report.totals.started }}</div>
+          <div class="std-stat-lbl">Started</div>
+        </div>
+        <div class="std-stat">
+          <div class="std-stat-num open">{{ report.totals.available }}</div>
+          <div class="std-stat-lbl">We teach it — not begun</div>
+        </div>
+        <div class="std-stat">
+          <div class="std-stat-num none">{{ report.totals.uncovered }}</div>
+          <div class="std-stat-lbl">We don't teach it</div>
+        </div>
+      </div>
+
+      {# The honest sentence. Both denominators, because either one alone
+         flatters us: "4 of 7" hides what we skip, "4 of 34" hides that we
+         never claimed the other 27. #}
+      <p class="login-blurb">
+        Of the {{ report.total }} standards at this grade, Ignite Academy has
+        lessons for <b>{{ report.taught }}</b>.
+        {{ student.name }} has finished
+        <b>{{ report.totals.covered }}</b> of those.
+        {% if report.totals.uncovered %}
+          The other {{ report.totals.uncovered }} are things you'd cover
+          elsewhere — we're an electronics and coding course, not a whole
+          curriculum.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {# ── Framework by framework ──────────────────────────────────────────── #}
+  {% for framework in report.frameworks %}
+    <div class="panel">
+      <div class="panel-head">
+        {{ framework.name }}
+        <span class="head-note">
+          {{ framework.counts.covered }} / {{ framework.taught }} taught here
+        </span>
+      </div>
+
+      <div class="billing-body std-about">
+        <p class="dim small">
+          <b>{{ framework.subject }}.</b> {{ framework.adoption }}
+          {% if framework.code_help %}<br />{{ framework.code_help }}{% endif %}
+        </p>
+        <p class="dim small">
+          The wording below is ours, written for parents.
+          <a href="{{ framework.url }}" target="_blank" rel="noopener noreferrer">
+            Read the official standards →</a>
+          {% if framework.claim_status != 'verified' %}
+            <br /><b>Not endorsed by {{ framework.short }}</b> — the match
+            between their standards and our lessons is our own assessment.
+          {% endif %}
+        </p>
+      </div>
+
+      {% for strand in framework.strands %}
+        <div class="std-strand">{{ strand.name }}</div>
+        <table class="t-table std-table">
+          <tbody>
+            {% for row in strand.rows %}
+              <tr class="std-row {{ row.state }}">
+                <td class="std-mark">{{ state_pill(row.state) }}</td>
+                <td class="std-code"><code>{{ row.code }}</code></td>
+                <td>
+                  <div class="std-summary-text">{{ row.summary }}</div>
+                  {% if row.lessons %}
+                    <div class="std-lessons">
+                      {% for lesson in row.lessons %}
+                        <a href="{{ url_for('lesson', lesson_id=lesson.id) }}">{{ lesson.title }}</a>{% if not loop.last %} · {% endif %}
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="std-lessons dim">No lesson here covers this.</div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endfor %}
+    </div>
+  {% endfor %}
+
+{% else %}
+  <div class="panel">
+    <div class="billing-body">
+      <p class="login-blurb">
+        We don't have standards on file for {{ report.grade_label }} yet. Our
+        lessons aim at roughly 6th grade and up — try a higher grade.
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+<p class="dim small std-footer">
+  Standards are the property of their publishers and are used here by code
+  and by link only. NGSS is a registered trademark of WestEd. Common Core is
+  © 2010 National Governors Association Center for Best Practices and Council
+  of Chief State School Officers. CSTA's standards are licensed CC BY-NC-SA
+  4.0.
+</p>
+
+{% endblock %}

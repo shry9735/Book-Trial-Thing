@@ -1,6 +1,7 @@
 {
   "title": "Voltage & Ohm's Law",
   "subject": "Basic Electricity",
+  "track": "basic-electricity",
   "type": "interactive",
   "order": 15,
   "duration_min": 8,
@@ -125,6 +126,33 @@
       "answer": 1,
       "explain": "Covering V leaves I and R side by side: V = 0.5 × 20 = 10 V.",
       "diagram": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 220 180\" width=\"140\" height=\"115\"><polygon points=\"110,10 10,170 210,170\" fill=\"none\" stroke=\"var(--wood)\" stroke-width=\"4\"/><line x1=\"47.5\" y1=\"110\" x2=\"172.5\" y2=\"110\" stroke=\"var(--wood)\" stroke-width=\"3\"/><line x1=\"110\" y1=\"110\" x2=\"110\" y2=\"170\" stroke=\"var(--wood)\" stroke-width=\"3\"/><text x=\"110\" y=\"80\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">V</text><text x=\"72\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">I</text><text x=\"150\" y=\"150\" font-size=\"30\" font-weight=\"800\" text-anchor=\"middle\" fill=\"var(--ink)\" font-family=\"Trebuchet MS, Arial, sans-serif\">R</text></svg>"
+    }
+  ],
+  "standards": [
+    "MS-PS2-3",
+    "MS-PS3-5",
+    "7.RP.A.2",
+    "6.EE.B.7",
+    "HSA.CED.A.4"
+  ],
+  "skills": [
+    {
+      "name": "Multiply and divide whole numbers",
+      "subject": "Math",
+      "standard": "6.RP.A.3"
+    },
+    {
+      "name": "Rearrange a formula to solve for any of its parts",
+      "subject": "Math",
+      "standard": "HSA.CED.A.4"
+    }
+  ],
+  "resources": [
+    {
+      "file": "ohms-law-answers.md",
+      "title": "Ohm's Law — answers and reasoning",
+      "kind": "answers",
+      "description": "The quiz answers, what each wrong answer usually means, and a worked example."
     }
   ]
 }

@@ -1,0 +1,34 @@
+{# One guide, read in the browser. Most of these get opened on a phone at a
+   kitchen table, where a downloaded .md file would be useless. #}
+{% extends "teacher_base.html" %}
+{% block title %}{{ resource.title }} — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb">
+      <a href="{{ url_for('resources_home') }}">← Helping at home</a>
+    </div>
+    <h1>{{ resource.title }}</h1>
+    <p class="dim">
+      For {{ owner.title }}{% if resource.audience == 'parent' %} · for home only{% endif %}
+    </p>
+  </div>
+  <a class="btn sm ghost no-print"
+     href="{{ url_for('resource_download', kind=owner_kind, owner_id=owner.id,
+                      filename=resource.file) }}">Download</a>
+</div>
+
+{% if resource.kind == 'answers' %}
+  <div class="std-caveat res-warn">
+    <b>This is an answer key.</b> A student who reads the working before
+    trying it gets nothing out of the lesson.
+  </div>
+{% endif %}
+
+<div class="panel legal-panel">
+  <div class="legal-body">{{ body | safe }}</div>
+</div>
+
+{% endblock %}

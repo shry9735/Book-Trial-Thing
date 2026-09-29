@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16294a"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e2218a"/>
+      <stop offset="52%" stop-color="#ef5d52"/>
+      <stop offset="100%" stop-color="#f5921e"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 L0 0 0 32" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="200" fill="url(#stage)"/>
+  <rect width="800" height="200" fill="url(#grid)"/>
+  <path d="M360 38 A 80 80 0 1 0 360 164" fill="none" stroke="#e2218a"
+        stroke-width="9" stroke-linecap="round"/>
+  <path d="M360 18 L360 58 L326 38 Z" fill="#e2218a"/>
+  <rect x="392" y="48" width="160" height="24" rx="5" fill="#11b075" opacity="0.9"/><rect x="392" y="84" width="118" height="24" rx="5" fill="#1668c4" opacity="0.9"/><rect x="392" y="120" width="142" height="24" rx="5" fill="#f5a81c" opacity="0.9"/>
+  <rect x="0" y="194" width="800" height="6" fill="url(#flame)"/>
+</svg>

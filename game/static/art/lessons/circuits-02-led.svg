@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16294a"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e2218a"/>
+      <stop offset="52%" stop-color="#ef5d52"/>
+      <stop offset="100%" stop-color="#f5921e"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 L0 0 0 32" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="200" fill="url(#stage)"/>
+  <rect width="800" height="200" fill="url(#grid)"/>
+  <circle cx="400" cy="88" r="96" fill="#f5a81c" opacity="0.10"/>
+  <line x1="356.7" y1="63.0" x2="335.9" y2="51.0" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="375.0" y1="44.7" x2="363.0" y2="23.9" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="400.0" y1="38.0" x2="400.0" y2="14.0" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="425.0" y1="44.7" x2="437.0" y2="23.9" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="443.3" y1="63.0" x2="464.1" y2="51.0" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="450.0" y1="88.0" x2="474.0" y2="88.0" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/><line x1="443.3" y1="113.0" x2="464.1" y2="125.0" stroke="#f5a81c" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+  <path d="M374 108 L374 66 Q374 40 400 40 Q426 40 426 66 L426 108 Z"
+        fill="#f5a81c" stroke="#c97f09" stroke-width="3"/>
+  <path d="M384 100 L384 68 Q384 54 398 52" fill="none" stroke="#ffffff"
+        stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+  <rect x="374" y="108" width="52" height="9" rx="3" fill="#8fa2bd"/>
+  <path d="M386 117 L386 158" stroke="#8fa2bd" stroke-width="6" stroke-linecap="round"/>
+  <path d="M414 117 L414 180" stroke="#8fa2bd" stroke-width="6" stroke-linecap="round"/>
+  <rect x="0" y="194" width="800" height="6" fill="url(#flame)"/>
+</svg>

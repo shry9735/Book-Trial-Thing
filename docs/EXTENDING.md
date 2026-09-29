@@ -1,0 +1,711 @@
+# Extending it
+
+Recipes for the changes you are most likely to make. Each one names the
+files to touch, in order, and the mistake that is easy to make.
+
+- [Before you start](#before-you-start)
+- [Add a lesson](#add-a-lesson)
+- [Charge for a lesson](#charge-for-a-lesson)
+- [Flag a lesson as having a kit](#flag-a-lesson-as-having-a-kit)
+- [Add or stage a track](#add-or-stage-a-track)
+- [Add a classroom feature](#add-a-classroom-feature)
+- [Re-skin it](#re-skin-it)
+- [Add a page](#add-a-page)
+- [Add a JSON endpoint](#add-a-json-endpoint)
+- [Change the database](#change-the-database)
+- [Add a config option](#add-a-config-option)
+- [Handle a new Stripe event](#handle-a-new-stripe-event)
+- [Change what things cost](#change-what-things-cost)
+- [Add an operator command](#add-an-operator-command)
+- [Add a role or permission](#add-a-role-or-permission)
+- [Before you push](#before-you-push)
+
+---
+
+## Before you start
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+
+createdb ignite
+export DATABASE_URL='postgresql://localhost:5432/ignite'
+.venv/bin/python game/app.py
+```
+
+Open `/signup?role=teacher` and make the first account — it creates the
+org and prints the join code you will need for student and parent signups.
+
+Two things worth having open while you work:
+
+```bash
+./scripts/gendocs.sh --serve                    # API reference on :8080
+python scripts/callgraph.py --route /api/quiz   # what a handler touches
+```
+
+---
+
+## Add a lesson
+
+Drop a folder into `game/lessons/`. Nothing to register.
+
+```
+game/lessons/circuits-05-ohms-law/
+├── lesson.json      manifest
+├── index.html       the lesson (interactive types)
+└── whatever.js      its own assets, namespaced to this folder
+```
+
+```json
+{
+  "title": "Ohm's Law",
+  "subject": "Circuits",
+  "order": 50,
+  "type": "interactive",
+  "description": "Volts, amps and the ratio between them.",
+  "duration_min": 12,
+  "access": "free",
+  "kit": { "name": "Breadboard Starter Kit", "url": "https://amazon.com/..." },
+  "reward": "badge-ohm",
+  "quiz": [
+    {
+      "id": "q1",
+      "prompt": "Double the voltage across a fixed resistor. What happens to the current?",
+      "choices": ["Halves", "Stays the same", "Doubles", "Quadruples"],
+      "answer": 2,
+      "explain": "Current is voltage over resistance, so doubling one doubles the other."
+    }
+  ]
+}
+```
+
+The folder name is the lesson id. `order` decides both its place in its
+subject and which subject appears first.
+
+**Restart the app** — the catalog is read once at start-up by
+`refresh_catalog()`, not per request. That is deliberate; it used to
+re-scan the whole directory on every API call.
+
+Interactive lessons load the shared kit and reach art by name:
+
+```html
+<link rel="stylesheet" href="/kit/lesson-kit.css">
+<script src="/kit/lesson-kit.js"></script>
+<img src="/art/characters/spark">
+```
+
+`/art/<name>` resolves the extension server-side, so re-exporting a `.png`
+as `.webp` updates every lesson without touching one.
+
+---
+
+## Charge for a lesson
+
+Set its access tier:
+
+```json
+{ "access": "subscriber" }
+```
+
+Two tiers today:
+
+| Tier | Means |
+|---|---|
+| `free` | Opens for anyone signed in. **The default.** |
+| `subscriber` | Needs a live subscription — the school's or a linked parent's |
+
+Lessons are free unless they say otherwise, and an unrecognised tier falls
+back to free. Both defaults point the same way on purpose: a typo in a
+manifest should make a lesson too available, which you notice and fix,
+rather than silently locking a classroom mid-term.
+
+There is deliberately **no per-lesson purchase tier**. Everything paid is
+covered by the one subscription. When that changes, add the tier to
+`billing.ACCESS_TIERS` and teach `lesson_access()` about it — the manifest
+field and the templates already have the right shape.
+
+The older spelling still works:
+
+```json
+{ "free": false }     // same as {"access": "subscriber"}
+```
+
+Nothing else to do. `billing.lesson_access()` is resolved once when the
+catalog is built, and consulted by the lesson page, the menu, and every
+API route.
+
+---
+
+## Flag a lesson as having a kit
+
+```json
+{ "kit": true }
+```
+
+or, with detail:
+
+```json
+{
+  "kit": {
+    "name": "Breadboard Starter Kit",
+    "url": "https://amazon.com/...",
+    "note": "The parts for the whole circuits track."
+  }
+}
+```
+
+**A kit never gates anything.** It is an informational badge on the lesson
+card and a banner on the lesson itself. A student whose parts have not
+arrived, or who is using the school's shared box, does the entire lesson
+either way — the wording is deliberately written so nobody thinks they are
+missing the lesson, only the option to build it for real.
+
+With no `url`, the banner falls back to `STORE_URL` (the Amazon
+storefront). With neither, it shows the note and no link.
+
+Kits and access tiers are independent: a lesson can be free with a kit,
+paid with a kit, or either without.
+
+---
+
+## Add or stage a track
+
+A track is an ordered run of lessons. Drop a folder into `game/tracks/`:
+
+```json
+// game/tracks/robotics/track.json
+{
+  "title": "Robotics",
+  "description": "Making something move on purpose.",
+  "order": 40,
+  "sequential": true
+}
+```
+
+Lessons join by naming it:
+
+```json
+{ "track": "robotics", "order": 10 }
+```
+
+`order` is the position **within** the track.
+
+`"sequential": true` releases lessons one at a time — the next opens when
+the one before it is finished. Three things it deliberately does not do,
+each of which was a bug waiting to happen:
+
+- It never re-locks a lesson a student has already started or finished.
+  Reordering a track must not shut someone out of work in progress.
+- It only counts lessons on that student's own menu, so a teacher
+  narrowing an assignment cannot leave an impassable gate mid-track.
+- It has nothing to do with subscriptions. `tracks.gate()` and
+  `billing.lesson_access()` are separate gates with separate messages,
+  because "you haven't got there yet" and "this needs a subscription"
+  have completely different remedies.
+
+**You do not have to create a track.** A lesson with no `track` falls back
+to a slug of its `subject`, and a track with no `track.json` is
+synthesised from that id — so existing lessons land somewhere sensible
+untouched.
+
+Enforcement lives in `app.prerequisite_block()`, called from the lesson
+page *and* every API route. The menu only hides cards; a bookmarked URL
+does not pass through the menu.
+
+---
+
+## Say who a lesson is for, and what it leans on
+
+Three optional fields, on a lesson or on its track. A lesson inherits its
+track's unless it says otherwise, so the normal case is one declaration per
+track rather than the same lines copied onto every lesson in it.
+
+```json
+{
+  "title": "Basic Electricity",
+  "ages": [12, 15],
+  "requires": { "tracks": ["circuits"] },
+  "skills": [
+    { "name": "Multiply and divide whole numbers", "subject": "Math",
+      "standard": "6.RP.A.3" },
+    { "name": "Solve a one-step equation for an unknown", "subject": "Math",
+      "standard": "6.EE.B.7" }
+  ]
+}
+```
+
+**`ages` or `grades`** — write either. `"ages": [12, 15]` and
+`"grades": [7, 8, 9]` are the same band and each converts to the other, so
+nobody has to keep two lists in step. Omitting both means "no age stated",
+which is *not* the same as "all ages": the UI stays quiet rather than
+claiming a lesson suits everybody.
+
+**`skills`** — advisory, never a gate. This is what tells a parent that
+Ohm's Law needs division and rearranging a formula *before* their child
+stalls on it. A bare string works (`"skills": ["Divide whole numbers"]`);
+the object form adds a subject and a standard code. Cite a code and
+`check_content.py` verifies it exists.
+
+**`requires`** — a real gate. See below.
+
+---
+
+## Add a parent guide or an answer key
+
+Drop the file in, then declare it. **Where it goes is the security
+design**, not a filing preference:
+
+    game/resources/lessons/<lesson_id>/<file>
+    game/resources/tracks/<track_id>/<file>
+
+Not `static/`, and not the lesson folder. This app already serves files two
+ways that have no login on them at all — nginx aliases `/static/` straight
+off disk, and `/lessons/<id>/<file>` is deliberately open so lesson artwork
+loads inside the game frame. An answer key in either is public.
+
+Then in the lesson's or track's manifest:
+
+```json
+"resources": [
+  { "file": "ohms-law-answers.md",
+    "title": "Ohm's Law — answers and reasoning",
+    "kind": "answers",
+    "description": "The quiz answers and what each wrong one usually means." },
+  { "file": "code-at-home.md", "title": "Helping with Code",
+    "audience": "parent" },
+  { "url": "https://example.com/video", "title": "A good explainer",
+    "kind": "link" }
+]
+```
+
+`kind` is `guide`, `answers`, `worksheet`, `reading` or `link` and picks an
+icon and a heading — **it never affects who may read one**. `audience` is
+`grownup` (parents and teachers, the default) or `parent` (parents only);
+neither includes students and there is no value that would.
+
+Markdown and `.txt` get a "Read it" link as well as a download, which is
+what people want on a phone. Everything else downloads.
+
+A resource inherits its lesson's paywall — a guide to a free lesson is
+free. Run `python scripts/check_content.py` afterwards: it fails on a
+manifest naming a file that is not on disk, and notes files on disk that no
+manifest names.
+
+**Three locks keep this away from students**, and each is tested on its own
+in `selftest_resources.py` so removing one fails loudly:
+
+1. The routes require a parent or teacher session.
+2. `tracks.visible_resources()` returns `[]` for a student whatever the
+   manifest says, so a template that forgets its own check cannot leak one.
+3. The download route serves **only files a manifest names** — a whitelist,
+   so something committed by accident is not fetchable by guessing.
+
+There is a fourth, belt-and-braces: `app._without_resources()` strips the
+list before a lesson reaches a student's template context at all.
+
+---
+
+## Block a lesson on work somewhere else
+
+```json
+"requires": {
+  "tracks":  ["basic-electricity"],
+  "lessons": ["code-02-debug"],
+  "assignment": true
+}
+```
+
+A requirement on a **track** holds every lesson in it. A requirement on a
+**lesson** holds just that one. `"assignment": true` means a grown-up has
+to hand it out — with no assignment row at all, that lesson stays shut,
+because nothing has been handed out.
+
+Keep the four block reasons straight; the UI shows a different sentence for
+each and they are not interchangeable:
+
+| Reason | Means | The student's remedy |
+|---|---|---|
+| `subscription` | Nobody is paying | Ask a grown-up to sort the billing |
+| `unassigned` | `"assignment": true` and it has not been set | Ask your teacher |
+| `prerequisite` | A `requires` track or lesson is unfinished | Go and finish that |
+| `sequence` | The lesson before it, in the same `sequential` track | Finish that one |
+
+`app.prerequisite_block()` reports them in that order — cheapest remedy
+first, because "ask your teacher" is actionable today and "finish another
+whole track" is a week.
+
+Then check it:
+
+```bash
+python scripts/check_content.py           # dangling ids, cycles, bad bands
+python scripts/check_content.py --list    # the whole content map
+```
+
+A requirement naming something that does not exist is **ignored at
+runtime**, deliberately: a typo must not be able to lock content
+permanently and invisibly. The cost of that choice is that the typo is
+silent, which is exactly why the check exists and why the app also logs it
+at boot. `check_content.py` catches dangling ids, requirement cycles, bands
+that were written but did not parse, and skills citing unknown standards.
+
+---
+
+## Align a lesson to a standard
+
+Add the codes to the lesson's own manifest:
+
+```json
+{ "title": "Voltage & Ohm's Law", "standards": ["MS-PS2-3", "7.RP.A.2"] }
+```
+
+Then check it, because a mistyped code fails silently — the lesson stops
+counting towards anything and the tracker shows a gap that is not real:
+
+```bash
+python scripts/check_standards.py           # exits non-zero on a bad code
+python scripts/check_standards.py --list    # the whole catalogue, with hit counts
+```
+
+To add a standard the catalogue does not have, append it to the framework's
+file in `game/standards/` with `code`, `grades` (0 is kindergarten),
+`strand`, and a `summary` **in your own words**.
+
+That last part is a licensing rule, not a style preference. CSTA's
+standards are CC BY-NC-SA — NonCommercial — and Common Core's licence
+forbids condensing; pasting either publisher's wording in would be a
+problem for a product that charges money. The checks in
+`scripts/check_standards.py` and `selftest_standards.py` both reject a
+summary that reads like the original. [docs/STANDARDS.md](STANDARDS.md) has
+the full picture, including what CSTA requires before you may publicly
+claim alignment at all.
+
+Be conservative about what a lesson claims. A lesson that mentions a thing
+in passing does not cover the standard, and over-claiming is exactly what
+would make the tracker worthless to the parent reading it.
+
+---
+
+## Add a classroom feature
+
+A classroom is the roster a teacher is assigned to, and it decides which
+students that teacher can see anywhere in the app.
+
+| Who | Sees | Can change rosters |
+|---|---|---|
+| Org admin | Every student in the org, including unplaced ones | Yes |
+| Teacher | Only students in their own classrooms | No |
+| Parent | Only their linked children | n/a |
+
+The whole boundary is two functions, `db.visible_students()` and
+`db.can_see_student()`. **Change both or neither** — a difference between
+them is a hole, and `selftest_classrooms.py` checks the full cross product
+of every account against every student to prove they agree.
+
+Roster changes are admin-only on purpose: a teacher who could add any
+student to their own classroom could see any student by adding them,
+which is exactly the boundary classrooms exist to draw. Relaxing that is a
+product decision, not a small one.
+
+Any route taking a classroom id from a URL goes through
+`_classroom_or_404()`, which scopes by organisation and then by
+assignment, and returns 404 rather than 403 so the response cannot be used
+to discover which classrooms exist elsewhere.
+
+---
+
+## Re-skin it
+
+The whole palette is `game/static/kit/brand.css`. Edit the **BRAND SEEDS**
+block at the top and nothing else:
+
+```css
+--brand:      #d81b84;   /* magenta — headings, primary fills */
+--brand-mid:  #f5921e;   /* orange — the other end of the gradient */
+--brand-dk:   #b01169;   /* pressed states */
+--brand-lt:   #fff7fb;   /* tinted panel backgrounds */
+--accent:     #1668c4;   /* the site's section-label blue */
+--frame:      #123a6d;   /* wordmark navy — the cabinet frame */
+```
+
+The identity is a **two-colour gradient**, not one colour: `--brand`
+running into `--brand-mid`, which `--brand-grad` assembles into the sweep
+the primary buttons use.
+
+That one file is loaded by both stylesheets:
+
+```
+static/css/game.css        the app
+static/kit/lesson-kit.css  every lesson, inside its own iframe
+```
+
+Lesson iframes are separate documents and do not inherit the host page's
+custom properties, so the palette used to be copy-pasted into both — and a
+re-skin left every lesson on the old colours. Now there is one copy.
+
+Two things not to break:
+
+- **`@import` must stay the first rule** in both stylesheets. After any
+  other rule browsers silently ignore it, and the entire palette vanishes.
+- **Status colours are deliberately not brand-derived.** Green means
+  correct and red means wrong to an eight-year-old whatever the logo looks
+  like. Recolouring `--good` to match a palette costs more than it gains.
+- **Check contrast after changing a seed.** Every text-bearing pair
+  currently clears WCAG AA (4.5:1); `--brand` in particular is a shade
+  deeper than the site's literal magenta for exactly that reason.
+- **`art_placeholder()` in `app.py` holds the only brand colours CSS cannot
+  reach.** It builds an SVG server-side, so those literals have to be
+  changed by hand alongside the seeds.
+
+Check your work with:
+
+```bash
+grep -oE '#[0-9a-fA-F]{6}' game/static/css/game.css game/static/kit/lesson-kit.css   | grep -viE '#(fff|000)'
+```
+
+Anything that comes back is a literal that a re-skin will miss. A handful
+of one-off tints are fine; a brand colour is not.
+
+---
+
+## Add a page
+
+1. **Route** in `app.py`, next to related ones:
+
+```python
+@app.route("/reports")
+@login_required("teacher")
+@membership_required
+def reports():
+    user = current_user()
+    return render_template("reports.html", rows=db.report_rows(user["org_id"]))
+```
+
+2. **Query** in `db.py` — never inline SQL in `app.py`:
+
+```python
+def report_rows(org_id: int) -> list[dict]:
+    with query() as cur:
+        cur.execute("SELECT ... WHERE org_id = %s", (org_id,))
+        return cur.fetchall()
+```
+
+3. **Template** in `game/templates/`, extending `base.html` (student
+   screens) or `teacher_base.html` (grown-up screens).
+
+**The mistake:** forgetting the CSRF token on a form. Every `method="POST"`
+form needs it, or the post is rejected with a 400:
+
+```html
+<form method="POST" action="{{ url_for('reports_export') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+```
+
+**The other mistake:** scoping a query by something other than the current
+user's org. Anything that takes an id from a URL or form must be resolved
+through a helper that checks ownership — `_visible_student_or_404()`,
+`_member_or_404()`, `_group_or_404()`. Those return **404, not 403**, so
+the response cannot be used to discover what exists in another org.
+
+---
+
+## Add a JSON endpoint
+
+Same as a page, with three differences:
+
+```python
+@app.route("/api/streak", methods=["POST"])
+@login_required("student")
+@membership_required
+def api_streak():
+    body = request.get_json(silent=True) or {}
+    ...
+    return jsonify({"ok": True})
+```
+
+1. **Anything under `/api/` must be sent as `application/json`.** That is
+   enforced in `security.check_csrf()` and is what stands in for a CSRF
+   token — a cross-origin form cannot set that content type.
+2. **Errors return JSON.** The error handlers check the path prefix.
+3. **If it touches a paid lesson, gate it.** The page can be skipped; the
+   API is the real boundary:
+
+```python
+if not billing.lesson_is_free(found) and not entitlement()["active"]:
+    return jsonify({"error": "That lesson needs an active subscription."}), 402
+```
+
+---
+
+## Change the database
+
+Append to `db.MIGRATIONS`. **Never edit one that has shipped.**
+
+```python
+MIGRATIONS = [
+    (1, [...]),
+    (2, [...]),
+    (3, [
+        "ALTER TABLE users ADD COLUMN timezone text NOT NULL DEFAULT 'UTC'",
+        "CREATE INDEX users_timezone_idx ON users (timezone)",
+    ]),
+]
+```
+
+Then:
+
+- If the column should be readable, add it to `USER_COLUMNS` / `ORG_COLUMNS`
+  / `SUB_COLUMNS`. **This is the one to get wrong** — `org_by_id()` once
+  selected three columns while callers read six, which was a `KeyError` in
+  production and a silently broken join policy.
+- Apply it with `python game/app.py --migrate-only`, or just start the app.
+
+Migrations run under an advisory lock, so several workers starting at once
+is safe. They are additive by design: a new worker applies them before it
+serves traffic, while old workers are still running the previous code — so
+avoid dropping or renaming a column in the same deploy as the code that
+stops using it. Do it in two.
+
+**If your new table references `users(id)`, it must declare `ON DELETE
+CASCADE` or `ON DELETE SET NULL`.** `db.delete_user()` answers erasure
+requests with a single `DELETE` and lets the foreign keys do the work; a
+table without one of those clauses either leaves personal data behind or
+starts failing the delete outright. `selftest_accounts.py` writes a row
+into every child table and asserts the lot is gone — add yours to its
+`CHILD_TABLES` list when you add the table.
+
+Use `SET NULL` when the row should outlive the person (an audit column like
+`users.created_by`, an invoice), `CASCADE` when it is their data.
+
+---
+
+## Add a config option
+
+`config.py`, in the right section, with a default that works:
+
+```python
+STREAK_TARGET = _int("STREAK_TARGET", 5)
+```
+
+Then:
+
+- Add it to `.env.example` **with a comment explaining the trade-off**,
+  not just the type.
+- Add it to `docker-compose.yml` under the `app` service, or it will not
+  reach the container.
+- If a wrong value should stop the boot, add a check to `validate()`.
+  Failing at start-up beats failing at 9am on a school day.
+
+---
+
+## Handle a new Stripe event
+
+1. Add the type to `billing.HANDLED_EVENTS`.
+2. Handle it in `billing.handle_event()`.
+3. Subscribe to it on the endpoint in the Stripe dashboard.
+
+The webhook plumbing is already correct and you should not need to touch
+it. What it guarantees:
+
+- The signature is verified against the **raw body** before anything else.
+- The event id is claimed in `stripe_events` before the handler runs, so a
+  replay is a no-op.
+- A handler that throws releases its claim and returns 500, so Stripe's
+  retry can succeed.
+- Unknown types are acknowledged with 200 — a non-2xx would make Stripe
+  retry forever and eventually disable the endpoint.
+
+**The mistake:** calling `.get()` on a Stripe object. The SDK returns
+`StripeObject`, which raises on `.get()` to stop exactly that assumption.
+Pass it through `billing._as_dict()` first. This broke every real webhook
+once already.
+
+Test without touching Stripe — `selftest_billing.py` builds genuine
+Stripe-shaped payloads and signs them the way Stripe does. Locally:
+
+```bash
+stripe listen --forward-to localhost:5000/stripe/webhook
+stripe trigger customer.subscription.updated
+```
+
+---
+
+## Change what things cost
+
+Do it in the Stripe dashboard, not in code. Create a new price and give it
+the **lookup key** the app already uses (`STRIPE_PRICE_FAMILY`,
+`STRIPE_PRICE_ORG_SEAT`). `billing.checkout_session()` resolves prices by
+lookup key at call time, so a price change needs no deploy.
+
+To add a *new* plan rather than change one, add the lookup key to
+`config.py` and pick it in `_billing_context()`.
+
+---
+
+## Add an operator command
+
+`manage.py`, as a `cmd_*` function plus a subparser and a `handlers` entry.
+
+The rule for what belongs here rather than on the web: **anything where
+the answer is a judgement, not a permission.** Approving net-30 terms,
+comping an account, deactivating someone. Putting those behind a web form
+turns "someone decided" into "someone clicked".
+
+---
+
+## Add a role or permission
+
+Roles are a `CHECK` constraint on `users.role`, so a genuinely new role
+needs a migration. Usually you do not need one — most requirements are a
+new *capability* for an existing role, which is a decorator:
+
+```python
+def can_export_required(fn):
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        user = current_user()
+        if not user or not user["org_admin"]:
+            abort(404)
+        return fn(*a, **kw)
+    return wrapper
+```
+
+If it changes who can see whose data, change `db.visible_students()` and
+`db.can_see_student()` — and nothing else. Those two functions are the
+authorization boundary, and adding a third answer somewhere else is how
+tenancy bugs get in.
+
+---
+
+## Before you push
+
+```bash
+# Lint
+.venv/bin/python -m pyflakes game/*.py scripts/*.py
+
+# Layering — did anything get wired backwards?
+.venv/bin/python scripts/callgraph.py --check
+
+# Tests, against a scratch database
+createdb ignite_test
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_billing.py
+DATABASE_URL=postgresql://localhost/ignite_test .venv/bin/python game/selftest_classrooms.py
+
+# Refresh generated docs if routes or imports changed
+.venv/bin/python scripts/callgraph.py
+```
+
+Both suites wipe the database they point at, so never aim them at anything
+you care about. Both refuse to run with `APP_ENV=production`.
+
+**Add a test when you change behaviour.** The suites are deliberately
+end-to-end against a real Postgres rather than mocks — every bug worth
+catching in this codebase (lost concurrent writes, cross-org disclosure,
+replayable reset links, `.get()` on a Stripe object) only exists in the
+interaction with something real. A mock would have passed while the
+product broke.
+
+---
+
+**Next:** [Architecture](ARCHITECTURE.md) · [Data model](DATA_MODEL.md) ·
+[Call graph](CALLGRAPH.md)

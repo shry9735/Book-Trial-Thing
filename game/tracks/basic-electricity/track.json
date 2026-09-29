@@ -1,0 +1,40 @@
+{
+  "title": "Basic Electricity",
+  "description": "What electricity actually is, and the one formula that ties it together.",
+  "order": 20,
+  "sequential": true,
+  "ages": [
+    12,
+    15
+  ],
+  "requires": {
+    "tracks": [
+      "circuits"
+    ]
+  },
+  "skills": [
+    {
+      "name": "Multiply and divide whole numbers",
+      "subject": "Math",
+      "standard": "6.RP.A.3"
+    },
+    {
+      "name": "Solve a one-step equation for an unknown",
+      "subject": "Math",
+      "standard": "6.EE.B.7"
+    },
+    {
+      "name": "Read a ratio as a relationship, not just two numbers",
+      "subject": "Math",
+      "standard": "7.RP.A.2"
+    }
+  ],
+  "resources": [
+    {
+      "file": "helping-at-home.md",
+      "title": "Helping with Basic Electricity",
+      "kind": "guide",
+      "description": "What the three quantities mean, the maths it leans on, and four questions worth asking."
+    }
+  ]
+}

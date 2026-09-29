@@ -1,0 +1,95 @@
+{% extends "teacher_base.html" %}
+{% block title %}Classrooms — Ignite Academy{% endblock %}
+
+{% block content %}
+
+<div class="t-heading">
+  <div>
+    <div class="crumb"><a href="{{ url_for('grownup_home') }}">← Students</a></div>
+    <h1>Classrooms</h1>
+  </div>
+</div>
+
+{% if is_admin %}
+  <div class="panel">
+    <div class="panel-head teal">New Classroom</div>
+    <form class="inline-form" method="POST" action="{{ url_for('classroom_create') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="text" name="name" placeholder="Period 1 — Robotics" maxlength="120" required />
+      <button type="submit" class="btn teal">Create</button>
+    </form>
+  </div>
+{% endif %}
+
+{% if classrooms %}
+  <div class="lesson-grid">
+    {% for room in classrooms %}
+      <a class="panel kid-card" href="{{ url_for('classroom_detail', classroom_id=room.id) }}">
+          <div class="kid-name">{{ room.name }}</div>
+          <div class="kid-headline">
+            {{ room.students }} student{{ '' if room.students == 1 else 's' }}
+            · {{ room.teachers }} teacher{{ '' if room.teachers == 1 else 's' }}
+          </div>
+          <div class="kid-stats">
+            <div class="kid-stat">
+              <div class="kid-stat-num">{{ room.avg }}%</div>
+              <div class="kid-stat-lbl">Average done</div>
+            </div>
+            <div class="kid-stat">
+              <div class="kid-stat-num {% if room.stuck %}bad{% endif %}">{{ room.stuck }}</div>
+              <div class="kid-stat-lbl">Still stuck on</div>
+            </div>
+          </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="panel join-panel">
+    <div class="login-form">
+      {% if is_admin %}
+        <p class="login-blurb">
+          No classrooms yet. Make one above, then put students in it — a teacher
+          only sees the students in the classrooms they're assigned to.
+        </p>
+      {% else %}
+        <p class="login-blurb">
+          You're not assigned to a classroom yet, so there are no students to
+          show. An admin at your school can add you to one.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+{% if is_admin and unplaced %}
+  {# Students who signed up with the join code but are in no classroom are
+     invisible to every ordinary teacher. Surfacing them here is what stops
+     them sitting unnoticed. #}
+  <div class="panel">
+    <div class="panel-head">Not in a classroom yet ({{ unplaced | length }})</div>
+    <table class="t-table">
+      <thead><tr><th>Name</th><th>Username</th><th>Joined</th><th></th></tr></thead>
+      <tbody>
+        {% for student in unplaced %}
+          <tr>
+            <td><b>{{ student.name }}</b></td>
+            <td><code>{{ student.username }}</code></td>
+            <td class="dim">{{ student.created_at.strftime('%d %b') }}</td>
+            <td class="row-actions">
+              <a class="btn sm ghost"
+                 href="{{ url_for('student_detail', username=student.username) }}">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="billing-body">
+      <p class="dim small">
+        Until somebody puts them in a classroom, only admins can see these
+        students.
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

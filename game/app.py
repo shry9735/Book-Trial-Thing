@@ -2,19 +2,49 @@
 """
 app.py — Ignite Academy game server.
 
-Two account roles:
+Three account roles:
 
     student  → classroom → lessons → quiz → trinkets
     parent   → plain-language progress, no digging required
     teacher  → same view as parent, plus group management
 
+State lives in Postgres (see db.py).  Configuration comes from the
+environment (see config.py).  Nothing durable is written to local disk,
+so the process is disposable and can be run N-up behind a load balancer.
+
 Usage:
     pip install -r ../requirements.txt
-    python app.py
-    python app.py --host 0.0.0.0 --port 5000
+    export DATABASE_URL=postgresql://ignite:ignite@localhost:5432/ignite
+    python app.py                     # development server
+    python app.py --migrate-only      # apply schema, then exit
+    gunicorn -c ../gunicorn.conf.py wsgi:app     # production
 
-Default accounts are seeded into data/users.json on first run.
-See README.md for credentials.
+See ../DEPLOY.md for a real deployment.
+
+──────────────────────────────────────────────────────
+ORGANISATIONS AND CLASSROOMS ARE THE PRIVACY BOUNDARY
+──────────────────────────────────────────────────────
+Every account belongs to exactly one organisation, and within it a
+teacher is assigned to classrooms.  Three answers to "who can this
+account see", all decided in db.visible_students() and its single-student
+twin db.can_see_student():
+
+    org admin   every student in the organisation, including any nobody
+                has placed in a classroom yet
+    teacher     only the students in the classrooms they are assigned to
+    parent      only the children linked to them by link code
+
+No screen ever enumerates across those lines.  Signing up as a teacher
+creates an organisation and a join code; students and parents join an
+existing one with that code, and an admin then places them.
+
+LESSONS ARE STAGED BY TRACK
+──────────────────────────────────────────────────────
+A track is an ordered run of lessons (see tracks.py).  A track marked
+sequential releases them one at a time — the next opens when the one
+before it is finished.  That gate is pedagogy and is kept entirely
+separate from the subscription gate in billing.py, because "you haven't
+got there yet" and "this needs a subscription" have different remedies.
 
 ──────────────────────────────────────────────────────
 LESSONS ARE SELF-CONTAINED PACKAGES
@@ -34,8 +64,9 @@ lesson can define `window.player`, throw on load, or capture every key
 event, and no other lesson can observe it.  There is no shared bundle to
 break and no load order to get wrong.
 
-Lessons talk to the host only through postMessage, via the kit — see
-static/kit/lesson-kit.js.
+The catalog is read from disk once and cached — see load_lessons().  It
+used to be re-scanned and re-parsed on every single request, including
+once per answered quiz question.
 
 ──────────────────────────────────────────────────────
 GRAPHICS ARE SHARED, CODE IS NOT
@@ -61,38 +92,77 @@ RAG index:
     python ../make_epub.py content/ -t "Ignite Academy" -o ignite.epub
 """
 
+from __future__ import annotations
+
 import argparse
+import csv
+import functools
+import hashlib
+import io
 import json
+import logging
+import os
 import random
 import re
-import secrets
 import sys
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, timezone
+from html import escape as html_escape
 from pathlib import Path
 
 try:
     from flask import (
-        Flask, abort, flash, jsonify, redirect, render_template,
-        request, send_from_directory, session, url_for,
+        Flask, abort, flash, g, jsonify, make_response, redirect,
+        render_template, request, send_from_directory, session, url_for,
     )
+    from werkzeug.exceptions import HTTPException
     from werkzeug.security import check_password_hash, generate_password_hash
-except ImportError:
-    sys.exit("Missing dependency: run  pip install -r ../requirements.txt")
+    import psycopg
+except ImportError as exc:
+    sys.exit(f"Missing dependency ({exc.name}): run  pip install -r ../requirements.txt")
+
+# Imported at module load, not on first use: it costs ~29ms, and paying
+# that lazily just hands the bill to whichever student opens the first
+# reading lesson after a worker starts. Still optional — render_markdown()
+# degrades to escaped source rather than failing — because a lesson page
+# full of asterisks beats a 500.
+try:
+    import markdown as _markdown_mod
+except ImportError:                                  # pragma: no cover
+    _markdown = None
+else:
+    # One parser for the process, reset between documents. Not thread-safe
+    # on its own, hence the lock; contention is nil once render_content()
+    # caches the result anyway.
+    _markdown = _markdown_mod.Markdown(extensions=["extra", "tables"])
+_MARKDOWN_LOCK = threading.Lock()
+
+import billing
+import db
+import emailer
+import security
+import standards
+import tracks
+from config import validate as load_config
+from logsetup import configure_logging
 
 
 BASE_DIR    = Path(__file__).parent
-DATA_DIR    = BASE_DIR / "data"
 ART_DIR     = BASE_DIR / "static" / "art"
 LESSONS_DIR = BASE_DIR / "lessons"    # one folder per lesson
+TRACKS_DIR  = BASE_DIR / "tracks"     # one folder per track
+STANDARDS_DIR = BASE_DIR / "standards"  # one JSON per curriculum framework
+# Grown-up material: parent guides, answer keys, worksheets. Deliberately
+# NOT under static/ and NOT inside a lesson folder — both of those are
+# served to anyone who asks. See the resource routes for the long version.
+RESOURCES_DIR = BASE_DIR / "resources"
 CONTENT_DIR = BASE_DIR / "content"    # Markdown prose — also make_epub.py input
+DATA_DIR    = BASE_DIR / "data"       # content only: item and classroom catalogs
 
-USERS_FILE       = DATA_DIR / "users.json"
-GROUPS_FILE      = DATA_DIR / "groups.json"
-PROGRESS_FILE    = DATA_DIR / "progress.json"
-ITEMS_FILE       = DATA_DIR / "items.json"
-CLASSROOM_FILE   = DATA_DIR / "classroom.json"
-ASSIGNMENTS_FILE = DATA_DIR / "assignments.json"
-SECRET_FILE      = DATA_DIR / "secret_key"
+ITEMS_FILE     = DATA_DIR / "items.json"
+# The student's game room layout, not a class roster — see /classrooms
+# for those. Same word, two different things.
+ROOM_FILE      = DATA_DIR / "classroom.json"
 
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
@@ -102,62 +172,53 @@ STAGE_H = 600
 
 # A student is "quiet" after this many days with no activity
 QUIET_DAYS = 5
-# A question missed this many times counts as a sticking point
-STUCK_TRIES = 2
 
-SEED_USERS = {
-    "student":  {"password": "spark123",  "role": "student", "name": "Alex Rivera",  "avatar": "characters/avatar-student"},
-    "student2": {"password": "spark123",  "role": "student", "name": "Jamie Chen",   "avatar": "characters/avatar-student2"},
-    "teacher":  {"password": "ignite123", "role": "teacher", "name": "Ms. Chen",     "avatar": "characters/avatar-teacher"},
-    "parent":   {"password": "ignite123", "role": "parent",  "name": "Dana Rivera",  "avatar": "characters/avatar-parent",
-                 "children": ["student"]},
-}
+log = logging.getLogger("ignite.app")
+
+cfg = load_config()
+configure_logging(cfg)
 
 app = Flask(__name__)
+app.secret_key = cfg.SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,          # JavaScript can never read it
+    SESSION_COOKIE_SECURE=cfg.COOKIE_SECURE,
+    # Lax, not Strict: a student clicking the emailed verification link
+    # should land signed in.  Lax still withholds the cookie from every
+    # cross-site POST, which is what CSRF needs.
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_NAME="ignite_session",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=cfg.SESSION_DAYS),
+    MAX_CONTENT_LENGTH=1 * 1024 * 1024,    # no request body needs to be bigger
+    SEND_FILE_MAX_AGE_DEFAULT=cfg.STATIC_MAX_AGE,
+    JSON_SORT_KEYS=False,
+    TRAP_HTTP_EXCEPTIONS=False,
+)
 
 
-# ── JSON store ──────────────────────────────────────────────────────────────────
+# ── Read-only content catalogs (files, not state) ───────────────────────────────
+#
+# Lessons, items and the classroom layout are content: they ship with the
+# code and change on deploy, not at runtime.  They are read once and held
+# in memory behind a lock, because the previous version re-scanned the
+# lessons directory and re-parsed every manifest on every request — once
+# per answered quiz question, among others.
 
-def read_json(path: Path, default):
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            print(f"Warning: could not parse {path.name}, using default.", file=sys.stderr)
-    return default
-
-
-def write_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+_catalog_lock = threading.Lock()
+_catalog: dict[str, object] = {}
 
 
-def load_users()      -> dict: return read_json(USERS_FILE,      {})
-def load_groups()     -> dict: return read_json(GROUPS_FILE,     {})
-def load_progress()   -> dict: return read_json(PROGRESS_FILE,   {})
-def load_items()      -> dict: return read_json(ITEMS_FILE,      {})
-def load_assignments() -> dict: return read_json(ASSIGNMENTS_FILE, {})
+def _read_json_file(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.exception("could not parse %s, using default", path.name)
+        return default
 
 
-def assigned_lessons(username: str, catalog: list[dict]) -> list[dict]:
-    """
-    A teacher or parent can narrow a student's lesson menu (see
-    /grownup/student/<username>/assign). No entry for a student means
-    nothing has been restricted yet, so everything is available.
-    """
-    assigned = load_assignments().get(username)
-    if assigned is None:
-        return catalog
-    return [l for l in catalog if l["id"] in assigned]
-
-
-def load_classroom() -> dict:
-    return read_json(CLASSROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
-
-
-# ── Lesson discovery ────────────────────────────────────────────────────────────
-
-def load_lessons() -> list[dict]:
+def _build_lessons() -> list[dict]:
     """
     Scan lessons/*/lesson.json.  The folder name is the lesson id, so
     adding a lesson is dropping a folder in — nothing to register.
@@ -172,25 +233,253 @@ def load_lessons() -> list[dict]:
         manifest = folder / "lesson.json"
         if not folder.is_dir() or not manifest.is_file():
             continue
-        data = read_json(manifest, None)
+        data = _read_json_file(manifest, None)
         if not isinstance(data, dict):
-            print(f"Warning: skipping {folder.name} — unreadable lesson.json", file=sys.stderr)
+            log.warning("skipping %s — unreadable lesson.json", folder.name)
             continue
         data["id"] = folder.name
-        data.setdefault("title",   folder.name)
-        data.setdefault("subject", "General")
-        data.setdefault("type",    "interactive")
-        data.setdefault("order",   999)
-        data.setdefault("quiz",    [])
+        data.setdefault("title",    folder.name)
+        data.setdefault("subject",  "General")
+        data.setdefault("type",     "interactive")
+        data.setdefault("order",    999)
+        data.setdefault("quiz",     [])
         data.setdefault("examples", [])
-        data.setdefault("thumb",   f"lessons/{folder.name}")
+        data.setdefault("thumb",    f"lessons/{folder.name}")
+        # Which kit version this sub-app was built against, and every item
+        # it is allowed to hand out. `reward` is the older single-item form
+        # granted by the host on quiz completion; `awards` is the list a
+        # sub-app may grant itself through /api/award. The reward is folded
+        # in so a lesson does not have to name it twice.
+        data.setdefault("bridge", BRIDGE_VERSION)
+        awards = [a for a in (data.get("awards") or []) if isinstance(a, str)]
+        if data.get("reward") and data["reward"] not in awards:
+            awards.append(data["reward"])
+        data["awards"] = awards
+        # Resolved once here rather than in each template: "access" carries
+        # the back-compat with the older "free" boolean, and "kit" gets
+        # normalised from either `true` or an object.
+        data["access"] = billing.lesson_access(data)
+        data["kit"] = billing.lesson_kit(data)
         found.append(data)
 
     return sorted(found, key=lambda l: (l["order"], l["id"]))
 
 
+def refresh_catalog() -> None:
+    """
+    Re-read every content file.
+
+    Called once at boot, and by the test suites between fixtures. There is
+    deliberately no way to trigger it over HTTP: content ships in the image,
+    so "reload the content" is a deploy.
+
+    The lock is held across the whole swap so a reader cannot see half of
+    one catalog and half of another. Readers below do NOT take it: a single
+    dict lookup is atomic under the GIL, so the worst a concurrent reader
+    can get is the previous value of one key — never a torn one — and
+    nothing writes here while requests are being served anyway.
+    """
+    # The three per-process content caches are part of "the content", so
+    # they are dropped here too. Without this, `--reload-catalog` would
+    # pick up a new lesson.json and keep serving the old prose, the old
+    # resolved art path and the old content hash — the confusing half of a
+    # reload rather than a reload.
+    with _RENDER_LOCK:
+        _RENDERED.clear()
+    with _ART_LOCK:
+        _ART_PATHS.clear()
+    with _FINGERPRINT_LOCK:
+        _FINGERPRINTS.clear()
+
+    lessons = _build_lessons()
+    with _catalog_lock:
+        _catalog["lessons"] = lessons
+        _catalog["by_id"] = {l["id"]: l for l in lessons}
+        _catalog["question_counts"] = {l["id"]: len(l.get("quiz", [])) for l in lessons}
+        # Two parallel lists of every (lesson, question) pair still in the
+        # catalog.  Postgres unnests them to filter answers to questions
+        # that actually exist — see db.unresolved_counts().
+        pairs = [(l["id"], q["id"]) for l in lessons for q in l.get("quiz", [])]
+        _catalog["valid_pairs"] = ([p[0] for p in pairs], [p[1] for p in pairs])
+        _catalog["items"] = _read_json_file(ITEMS_FILE, {})
+        _catalog["room"] = _read_json_file(
+            ROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
+        # Tracks are content too: built once here from the lesson catalog
+        # plus tracks/*/track.json, never queried per request.
+        built = tracks.build(TRACKS_DIR, lessons)
+        _catalog["tracks"] = built
+        _catalog["track_by_id"] = {t["id"]: t for t in built}
+        _catalog["track_of_lesson"] = {
+            lesson_id: t for t in built for lesson_id in t["lesson_ids"]}
+        # Standards are content too. Loaded here so a lesson pointing at a
+        # code that does not exist gets reported at boot — that failure is
+        # invisible in the UI, where the lesson just silently stops counting
+        # towards anything, which is exactly why it is worth shouting about.
+        frameworks = standards.load(STANDARDS_DIR)
+        _catalog["frameworks"] = frameworks
+        _catalog["standard_by_code"] = standards.index(frameworks)
+        for lesson_id, code in standards.unknown_codes(
+                lessons, _catalog["standard_by_code"]):
+            log.warning("lesson %s claims unknown standard %s", lesson_id, code)
+        # A requirement naming something that does not exist is ignored at
+        # runtime rather than enforced, precisely so a typo cannot lock
+        # content permanently — which means the only way anyone finds out
+        # is if it is said out loud here.
+        for problem in tracks.check_requirements(built):
+            log.warning("content: %s", problem)
+        # A sub-app built against a newer kit than this server ships would
+        # half-work: the parts it calls that exist would run, and the parts
+        # that do not would fail silently in an iframe nobody is watching.
+        items = _catalog["items"]
+        for lesson in lessons:
+            if lesson["bridge"] > BRIDGE_VERSION:
+                log.error("lesson %s needs kit bridge v%s; this server has v%s",
+                          lesson["id"], lesson["bridge"], BRIDGE_VERSION)
+            for item_id in lesson["awards"]:
+                if item_id not in items:
+                    log.warning("lesson %s can award %r, which is in no item catalog",
+                                lesson["id"], item_id)
+
+
+def load_lessons() -> list[dict]:
+    return _catalog["lessons"]
+
+
 def get_lesson(lesson_id: str) -> dict | None:
-    return next((l for l in load_lessons() if l["id"] == lesson_id), None)
+    return _catalog["by_id"].get(lesson_id)
+
+
+def load_items() -> dict:
+    return _catalog["items"]
+
+
+def load_room() -> dict:
+    """The student's game-room layout. Not a class roster — see /classrooms."""
+    return _catalog["room"]
+
+
+def load_tracks() -> list[dict]:
+    return _catalog["tracks"]
+
+
+def _without_resources(lesson: dict) -> dict:
+    """
+    A copy of a lesson with the grown-up material taken out.
+
+    Belt and braces. The download routes are the real boundary — they
+    require a parent or teacher session and serve only whitelisted files —
+    and tracks.visible_resources() is the second check. This is the third:
+    a student's template context simply never contains the list at all, so
+    there is nothing for a future template, partial or serialiser to leak.
+    """
+    return {k: v for k, v in lesson.items() if k != "resources"}
+
+
+def load_frameworks() -> list[dict]:
+    return _catalog["frameworks"]
+
+
+def standard_by_code() -> dict[str, dict]:
+    return _catalog["standard_by_code"]
+
+
+def track_of(lesson_id: str) -> dict | None:
+    return _catalog["track_of_lesson"].get(lesson_id)
+
+
+def prerequisite_block(student_id: int, lesson: dict) -> dict | None:
+    """
+    What is standing between this student and the lesson they asked for, or
+    None if nothing is.
+
+    Three kinds of block live here, all pedagogy and none of them payment:
+
+      unassigned    a grown-up has to hand this one out
+      prerequisite  a track or lesson somewhere else is unfinished
+      sequence      the lesson before this one, in this same track
+
+    Reported in that order, worst-remedy-last. "Ask your teacher" is
+    actionable today; "finish Basic Electricity" is a week's work; "finish
+    the lesson before this" is the smallest of the three, so it goes last
+    when several are true at once.
+
+    Staging is per-student, so this reads their progress and their own
+    assigned menu. Every route that opens a lesson goes through here — the
+    menu hides locked cards, but a bookmark or a guessed URL does not pass
+    through the menu.
+    """
+    track = track_of(lesson["id"])
+    by_track = {t["id"]: t for t in load_tracks()}
+    by_lesson = {l["id"]: l for l in load_lessons()}
+
+    # Both the lesson's own requirements and its track's apply. A track-level
+    # requirement holds every lesson in it, which is the point of putting it
+    # on the track.
+    gated = [lesson] + ([track] if track else [])
+    needed = tracks.required_lesson_ids(gated, by_track)
+    if track and track.get("sequential"):
+        needed.update(track["lesson_ids"])
+
+    assigned = db.assigned_lesson_ids(student_id)
+    assigned_ids = None if assigned is None else set(assigned)
+    # The student's own menu. A lesson a teacher has hidden must not be
+    # able to block anything — see the note on requirement_block.
+    available_ids = assigned_ids
+
+    # One query for every status any of the checks below could want, rather
+    # than one per requirement: this runs on /api/quiz, once per answered
+    # question.
+    statuses = db.lesson_statuses(student_id, sorted(needed)) if needed else {}
+    entries = {lesson_id: {"status": status} for lesson_id, status in statuses.items()}
+
+    for item in gated:
+        block = tracks.requirement_block(item, entries, by_track, by_lesson,
+                                         assigned_ids, available_ids)
+        if block:
+            return {"track": track, "after": block["title"],
+                    "reason": block["reason"], "remedy": block["remedy"]}
+
+    if not track or not track.get("sequential"):
+        return None
+
+    available_ids = (set(track["lesson_ids"]) if assigned_ids is None
+                     else set(track["lesson_ids"]) & assigned_ids)
+
+    state = tracks.gate(track, entries, available_ids).get(lesson["id"])
+    if not state or not state["locked"]:
+        return None
+    return {"track": track, "after": state["after"],
+            "reason": tracks.BLOCK_SEQUENCE,
+            "remedy": f"Finish “{state['after']}” first."}
+
+
+def assigned_lessons(student_id: int, catalog: list[dict]) -> list[dict]:
+    """
+    A teacher or parent can narrow a student's lesson menu (see
+    /grownup/student/<username>/assign).  No assignment row means nothing
+    has been restricted yet, so everything is available.
+    """
+    assigned = db.assigned_lesson_ids(student_id)
+    if assigned is None:
+        return catalog
+    allowed = set(assigned)
+    return [l for l in catalog if l["id"] in allowed]
+
+
+# ── Static asset routes ─────────────────────────────────────────────────────────
+
+def _cached(response):
+    """
+    A long, PUBLIC max-age. Only for responses that are the same for
+    everybody: static kit files, lesson assets, generated placeholders.
+
+    A page whose body depends on who is looking must not use this — `public`
+    lets a shared cache serve one visitor's copy to another. Set
+    `private` (and `Vary: Cookie`) on those instead; /legal is the worked
+    example.
+    """
+    response.headers["Cache-Control"] = f"public, max-age={cfg.STATIC_MAX_AGE}"
+    return response
 
 
 @app.route("/kit/<path:filename>")
@@ -202,7 +491,7 @@ def kit_asset(filename: str):
         <link rel="stylesheet" href="/kit/lesson-kit.css">
         <script src="/kit/lesson-kit.js"></script>
     """
-    return send_from_directory(BASE_DIR / "static" / "kit", filename)
+    return _cached(send_from_directory(BASE_DIR / "static" / "kit", filename))
 
 
 @app.route("/lessons/<lesson_id>/<path:filename>")
@@ -211,56 +500,112 @@ def lesson_asset(lesson_id: str, filename: str):
     Serve a lesson package's own files.  Each lesson is sandboxed to its
     own folder, so one lesson cannot reach into another's assets.
     """
-    folder = LESSONS_DIR / lesson_id
-    if not (folder / "lesson.json").is_file():
+    if not get_lesson(lesson_id):
         abort(404)
-    return send_from_directory(folder, filename)
+    return _cached(send_from_directory(LESSONS_DIR / lesson_id, filename))
 
 
-# ── First-run setup ─────────────────────────────────────────────────────────────
+# Resolved art paths, memoised for the life of the process — same reasoning
+# as _FINGERPRINTS below, and the same lock discipline.
+_ART_PATHS: dict[str, str | None] = {}
+_ART_LOCK = threading.Lock()
 
-def seed_users() -> None:
-    if USERS_FILE.exists():
-        return
-    users = {}
-    for username, info in SEED_USERS.items():
-        entry = {
-            "password_hash": generate_password_hash(info["password"]),
-            "role":          info["role"],
-            "name":          info["name"],
-            "avatar":        info["avatar"],
-        }
-        if "children" in info:
-            entry["children"] = info["children"]
-        users[username] = entry
-    write_json(USERS_FILE, users)
-    print(f"  Seeded {len(users)} account(s) → {USERS_FILE.relative_to(BASE_DIR)}")
-    for username, info in SEED_USERS.items():
-        print(f"    {info['role']:8} {username} / {info['password']}")
-
-
-def load_secret_key() -> str:
-    if SECRET_FILE.exists():
-        return SECRET_FILE.read_text(encoding="utf-8").strip()
-    key = secrets.token_hex(32)
-    SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SECRET_FILE.write_text(key, encoding="utf-8")
-    return key
-
-
-# ── Art resolution (one shared namespace for every lesson) ──────────────────────
 
 def find_art(name: str) -> str | None:
+    """
+    The file behind an art name, or None, trying ART_EXTS in order.
+
+    Memoised because it is a filesystem probe per extension per image, and
+    the lesson menu draws nine of them. ".webp" is first and ".svg" last,
+    so a lesson still showing its generated stand-in costs the full six
+    stats — 54 syscalls to render one menu, every time, for files that
+    cannot change under a running process.
+
+    A None is cached too: a missing file is the placeholder path, and
+    re-probing six extensions to rediscover that on every request is the
+    most expensive way to learn nothing.
+    """
+    with _ART_LOCK:
+        if name in _ART_PATHS:
+            return _ART_PATHS[name]
+    found = None
     for ext in ART_EXTS:
         if (ART_DIR / f"{name}{ext}").is_file():
-            return f"art/{name}{ext}"
-    return None
+            found = f"art/{name}{ext}"
+            break
+    with _ART_LOCK:
+        _ART_PATHS[name] = found
+    return found
+
+
+# Content fingerprints for files under static/, computed once at boot.
+#
+# This is what makes "replace the character, every lesson updates" true.
+# Without it, /static/ is served with a 30-day max-age and a browser that
+# already has spark.png keeps showing the old one for a month — so the
+# shared-asset promise held on the server and quietly failed in front of
+# the student, which is the worst place for it to fail.
+_FINGERPRINTS: dict[str, str] = {}
+_FINGERPRINT_LOCK = threading.Lock()
+
+
+def fingerprint(filename: str) -> str:
+    """
+    Eight hex characters of the file's content hash, or "" if unreadable.
+
+    Cached, because this runs for every image on the lesson menu. Content
+    ships in the image and cannot change under a running process, so a
+    boot-time cache is exactly as fresh as the files are.
+    """
+    with _FINGERPRINT_LOCK:
+        if filename in _FINGERPRINTS:
+            return _FINGERPRINTS[filename]
+    path = BASE_DIR / "static" / filename
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        digest = ""
+    with _FINGERPRINT_LOCK:
+        _FINGERPRINTS[filename] = digest
+    return digest
+
+
+def static_url(filename: str) -> str:
+    """
+    A cache-busting URL for a static file, through the CDN if one is set.
+
+    The ?v= is the file's content hash, so replacing a shared character
+    changes every URL that points at it and every browser and CDN fetches
+    the new one immediately. Same file, same URL, still cached for a month.
+    """
+    mark = fingerprint(filename)
+    query = f"?v={mark}" if mark else ""
+    if cfg.CDN_URL:
+        return f"{cfg.CDN_URL}/static/{filename}{query}"
+    return url_for("static", filename=filename) + query
+
+
+# What art() falls back to when the caller has no name to give it at all.
+# Distinct from "this file is missing": a student who never picked an avatar
+# is not an authoring mistake, and should not be shown a "drop a graphic
+# here" card in the page header.
+DEFAULT_ART = "ui/avatar-default"
 
 
 def art(name: str) -> str:
+    """
+    URL for a piece of shared art, by name and without an extension.
+
+    A blank name is the case worth spelling out. `avatar` defaults to the
+    empty string for every account, so url_for("art_placeholder", name="")
+    builds "/art-placeholder/" — which matches no route, because <path:>
+    will not match an empty segment — and every page carrying a user's
+    avatar quietly 404s in the background. Fall back to the default instead.
+    """
+    name = (name or "").strip() or DEFAULT_ART
     found = find_art(name)
     if found:
-        return url_for("static", filename=found)
+        return static_url(found)
     return url_for("art_placeholder", name=name)
 
 
@@ -275,7 +620,8 @@ def media(source: str) -> str:
 
 
 app.jinja_env.globals.update(
-    art=art, art_exists=art_exists, media=media,
+    art=art, art_exists=art_exists, media=media, static_url=static_url,
+    csrf_token=security.csrf_token,
     STAGE_W=STAGE_W, STAGE_H=STAGE_H,
 )
 
@@ -291,38 +637,54 @@ def art_url(name: str):
     """
     found = find_art(name)
     if found:
-        return redirect(url_for("static", filename=found))
+        return redirect(static_url(found))
     return redirect(url_for("art_placeholder", name=name))
 
 
 @app.route("/art-placeholder/<path:name>")
 def art_placeholder(name: str):
-    """SVG placeholder naming the exact file path to create."""
+    """
+    SVG placeholder naming the exact file path to create.
+
+    Built server-side, so it cannot read the CSS custom properties. These
+    literals have to be kept in step with static/kit/brand.css by hand —
+    they are the only brand colours in the codebase that a re-skin will
+    not reach on its own.
+    """
     label = f"static/art/{name}.png"
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
   <defs>
     <pattern id="p" width="40" height="40" patternUnits="userSpaceOnUse">
-      <rect width="40" height="40" fill="#f2e8dc"/>
-      <path d="M0 40 L40 0" stroke="#e4d3c0" stroke-width="2"/>
+      <rect width="40" height="40" fill="#fdf1f7"/>
+      <path d="M0 40 L40 0" stroke="#f6d0e5" stroke-width="2"/>
     </pattern>
   </defs>
   <rect width="800" height="500" fill="url(#p)"/>
   <rect x="10" y="10" width="780" height="480" fill="none"
-        stroke="#d4521a" stroke-width="4" stroke-dasharray="14 10" rx="8"/>
+        stroke="#d81b84" stroke-width="4" stroke-dasharray="14 10" rx="8"/>
   <text x="400" y="228" text-anchor="middle"
         font-family="Trebuchet MS, Verdana, sans-serif" font-size="30"
-        font-weight="bold" fill="#d4521a">Drop a graphic here</text>
+        font-weight="bold" fill="#d81b84">Drop a graphic here</text>
   <text x="400" y="278" text-anchor="middle"
-        font-family="Consolas, Menlo, monospace" font-size="21" fill="#4a4a5e">{label}</text>
+        font-family="Consolas, Menlo, monospace" font-size="21" fill="#444c56">{label}</text>
   <text x="400" y="316" text-anchor="middle"
-        font-family="Trebuchet MS, Verdana, sans-serif" font-size="15" fill="#8888a0">
+        font-family="Trebuchet MS, Verdana, sans-serif" font-size="15" fill="#6b7684">
     .webp .png .jpg .gif or .svg — any of these work
   </text>
 </svg>"""
-    return app.response_class(svg, mimetype="image/svg+xml")
+    response = app.response_class(svg, mimetype="image/svg+xml")
+    return _cached(response)
 
 
 # ── Reading content (shared with make_epub.py) ──────────────────────────────────
+
+# Rendered content/ files, keyed by path. Lesson prose and the legal pages
+# ship in the image beside the code, so rendering one twice in a process is
+# always wasted work: it was 2.5ms of Markdown parsing plus a file read on
+# every single lesson view, for bytes that cannot have changed.
+_RENDERED: dict[str, str] = {}
+_RENDER_LOCK = threading.Lock()
+
 
 def render_content(source: str) -> str:
     """Render a content/ file to HTML.  Same file is make_epub.py input."""
@@ -332,55 +694,286 @@ def render_content(source: str) -> str:
     except ValueError:
         return "<p>Invalid content path.</p>"
 
+    with _RENDER_LOCK:
+        if source in _RENDERED:
+            return _RENDERED[source]
+
     if not path.is_file():
+        # Deliberately not cached: this is the message an author sees while
+        # creating the file, and it should stop appearing once they have.
         return (f'<p class="content-missing">No content file yet — create '
                 f'<code>game/content/{source}</code>.</p>')
 
     raw = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix.lower() in (".html", ".htm"):
-        return raw
-    try:
-        import markdown
-    except ImportError:
-        return f"<pre>{raw}</pre>"
-    return markdown.markdown(raw, extensions=["extra", "tables"])
+    html = raw if path.suffix.lower() in (".html", ".htm") else render_markdown(raw)
+    with _RENDER_LOCK:
+        _RENDERED[source] = html
+    return html
+
+
+def render_markdown(raw: str) -> str:
+    """
+    Markdown to HTML, with the same extensions everywhere.
+
+    Shared by lesson prose and the legal pages so the two cannot render
+    differently — the tables in the privacy notice need the same `tables`
+    extension a lesson does, and finding that out the hard way is a
+    published page full of pipe characters.
+
+    `markdown` is imported at module load rather than here, so the 29ms of
+    import lands at boot instead of on whichever student happens to open
+    the first reading lesson. It stays optional: without it every caller
+    gets escaped source rather than a 500, which is a bad page but a
+    legible one.
+    """
+    if _markdown is None:
+        return f"<pre>{html_escape(raw)}</pre>"
+    # One parser, reset between documents. Building a fresh Markdown()
+    # per call costs about twice as much and produces identical output.
+    with _MARKDOWN_LOCK:
+        return _markdown.reset().convert(raw)
+
+
+# ── Request lifecycle ───────────────────────────────────────────────────────────
+
+@app.before_request
+def _guard():
+    # Hand the resolved view over so a route can declare itself exempt,
+    # rather than the check guessing from the URL.
+    security.check_csrf(app.view_functions.get(request.endpoint or ""))
+
+
+# Endpoints an account with must_change_password set may still reach.
+# Everything else bounces to the change form. Static and asset endpoints are
+# in here so a half-rendered page still loads its stylesheet, and so the
+# gate never costs a database lookup on a file request.
+_PASSWORD_CHANGE_EXEMPT = frozenset({
+    "static", "livez", "healthz", "logout", "login", "signup",
+    "art_url", "art_placeholder", "kit_asset", "lesson_asset",
+    "first_password", "verify_email", "forgot_password", "reset_password",
+    # Somebody held on the first-password page can still read what they
+    # agreed to. Blocking that would be a strange thing to do.
+    "legal",
+})
+
+
+@app.before_request
+def _force_password_change():
+    """
+    Hold an account on the change-password page until it has one of its own.
+
+    Set when somebody else chose the password: a teacher provisioning a
+    student, or resetting one who forgot. The password is on a printout by
+    then, possibly on the floor of a classroom, so it is worth exactly one
+    sign-in. Enforcing it here rather than in each view means a route added
+    later is covered by default — the failure mode of forgetting to add it
+    to the exempt set is a redirect, not a hole.
+    """
+    if request.endpoint in _PASSWORD_CHANGE_EXEMPT or not session.get("uid"):
+        return None
+    user = current_user()
+    if not user or not user["must_change_password"]:
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Set a new password before continuing."}), 403
+    return redirect(url_for("first_password"))
+
+
+@app.after_request
+def _headers(response):
+    return security.compress(security.apply_headers(response, cfg), request)
+
+
+@app.teardown_appcontext
+def _teardown(exception=None):
+    g.pop("_user", None)
+    g.pop("_entitlement", None)
+
+
+@app.route("/livez")
+def livez():
+    """
+    Liveness: is this process alive and able to answer?
+
+    Touches nothing — no database, no catalog. Point the load balancer and
+    the container health check HERE.
+
+    The distinction matters more than it looks. /healthz reports 503 when
+    the database is away, and pointing an ALB at that means every task in
+    the service goes unhealthy at the same instant during a failover, so
+    the whole service gets replaced. The pool reconnects on its own in
+    about two seconds, so killing the processes is precisely the wrong
+    response to a blip they would otherwise have ridden out.
+    """
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/healthz")
+def healthz():
+    """
+    Readiness: can this process actually do its job right now?
+
+    Round-trips a real query, so it reports degraded when the database is
+    unreachable. Use it for dashboards, alerts and deploy verification —
+    not as a load balancer's health check, which should be /livez. See the
+    note there.
+    """
+    ok = db.healthy()
+    return jsonify({"status": "ok" if ok else "degraded", "database": ok}), (200 if ok else 503)
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────────
 
 def current_user() -> dict | None:
-    username = session.get("username")
-    if not username:
-        return None
-    user = load_users().get(username)
-    if not user:
-        session.clear()
-        return None
-    return {**user, "username": username}
+    """
+    The signed-in account, or None.
+
+    The session carries the user id and the session epoch it was issued
+    under.  Changing a password bumps the epoch in the database, which
+    retroactively invalidates every cookie issued before it — so a
+    password reset actually kicks an attacker out instead of leaving their
+    stolen cookie valid for a fortnight.
+    """
+    if "_user" in g:
+        return g._user
+
+    g._user = None
+    uid = session.get("uid")
+    if uid:
+        try:
+            user = db.user_by_id(uid)
+        except Exception:
+            log.exception("could not load session user")
+            return None
+        if user and user["session_epoch"] == session.get("epoch"):
+            g._user = user
+        else:
+            session.clear()
+    return g._user
+
+
+def start_session(user: dict) -> None:
+    """Sign this account in.
+
+    Clears anything already in the session first, then records the user id
+    together with the session epoch it was issued under, which is what
+    lets a password change invalidate every existing cookie. Rotates the
+    CSRF token so a token issued before sign-in cannot be replayed after
+    it.
+    """
+    session.clear()
+    session["uid"] = user["id"]
+    session["epoch"] = user["session_epoch"]
+    session.permanent = True
+    security.rotate_csrf_token()
 
 
 def login_required(*roles: str):
     """Require a session, and optionally membership of one of `roles`."""
     def decorator(fn):
+        @functools.wraps(fn)
         def wrapper(*fargs, **fkwargs):
             user = current_user()
             if not user:
-                return redirect(url_for("login", next=request.path))
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Not signed in."}), 401
+                return redirect(url_for("login", next=request.full_path.rstrip("?")))
             if roles and user["role"] not in roles:
                 return redirect(url_for("home"))
             return fn(*fargs, **fkwargs)
-        wrapper.__name__ = fn.__name__
         return wrapper
     return decorator
 
 
+def membership_required(fn):
+    """
+    Hold a pending member at the door.
+
+    They have a real account and can sign in — they just cannot reach any
+    classroom until an org admin lets them through. Bouncing them to a
+    holding page rather than a 403 keeps it obvious that nothing is broken.
+
+    This belongs on EVERY authenticated route except the handful that are
+    about the account itself (settings, password, billing) or about the
+    holding pen (/pending, /locked). It was missing from eight of them —
+    including /grownup/link, which let a parent an admin had not approved
+    attach themselves to a child with that child's link code and then read
+    the child's progress. On an approval-gated organisation that is the
+    exact thing approval exists to prevent.
+
+    selftest.t_membership_gate_is_complete() walks the route table and
+    fails on any authenticated route that neither carries this nor is on
+    its documented exemption list, so the next one cannot be forgotten
+    quietly.
+    """
+    @functools.wraps(fn)
+    def wrapper(*fargs, **fkwargs):
+        user = current_user()
+        if user and user["membership_status"] == "pending":
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Your place hasn't been approved yet."}), 403
+            return redirect(url_for("pending"))
+        return fn(*fargs, **fkwargs)
+    return wrapper
+
+
+def org_admin_required(fn):
+    """Admin teachers only: the roster and the money."""
+    @functools.wraps(fn)
+    def wrapper(*fargs, **fkwargs):
+        user = current_user()
+        if not user:
+            return redirect(url_for("login", next=request.path))
+        if user["role"] != "teacher" or not user["org_admin"]:
+            abort(404)
+        return fn(*fargs, **fkwargs)
+    return wrapper
+
+
+def entitlement() -> dict:
+    """This request's entitlement, resolved once and cached on g."""
+    if "_entitlement" not in g:
+        user = current_user()
+        g._entitlement = billing.entitlement_for(cfg, user) if user else billing.NO_ENTITLEMENT
+    return g._entitlement
+
+
+@app.route("/pending")
+@login_required()
+def pending():
+    """Holding page for a member an admin has not let in yet.
+
+    They have a real account and can sign in; they just cannot reach a
+    classroom. Bouncing them here rather than showing a 403 makes it clear
+    nothing is broken and somebody just has to approve them.
+    """
+    user = current_user()
+    if user["membership_status"] != "pending":
+        return redirect(url_for("home"))
+    return render_template("pending.html", org=db.org_by_id(user["org_id"]))
+
+
 @app.context_processor
 def inject_user():
-    return {"user": current_user()}
+    user = current_user()
+    return {
+        "user": user,
+        "config": cfg,
+        "entitlement": entitlement() if user else billing.NO_ENTITLEMENT,
+        "billing_enabled": billing.enabled(cfg),
+        "store_url": cfg.STORE_URL,
+    }
 
 
 @app.route("/")
 def home():
+    """Send each role to the screen it actually wants.
+
+    Students land in the classroom, grown-ups on the progress dashboard.
+    The login form has role tabs, but they only restyle the panel — this
+    is what decides where you end up, so picking the wrong tab is
+    harmless.
+    """
     user = current_user()
     if not user:
         return redirect(url_for("login"))
@@ -391,124 +984,559 @@ def home():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        user     = load_users().get(username)
+    """
+    Sign in, without telling an attacker anything they did not already know.
 
-        if not user or not check_password_hash(user["password_hash"], password):
-            flash("That username and password don't match.", "error")
-            return render_template("login.html",
-                                   role_tab=request.form.get("role_tab", "student"),
-                                   username=username)
+    The order of what follows is deliberate. Rate limiting comes before the
+    password check so a locked-out attacker learns nothing from timing. The
+    password is then verified even when the username does not exist, against
+    a throwaway hash, so a wrong username and a wrong password cost the same
+    and the response cannot be used to enumerate accounts. Only after both
+    is the account's own state — verification, and later the forced password
+    change — allowed to produce a different message.
+    """
+    if request.method != "POST":
+        if current_user():
+            return redirect(url_for("home"))
+        return render_template("login.html", role_tab=request.args.get("role", "student"))
 
-        session["username"] = username
-        nxt = request.args.get("next")
-        if nxt and nxt.startswith("/"):
-            return redirect(nxt)
-        return redirect(url_for("home"))
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    role_tab = request.form.get("role_tab", "student")
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-    if current_user():
-        return redirect(url_for("home"))
-    return render_template("login.html", role_tab=request.args.get("role", "student"))
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        return render_template("login.html", role_tab=role_tab, username=username), status
+
+    # Two independent buckets: one stops a single account being ground
+    # down, the other stops one host spraying many accounts.
+    if (security.over_limit("login_user", username, cfg.RL_LOGIN_USER, cfg.RL_WINDOW)
+            or security.over_limit("login_ip", ip, cfg.RL_LOGIN_IP, cfg.RL_WINDOW)):
+        log.warning("login rate limited", extra={"username": username})
+        return refuse("Too many attempts. Wait a few minutes and try again.", 429)
+
+    user = db.user_by_username(username)
+
+    # The password is checked even when the username is unknown, against a
+    # throwaway hash, so a wrong username and a wrong password take the
+    # same time and the response cannot be used to enumerate accounts.
+    stored = user["password_hash"] if user else _DUMMY_HASH
+    ok = check_password_hash(stored, password)
+
+    if not user or not ok:
+        security.record_attempt("login_user", username)
+        security.record_attempt("login_ip", ip)
+        log.info("login failed", extra={"username": username})
+        return refuse("That username and password don't match.")
+
+    # Verification gates accounts that HAVE an address. A teacher-provisioned
+    # student has email NULL and no inbox to check, so there is nothing to
+    # verify and this must not lock them out — the teacher vouched for them
+    # by creating the account, which is the whole point of that flow.
+    if cfg.REQUIRE_EMAIL_VERIFICATION and user["email"] and not user["email_verified"]:
+        return refuse("Confirm your email address first — check your inbox "
+                      "for the link, or request a new one below.")
+
+    security.clear_attempts("login_user", username)
+    start_session(user)
+    db.touch_login(user["id"])
+    log.info("login ok", extra={"username": user["username"], "role": user["role"]})
+    return redirect(security.safe_next(request.args.get("next"), url_for("home")))
 
 
-@app.route("/logout")
+# Compared against when the username does not exist, purely so the timing
+# of a failed login does not reveal which of the two was wrong.
+_DUMMY_HASH = generate_password_hash("timing-equalizer-not-a-real-password")
+
+
+@app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
 
-# ── Progress ────────────────────────────────────────────────────────────────────
+# ── Signup ──────────────────────────────────────────────────────────────────────
 
-def blank_record() -> dict:
-    return {"items": [], "lessons": {}}
-
-
-def student_progress(username: str) -> dict:
-    return {**blank_record(), **load_progress().get(username, {})}
-
-
-def _save_record(username: str, record: dict) -> None:
-    progress = load_progress()
-    progress[username] = record
-    write_json(PROGRESS_FILE, progress)
-
-
-def set_lesson_status(username: str, lesson_id: str, status: str,
-                      score: int | None = None,
-                      quiz_seconds: int | None = None) -> dict:
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
     """
-    Record lesson status. The reward item is granted once. quiz_seconds is
-    logged for the grown-up view only — it is never sent back to the quiz
-    itself, so the student never sees a timer or knows it's being kept.
+    Self-serve registration for all three roles.
+
+    A teacher signing up creates an organisation and receives its join
+    code.  Students and parents must present that code, so an account
+    cannot appear inside a school nobody invited it to.
     """
-    record = student_progress(username)
-    entry  = record["lessons"].get(lesson_id, {})
+    role = (request.values.get("role") or "student").strip().lower()
+    if role not in ("student", "parent", "teacher"):
+        role = "student"
 
-    was_complete = entry.get("status") == "completed"
-    entry["status"]  = status
-    entry["updated"] = datetime.now().isoformat(timespec="seconds")
-    if score is not None:
-        entry["score"] = max(int(score), int(entry.get("score", 0)))
-    if quiz_seconds is not None:
-        entry["quiz_seconds"] = quiz_seconds
+    if request.method != "POST":
+        if current_user():
+            return redirect(url_for("home"))
+        return render_template("signup.html", role=role, form={})
 
-    if status == "completed" and not was_complete:
-        lesson = get_lesson(lesson_id)
-        if lesson:
-            reward = lesson.get("reward")
-            if reward and reward not in record["items"]:
-                record["items"].append(reward)
+    form = {k: request.form.get(k, "").strip() for k in
+            ("name", "username", "email", "join_code", "org_name")}
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-    record["lessons"][lesson_id] = entry
-    _save_record(username, record)
-    return record
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        return render_template("signup.html", role=role, form=form), status
+
+    if security.over_limit("signup_ip", ip, cfg.RL_SIGNUP_IP, cfg.RL_WINDOW):
+        return refuse("Too many sign-ups from this connection. Try again later.", 429)
+
+    if not form["name"]:
+        return refuse("Enter the name you'd like shown.")
+    for problem in (security.username_problem(form["username"]),
+                    security.email_problem(form["email"]),
+                    security.password_problem(password, confirm)):
+        if problem:
+            return refuse(problem)
+
+    # The age gate. Under 13, US COPPA applies to a service collecting
+    # this kind of data and this app is not built to meet it — see
+    # DEPLOY.md. The attestation and its timestamp are what we keep.
+    if role == "student" and not request.form.get("age_ok"):
+        return refuse(f"Confirm you are {cfg.MIN_AGE} or older to create a student account.")
+    if not request.form.get("terms_ok"):
+        return refuse("Accept the terms to continue.")
+
+    if role == "teacher":
+        if not form["org_name"]:
+            return refuse("Name your school, club or class.")
+        org = None
+    else:
+        org = db.org_by_join_code(form["join_code"])
+        if not org:
+            return refuse("That join code doesn't match any class. Check it with your teacher.")
+
+    # Checked up front for a friendly message; the unique indexes below are
+    # what actually prevent a duplicate when two people race.
+    if db.username_taken(form["username"]):
+        return refuse("That username is taken.")
+    if db.email_taken(form["email"]):
+        return refuse("There's already an account with that email. Try signing in.")
+
+    verified = not cfg.REQUIRE_EMAIL_VERIFICATION
+    # On an approval-gated org, a correct join code buys a place in the
+    # queue rather than a seat. The teacher who creates an org is always
+    # its first admin.
+    membership = "active"
+    if role != "teacher" and org.get("join_policy") == "approval":
+        membership = "pending"
+
+    try:
+        with db.write() as cur:
+            if role == "teacher":
+                org = db.create_org(cur, form["org_name"])
+            user = db.create_user(
+                cur,
+                org_id=org["id"],
+                username=form["username"],
+                email=form["email"],
+                password_hash=generate_password_hash(password),
+                role=role,
+                name=form["name"],
+                avatar=f"characters/avatar-{role}",
+                email_verified=verified,
+                age_confirmed=(role == "student"),
+                terms_accepted=True,
+                org_admin=(role == "teacher"),
+                membership_status=membership,
+            )
+            raw_token, token_hash = security.new_token()
+            db.store_token(cur, token_hash, user["id"], "verify", cfg.TOKEN_HOURS)
+    except psycopg.errors.UniqueViolation:
+        return refuse("That username or email was just taken. Try another.")
+
+    security.record_attempt("signup_ip", ip)
+    emailer.send_verification(
+        cfg, form["email"], form["name"],
+        f"{cfg.BASE_URL}{url_for('verify_email', token=raw_token)}")
+    log.info("signup", extra={"username": user["username"], "role": role, "org_id": org["id"]})
+
+    if role == "teacher":
+        flash(f"Class created. Your join code is {org['join_code']} — "
+              "students and parents need it to sign up.", "success")
+    elif membership == "pending":
+        flash("Account created. A teacher has to let you in before you can "
+              "start — you'll be able to sign in once they do.", "success")
+
+    if cfg.REQUIRE_EMAIL_VERIFICATION:
+        flash("Check your email for a confirmation link.", "success")
+        return redirect(url_for("login", role=role))
+
+    start_session(user)
+    return redirect(url_for("home"))
 
 
-def record_answer(username: str, lesson_id: str, question_id: str,
-                  chosen: int, correct: bool) -> dict:
+@app.route("/verify/<token>")
+def verify_email(token: str):
+    user = db.consume_token(security.hash_token(token), "verify")
+    if not user:
+        flash("That confirmation link has expired or already been used.", "error")
+        return redirect(url_for("login"))
+
+    with db.write() as cur:
+        db.mark_verified(cur, user["id"])
+
+    start_session(user)
+    flash("Email confirmed — you're all set.", "success")
+    return redirect(url_for("home"))
+
+
+@app.route("/verify/resend", methods=["POST"])
+def resend_verification():
     """
-    Store one quiz answer.  Every attempt is kept, because "what did they
-    get wrong, and how many tries did it take" is the question a parent
-    actually wants answered.
+    Send another confirmation link, and say nothing about who has an account.
+
+    Like /forgot below, the response is identical whether or not the address
+    exists. A different message here would turn this form into a way to test
+    which email addresses have accounts — and this one is reachable without
+    signing in, so that list would be free to anybody.
     """
-    record = student_progress(username)
-    entry  = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
-    quiz   = entry.setdefault("quiz", {})
-    q      = quiz.setdefault(question_id, {"tries": 0, "correct": False})
+    email = request.form.get("email", "").strip()
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
-    q["tries"]   = q.get("tries", 0) + 1
-    q["chosen"]  = chosen
-    q["correct"] = bool(correct)
-    if correct and "first_try" not in q:
-        q["first_try"] = q["tries"] == 1
+    if not security.over_limit("resend_ip", ip, cfg.RL_RESET_IP, cfg.RL_WINDOW):
+        security.record_attempt("resend_ip", ip)
+        user = db.user_by_email(email)
+        if user and not user["email_verified"]:
+            with db.write() as cur:
+                db.invalidate_tokens(cur, user["id"], "verify")
+                raw_token, token_hash = security.new_token()
+                db.store_token(cur, token_hash, user["id"], "verify", cfg.TOKEN_HOURS)
+            emailer.send_verification(
+                cfg, user["email"], user["name"],
+                f"{cfg.BASE_URL}{url_for('verify_email', token=raw_token)}")
 
-    entry["updated"] = datetime.now().isoformat(timespec="seconds")
-    _save_record(username, record)
-    return record
+    # Same answer either way — see forgot_password().
+    flash("If that address needs confirming, a new link is on its way.", "success")
+    return redirect(url_for("login"))
 
 
-def record_example(username: str, lesson_id: str, example_id: str,
-                    chosen: int, correct: bool) -> None:
+# ── Password reset ──────────────────────────────────────────────────────────────
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
     """
-    Store one practice-example attempt. Unlike record_answer(), this is
-    never graded back to the student — see /api/example. It exists purely
-    so a teacher or parent can see how practice is actually going.
-    """
-    record = student_progress(username)
-    entry    = record["lessons"].setdefault(lesson_id, {"status": "in_progress"})
-    examples = entry.setdefault("examples", {})
+    Start a password reset.
 
-    examples[example_id] = {
-        "chosen":  chosen,
-        "correct": bool(correct),
-        "tries":   examples.get(example_id, {}).get("tries", 0) + 1,
-        "updated": datetime.now().isoformat(timespec="seconds"),
+    The rate limit wraps the lookup rather than sitting after it, so a
+    throttled request does no database work and takes the same path whether
+    the address exists or not. Asking again retires any previous link, and
+    the flash at the end is identical either way — see the note there.
+    """
+    if request.method != "POST":
+        return render_template("forgot.html")
+
+    email = request.form.get("email", "").strip()
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
+
+    if not security.over_limit("reset_ip", ip, cfg.RL_RESET_IP, cfg.RL_WINDOW):
+        security.record_attempt("reset_ip", ip)
+        user = db.user_by_email(email)
+        if user:
+            with db.write() as cur:
+                # Asking again retires the previous link, so a forwarded or
+                # cached old email cannot be used later.
+                db.invalidate_tokens(cur, user["id"], "reset")
+                raw_token, token_hash = security.new_token()
+                db.store_token(cur, token_hash, user["id"], "reset", cfg.TOKEN_HOURS)
+            emailer.send_reset(
+                cfg, user["email"], user["name"],
+                f"{cfg.BASE_URL}{url_for('reset_password', token=raw_token)}")
+            log.info("password reset requested", extra={"username": user["username"]})
+
+    # Deliberately identical whether or not the address exists: a
+    # different message here turns this form into a way to test which
+    # email addresses have accounts.
+    flash("If that address has an account, a reset link is on its way.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token: str):
+    if request.method != "POST":
+        # Not consumed yet — that happens on submit, so landing on the page
+        # (or a mail client prefetching it) does not burn the link.
+        return render_template("reset.html", token=token)
+
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    problem = security.password_problem(password, confirm)
+    if problem:
+        flash(problem, "error")
+        return render_template("reset.html", token=token)
+
+    user = db.consume_token(security.hash_token(token), "reset")
+    if not user:
+        flash("That reset link has expired or already been used. Ask for a new one.", "error")
+        return redirect(url_for("forgot_password"))
+
+    # Bumps session_epoch, so every existing session for this account —
+    # including whoever prompted the reset — stops working immediately.
+    db.set_password(user["id"], generate_password_hash(password))
+    security.clear_attempts("login_user", user["username"])
+    log.info("password reset completed", extra={"username": user["username"]})
+
+    flash("Password updated. Sign in with your new one.", "success")
+    return redirect(url_for("login"))
+
+
+# ── Legal pages ─────────────────────────────────────────────────────────────────
+#
+# Signup requires ticking a box that says "I agree to the terms". These are
+# the pages behind it. They ship as boilerplate — drafted for this product's
+# actual shape, but not by a lawyer — and say so in a banner until
+# LEGAL_REVIEWED is set.
+
+LEGAL_PAGES = {
+    "terms":   ("Terms of Service", "legal/terms.md"),
+    "privacy": ("Privacy Notice",   "legal/privacy.md"),
+}
+
+
+def _legal_tokens() -> dict[str, str]:
+    """
+    The values substituted into the legal Markdown.
+
+    Kept in one place because several of them are numbers that also drive
+    behaviour — the grace periods and the invoice due date are read from
+    the same config the billing code uses, so the page cannot drift away
+    from what the software actually does. That is the whole reason these
+    are tokens rather than typed into the prose.
+    """
+    return {
+        "ENTITY":       cfg.LEGAL_ENTITY or "[YOUR COMPANY NAME]",
+        "EMAIL":        cfg.LEGAL_EMAIL or "[YOUR CONTACT EMAIL]",
+        "ADDRESS":      cfg.LEGAL_ADDRESS or "[YOUR POSTAL ADDRESS]",
+        "JURISDICTION": cfg.LEGAL_JURISDICTION or "[YOUR STATE / COUNTRY]",
+        "EFFECTIVE":    cfg.LEGAL_EFFECTIVE or "[NOT YET PUBLISHED]",
+        "MIN_AGE":            str(cfg.MIN_AGE),
+        "INVOICE_DUE_DAYS":   str(cfg.INVOICE_DUE_DAYS),
+        "GRACE_DAYS_CARD":    str(cfg.GRACE_DAYS_CARD),
+        "GRACE_DAYS_INVOICE": str(cfg.GRACE_DAYS_INVOICE),
     }
-    entry["updated"] = examples[example_id]["updated"]
-    _save_record(username, record)
 
+
+def _fill_tokens(markdown_source: str) -> str:
+    """
+    Replace {{TOKEN}} in the legal Markdown.
+
+    Done before rendering rather than after, so a substituted value cannot
+    inject markup — whatever comes out of config is escaped by the Markdown
+    renderer along with the rest of the prose.
+    """
+    for name, value in _legal_tokens().items():
+        markdown_source = markdown_source.replace("{{" + name + "}}", value)
+    return markdown_source
+
+
+@app.route("/legal/<page>")
+def legal(page: str):
+    """
+    Terms and Privacy. Public, and readable without an account.
+
+    They have to be: somebody deciding whether to sign up needs to read
+    them before they have anywhere to sign in to. That is also why this is
+    in _PASSWORD_CHANGE_EXEMPT — a student held on the first-password page
+    can still read what they are agreeing to.
+    """
+    if page not in LEGAL_PAGES:
+        abort(404)
+    title, source = LEGAL_PAGES[page]
+
+    path = CONTENT_DIR / source
+    if not path.is_file():
+        log.error("legal page %s is missing from content/", source)
+        abort(404)
+
+    body = render_markdown(_fill_tokens(path.read_text(encoding="utf-8")))
+    response = make_response(render_template(
+        "legal.html", title=title, body=body, page=page,
+        reviewed=cfg.LEGAL_REVIEWED))
+    # NOT _cached(). The content only changes on deploy, but the page shows
+    # "Back" to somebody signed in and "Sign in" to somebody who is not, so
+    # it varies by session — and _cached() says `public`, which invites a
+    # shared cache to hand one visitor's copy to another. Nothing in front
+    # of this app caches today, so that is latent rather than live; it is
+    # still the wrong header, and it would become a real leak the first
+    # time anyone puts a name on this page.
+    response.headers["Cache-Control"] = f"private, max-age={cfg.STATIC_MAX_AGE}"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
+# ── Account settings ────────────────────────────────────────────────────────────
+
+def _settings_template(user: dict) -> str:
+    """Students get the game chrome, grown-ups the dashboard chrome.
+
+    Two base templates exist because the two audiences see completely
+    different furniture; the settings page is the one screen both reach,
+    so it picks its wrapper from the role rather than having two copies.
+    """
+    return "settings_student.html" if user["role"] == "student" else "settings.html"
+
+
+@app.route("/settings")
+@login_required()
+def settings_home():
+    """Change your own password, or delete your own account."""
+    user = current_user()
+    blocker = _deletion_blocker(user)
+    return render_template(_settings_template(user),
+                           deletable=blocker is None,
+                           delete_blocked_reason=blocker)
+
+
+@app.route("/settings/password", methods=["POST"])
+@login_required()
+def change_password():
+    """
+    Change your own password, proving you know the current one first.
+
+    Requiring the old password is what stops a borrowed unlocked laptop
+    from becoming a permanent account takeover. db.set_password bumps the
+    session epoch, which signs out every other device — including the one
+    an attacker might be holding — so this session has to be re-established
+    immediately afterwards or the person changing their password would be
+    logged out by their own action.
+    """
+    user = current_user()
+    current = request.form.get("current_password", "")
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+
+    def refuse(message: str, status: int = 200):
+        flash(message, "error")
+        blocker = _deletion_blocker(user)
+        return render_template(_settings_template(user),
+                               deletable=blocker is None,
+                               delete_blocked_reason=blocker), status
+
+    ip = security.client_ip(cfg.TRUSTED_PROXIES)
+    if security.over_limit("pwchange_ip", ip, cfg.RL_LOGIN_IP, cfg.RL_WINDOW):
+        return refuse("Too many attempts. Wait a few minutes and try again.", 429)
+
+    if not check_password_hash(user["password_hash"], current):
+        security.record_attempt("pwchange_ip", ip)
+        log.warning("password change refused", extra={"username": user["username"]})
+        return refuse("That isn't your current password.")
+
+    problem = security.password_problem(password, confirm)
+    if problem:
+        return refuse(problem)
+    if password == current:
+        return refuse("That's the password you already have. Pick a different one.")
+
+    db.set_password(user["id"], generate_password_hash(password))
+    # Re-read: set_password moved the epoch, so the row in hand is stale
+    # and start_session would store an epoch that no longer validates.
+    g.pop("_user", None)
+    start_session(db.user_by_id(user["id"]))
+    log.info("password changed", extra={"username": user["username"]})
+    flash("Password changed. Any other device you were signed in on has been signed out.",
+          "success")
+    return redirect(url_for("settings_home"))
+
+
+@app.route("/settings/first-password", methods=["GET", "POST"])
+@login_required()
+def first_password():
+    """
+    The one page an account with must_change_password can reach.
+
+    No current-password field: they typed it to get here, and asking a
+    ten-year-old to re-enter a code off a printout twice is how you get a
+    queue at the teacher's desk. The forced flag is cleared by
+    db.set_password writing it false, so completing this is what opens the
+    rest of the site.
+    """
+    user = current_user()
+    if not user["must_change_password"]:
+        return redirect(url_for("home"))
+
+    if request.method != "POST":
+        return render_template("first_password.html")
+
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    problem = security.password_problem(password, confirm)
+    if problem:
+        flash(problem, "error")
+        return render_template("first_password.html")
+
+    db.set_password(user["id"], generate_password_hash(password))
+    g.pop("_user", None)
+    start_session(db.user_by_id(user["id"]))
+    log.info("first password set", extra={"username": user["username"]})
+    flash("You're all set. That's your password now — don't share it.", "success")
+    return redirect(url_for("home"))
+
+
+def _deletion_blocker(user: dict) -> str | None:
+    """Why this account cannot delete itself yet, or None if it can.
+
+    Two blockers, both about leaving something stranded rather than about
+    the data itself. The last admin of an organisation holds the only keys
+    to its roster and its billing, so they have to hand those over before
+    they go. A parent with a live subscription would keep being charged
+    for a seat nobody holds — deleting our row does not cancel anything at
+    Stripe, so the only honest answer is to send them to the portal first.
+    """
+    if user["role"] == "teacher" and user["org_admin"]:
+        if db.count_org_admins(user["org_id"]) <= 1:
+            return ("You're the only admin of your organisation. Make another "
+                    "teacher an admin first, otherwise nobody can manage the "
+                    "roster or the billing after you go.")
+    if db.active_paid_subscription_for(user["id"]):
+        return ("You have a subscription that's still running. Cancel it in "
+                "the billing portal first — deleting your account here would "
+                "not stop the charges.")
+    return None
+
+
+@app.route("/settings/delete", methods=["POST"])
+@login_required()
+def delete_own_account():
+    """
+    Erase your own account and everything attached to it.
+
+    Guarded three ways, because it is irreversible: the current password,
+    typing the word DELETE, and _deletion_blocker() refusing to strand an
+    organisation or a live subscription. What actually goes is documented
+    on db.delete_user — in short, everything except the invoice rows,
+    which are financial records and stay.
+    """
+    user = current_user()
+    blocker = _deletion_blocker(user)
+    if blocker:
+        flash(blocker, "error")
+        return redirect(url_for("settings_home"))
+
+    if not check_password_hash(user["password_hash"], request.form.get("password", "")):
+        log.warning("account deletion refused", extra={"username": user["username"]})
+        flash("That isn't your current password.", "error")
+        return redirect(url_for("settings_home"))
+
+    if request.form.get("confirm", "").strip().upper() != "DELETE":
+        flash("Type DELETE in the box to confirm.", "error")
+        return redirect(url_for("settings_home"))
+
+    db.delete_user(user["id"])
+    session.clear()
+    log.info("account deleted", extra={"username": user["username"], "role": user["role"]})
+    flash("Your account and everything in it has been deleted.", "success")
+    return redirect(url_for("login"))
+
+
+# ── Progress helpers ────────────────────────────────────────────────────────────
 
 def quiz_score(lesson: dict, entry: dict) -> int | None:
     """Percent of questions answered correctly on the first try."""
@@ -522,48 +1550,40 @@ def quiz_score(lesson: dict, entry: dict) -> int | None:
     return round(first_try / len(questions) * 100)
 
 
-def summarise(username: str) -> dict:
+def summarise(student_id: int) -> dict:
+    """One student's headline numbers."""
+    return summarise_many([student_id])[student_id]
+
+
+def summarise_many(student_ids: list[int]) -> dict[int, dict]:
+    """
+    Headline numbers for any number of students in a fixed number of
+    queries.  The dashboard used to call a per-student function that
+    re-read the whole progress file, several times over, per student.
+    """
     lessons = load_lessons()
-    record  = student_progress(username)
-    entries = record.get("lessons", {})
-    done    = sum(1 for e in entries.values() if e.get("status") == "completed")
-    active  = sum(1 for e in entries.values() if e.get("status") == "in_progress")
-    stamps  = [e["updated"] for e in entries.values() if e.get("updated")]
+    total = len(lessons)
+    rows = db.summaries_for(student_ids, _catalog["question_counts"])
 
-    scores = [s for s in (quiz_score(l, entries.get(l["id"], {})) for l in lessons)
-              if s is not None]
-
-    return {
-        # Named "trinkets", not "items": in Jinja, `summary.items` resolves
-        # to the dict's .items() method rather than this key.
-        "trinkets":    record.get("items", []),
-        "completed":   done,
-        "in_progress": active,
-        "total":       len(lessons),
-        "percent":     round(done / len(lessons) * 100) if lessons else 0,
-        "last_active": max(stamps) if stamps else None,
-        "avg_score":   round(sum(scores) / len(scores)) if scores else None,
-    }
+    for row in rows.values():
+        row["total"] = total
+        row["percent"] = round(row["completed"] / total * 100) if total else 0
+    return rows
 
 
-# ── Plain-language reporting (the grown-up view) ────────────────────────────────
-
-def days_since(stamp: str | None) -> int | None:
+def days_since(stamp: datetime | None) -> int | None:
     if not stamp:
         return None
-    try:
-        return (datetime.now() - datetime.fromisoformat(stamp)).days
-    except ValueError:
-        return None
+    return (datetime.now(timezone.utc) - stamp).days
 
 
-def sticking_points(username: str) -> list[dict]:
+def sticking_points(student_id: int, entries: dict[str, dict] | None = None) -> list[dict]:
     """
     Questions this student got wrong, newest first, with the topic and the
     right answer spelled out.  This is what a parent reads instead of
     interpreting a score.
     """
-    entries = student_progress(username).get("lessons", {})
+    entries = entries if entries is not None else db.lesson_entries(student_id)
     out: list[dict] = []
 
     for lesson in load_lessons():
@@ -578,7 +1598,7 @@ def sticking_points(username: str) -> list[dict]:
             if not missed:
                 continue
             choices = question.get("choices", [])
-            chosen  = a.get("chosen")
+            chosen = a.get("chosen")
             out.append({
                 "lesson":       lesson["title"],
                 "lesson_id":    lesson["id"],
@@ -594,13 +1614,13 @@ def sticking_points(username: str) -> list[dict]:
     return sorted(out, key=lambda s: (s["resolved"], -s["tries"]))
 
 
-def practice_examples(username: str) -> list[dict]:
+def practice_examples(student_id: int, entries: dict[str, dict] | None = None) -> list[dict]:
     """
     Every practice example a student has answered, right or wrong. These
     are never graded back to the student — see /api/example — so this
     grown-up view is the only place the right answer ever surfaces.
     """
-    entries = student_progress(username).get("lessons", {})
+    entries = entries if entries is not None else db.lesson_entries(student_id)
     out: list[dict] = []
 
     for lesson in load_lessons():
@@ -612,27 +1632,28 @@ def practice_examples(username: str) -> list[dict]:
             if not a:
                 continue
             choices = example.get("choices", [])
-            chosen  = a.get("chosen")
+            chosen = a.get("chosen")
             out.append({
                 "lesson":       lesson["title"],
                 "prompt":       example["prompt"],
                 "their_answer": choices[chosen] if isinstance(chosen, int) and 0 <= chosen < len(choices) else "—",
                 "right_answer": choices[example["answer"]] if choices else "—",
                 "correct":      bool(a.get("correct")),
-                "updated":      a.get("updated", ""),
+                "updated":      a.get("updated") or "",
             })
 
     return sorted(out, key=lambda r: r["updated"], reverse=True)
 
 
-def headline(username: str) -> dict:
+def headline(summary: dict, stuck: int) -> dict:
     """
     One sentence a parent can read in two seconds, plus a tone for colour.
     Ordered by what most needs saying.
+
+    Takes the numbers rather than fetching them, so a dashboard of 200
+    students computes them once instead of once per card.
     """
-    summary = summarise(username)
-    quiet   = days_since(summary["last_active"])
-    stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+    quiet = days_since(summary["last_active"])
 
     if summary["completed"] == 0 and summary["in_progress"] == 0:
         return {"tone": "idle", "icon": "🌱",
@@ -643,9 +1664,8 @@ def headline(username: str) -> dict:
                 "text": f"No practice in {quiet} days — a nudge would help."}
 
     if stuck:
-        topic = stuck[0]["subject"] or stuck[0]["lesson"]
         return {"tone": "warn", "icon": "🤔",
-                "text": f"Stuck on {topic} — {len(stuck)} question{'' if len(stuck) == 1 else 's'} still wrong."}
+                "text": f"Stuck on {stuck} question{'' if stuck == 1 else 's'} — worth a look."}
 
     if summary["completed"] == summary["total"] and summary["total"]:
         return {"tone": "good", "icon": "🎉",
@@ -659,9 +1679,8 @@ def headline(username: str) -> dict:
             "text": f"On track — {summary['completed']} of {summary['total']} lessons done."}
 
 
-def recent_activity(username: str, limit: int = 8) -> list[dict]:
+def recent_activity(entries: dict[str, dict], limit: int = 8) -> list[dict]:
     """Newest-first timeline of what actually happened."""
-    entries = student_progress(username).get("lessons", {})
     rows = []
     for lesson in load_lessons():
         e = entries.get(lesson["id"])
@@ -674,15 +1693,6 @@ def recent_activity(username: str, limit: int = 8) -> list[dict]:
             "score":  quiz_score(lesson, e),
         })
     return sorted(rows, key=lambda r: r["when"], reverse=True)[:limit]
-
-
-def visible_students(user: dict) -> list[str]:
-    """Teachers see every student; parents see only their own children."""
-    students = [u for u, d in load_users().items() if d["role"] == "student"]
-    if user["role"] == "parent":
-        children = user.get("children", [])
-        return [u for u in students if u in children]
-    return students
 
 
 # ── Student screens ─────────────────────────────────────────────────────────────
@@ -706,69 +1716,169 @@ DUDE_LINES = [
 
 @app.route("/classroom")
 @login_required("student")
+@membership_required
 def classroom():
     user = current_user()
     return render_template("classroom.html",
-                           layout=load_classroom(),
-                           summary=summarise(user["username"]),
+                           layout=load_room(),
+                           summary=summarise(user["id"]),
                            dude_line=random.choice(DUDE_LINES))
 
 
 @app.route("/lessons")
 @login_required("student")
+@membership_required
 def lessons():
-    user    = current_user()
-    entries = student_progress(user["username"]).get("lessons", {})
-    catalog = [{**l, "progress": entries.get(l["id"], {"status": "not_started"})}
-               for l in assigned_lessons(user["username"], load_lessons())]
+    """
+    The lesson menu, organised by track.
 
-    # Grouped by subject, in the order each subject first appears in the
-    # (already order-sorted) catalog — so a lesson's own "order" in its
-    # manifest decides both its place in its category and which category
-    # shows up first. No separate category config to keep in sync.
-    categories: dict[str, list] = {}
-    for lesson in catalog:
-        categories.setdefault(lesson.get("subject", "General"), []).append(lesson)
+    Two independent kinds of gate decide whether a card is open, and they
+    are kept apart all the way to the template because they mean different
+    things to a student. A paywalled lesson needs a grown-up to buy
+    something. A blocked one needs work doing — and which work depends on
+    the reason, so the card carries the sentence rather than the template
+    guessing from a boolean.
 
-    return render_template("lessons.html", categories=categories,
-                           summary=summarise(user["username"]))
+    db.lesson_entries() already returns the student's whole history in one
+    query, which is what lets the cross-track requirement checks below cost
+    nothing extra: every status they could ask about is already in hand.
+    """
+    user = current_user()
+    entries = db.lesson_entries(user["id"])
+    paid_ok = entitlement()["active"]
+
+    available = assigned_lessons(user["id"], load_lessons())
+    available_ids = {l["id"] for l in available}
+
+    assigned = db.assigned_lesson_ids(user["id"])
+    assigned_ids = None if assigned is None else set(assigned)
+
+    all_tracks = load_tracks()
+    by_track = {t["id"]: t for t in all_tracks}
+    by_lesson = {l["id"]: l for l in load_lessons()}
+
+    rows = []
+    for track in all_tracks:
+        # gate() is given the student's own menu, so a lesson a teacher has
+        # hidden cannot become an impassable gate mid-track.
+        gates = tracks.gate(track, entries, available_ids)
+        # A requirement on the track holds every lesson in it, so it is
+        # evaluated once here rather than per card.
+        track_block = tracks.requirement_block(
+            track, entries, by_track, by_lesson, assigned_ids, available_ids)
+
+        cards = []
+        for lesson in track["lessons"]:
+            if lesson["id"] not in available_ids:
+                continue
+
+            block = track_block or tracks.requirement_block(
+                lesson, entries, by_track, by_lesson, assigned_ids, available_ids)
+            if not block:
+                prereq = gates.get(lesson["id"], {"locked": False, "after": None})
+                if prereq["locked"]:
+                    block = {"reason": tracks.BLOCK_SEQUENCE,
+                             "title": prereq["after"],
+                             "remedy": f"Finish “{prereq['after']}” first."}
+
+            cards.append({
+                **_without_resources(lesson),
+                "progress":     entries.get(lesson["id"], {"status": "not_started"}),
+                "locked":       not (billing.lesson_is_free(lesson) or paid_ok),
+                "prereq_locked": bool(block),
+                "prereq_after":  block["title"] if block else None,
+                "block_reason":  block["reason"] if block else None,
+                "block_remedy":  block["remedy"] if block else None,
+            })
+
+        if not cards:
+            continue
+        rows.append({
+            **track,
+            "cards":    cards,
+            "blocked":  track_block,
+            "progress": tracks.progress({**track, "lessons": [c for c in cards]}, entries),
+        })
+
+    # Kits are informational and never gate anything, so this is only the
+    # count behind the "some of these have kits" note.
+    kit_count = sum(1 for t in rows for c in t["cards"] if c.get("kit"))
+
+    return render_template("lessons.html", tracks=rows,
+                           kit_count=kit_count,
+                           summary=summarise(user["id"]))
 
 
 @app.route("/lesson/<lesson_id>")
 @login_required("student")
+@membership_required
 def lesson(lesson_id: str):
-    user   = current_user()
-    lesson = get_lesson(lesson_id)
-    if not lesson:
+    """Open one lesson, if this student may.
+
+    Four checks, in order, each with its own remedy:
+
+      unknown lesson      404
+      not assigned        403 — a teacher narrowed this student's menu
+      needs a subscription  -> /locked, which explains who can buy one
+      not reached yet     -> /locked, which names the lesson that opens it
+
+    The menu hides cards that fail these, but the menu can be skipped
+    entirely, so this is the check that counts.
+    """
+    user = current_user()
+    found = get_lesson(lesson_id)
+    if not found:
         abort(404)
-    assigned = load_assignments().get(user["username"])
+    assigned = db.assigned_lesson_ids(user["id"])
     if assigned is not None and lesson_id not in assigned:
         abort(403)
 
-    entry = student_progress(user["username"])["lessons"].get(lesson_id, {})
-    if entry.get("status") != "completed":
-        set_lesson_status(user["username"], lesson_id, "in_progress")
+    # Paid lessons need a live subscription somewhere — the school's or a
+    # parent's. Free lessons stay open, so a lapsed account still has
+    # something to come back to.
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return redirect(url_for("locked", lesson_id=lesson_id, why="subscription"))
 
-    body = render_content(lesson["content"]) if lesson["type"] == "reading" else None
+    # Staged tracks release their lessons in order. Checked here as well as
+    # on the menu, because a bookmarked or guessed URL skips the menu.
+    blocked_by = prerequisite_block(user["id"], found)
+    if blocked_by:
+        return redirect(url_for("locked", lesson_id=lesson_id, why="prerequisite"))
+
+    entry = db.lesson_entries(user["id"]).get(lesson_id, {})
+    if entry.get("status") != "completed":
+        db.set_lesson_status(user["id"], lesson_id, "in_progress")
+
+    body = render_content(found["content"]) if found["type"] == "reading" else None
 
     # Never ship the answer key to the client — questions are stripped and
     # answers checked server-side in /api/quiz.
     quiz = [{"id": q["id"], "prompt": q["prompt"], "choices": q.get("choices", []),
-              "diagram": q.get("diagram")}
-            for q in lesson.get("quiz", [])]
+             "diagram": q.get("diagram")}
+            for q in found.get("quiz", [])]
 
-    return render_template("lesson.html", lesson=lesson, entry=entry,
+    # Strip the grown-up material before the lesson reaches a student's
+    # template. Nothing in lesson.html renders it today, so this changes
+    # nothing on screen — it is here so that adding a debug dump, a JSON
+    # endpoint or a new partial cannot quietly put an answer key in front of
+    # the child it is an answer key for.
+    return render_template("lesson.html", lesson=_without_resources(found),
                            body=body, quiz=quiz,
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["id"]))
 
 
 @app.route("/satchel")
 @login_required("student")
+@membership_required
 def satchel():
-    user    = current_user()
-    record  = student_progress(user["username"])
+    """The student's trinket collection.
+
+    Shows the whole catalogue with the earned ones marked, rather than
+    only what they have — the empty slots are the point.
+    """
+    user = current_user()
     catalog = load_items()
-    earned  = set(record.get("items", []))
+    earned = set(db.inventory(user["id"]))
 
     items = [{**info, "id": iid, "earned": iid in earned}
              for iid, info in catalog.items()]
@@ -776,33 +1886,45 @@ def satchel():
 
     return render_template("satchel.html", items=items,
                            earned_count=len(earned & set(catalog)),
-                           summary=summarise(user["username"]))
+                           summary=summarise(user["id"]))
 
 
 # ── Student APIs ────────────────────────────────────────────────────────────────
 
 @app.route("/api/progress", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_progress():
     """Called by the lesson player, and by lessons via the kit's postMessage."""
     user = current_user()
     body = request.get_json(silent=True) or {}
 
     lesson_id = body.get("lesson_id")
-    status    = body.get("status", "in_progress")
-    score     = body.get("score")
+    status = body.get("status", "in_progress")
+    found = get_lesson(lesson_id) if lesson_id else None
 
-    if not lesson_id or not get_lesson(lesson_id):
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
     if status not in ("in_progress", "completed"):
         return jsonify({"error": "Invalid status."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
-    set_lesson_status(user["username"], lesson_id, status, score)
-    return jsonify({"ok": True, "summary": summarise(user["username"])})
+    try:
+        score = None if body.get("score") is None else max(0, min(int(body["score"]), 100))
+    except (TypeError, ValueError):
+        score = None
+
+    db.set_lesson_status(user["id"], lesson_id, status, score,
+                         reward=found.get("reward"))
+    return jsonify({"ok": True, "summary": summarise(user["id"])})
 
 
 @app.route("/api/quiz", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_quiz():
     """
     Check one answer and record the attempt.  The answer key never leaves
@@ -811,11 +1933,15 @@ def api_quiz():
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
-    question = next((q for q in lesson.get("quiz", []) if q["id"] == body.get("question_id")), None)
+    question = next((q for q in found.get("quiz", []) if q["id"] == body.get("question_id")), None)
     if not question:
         return jsonify({"error": "Unknown question."}), 400
 
@@ -825,7 +1951,7 @@ def api_quiz():
         return jsonify({"error": "No answer given."}), 400
 
     correct = chosen == question["answer"]
-    record_answer(user["username"], lesson["id"], question["id"], chosen, correct)
+    db.record_answer(user["id"], found["id"], question["id"], chosen, correct)
 
     return jsonify({
         "correct": correct,
@@ -836,22 +1962,28 @@ def api_quiz():
 
 @app.route("/api/examples/<lesson_id>")
 @login_required("student")
+@membership_required
 def api_examples(lesson_id: str):
     """
     Prompts and choices for a lesson's practice examples, answer key
     stripped — the same treatment the quiz gets. A lesson's own iframe
     fetches this to render its practice questions.
     """
-    lesson = get_lesson(lesson_id)
-    if not lesson:
+    found = get_lesson(lesson_id)
+    if not found:
         abort(404)
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(current_user()["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
     stripped = [{"id": e["id"], "prompt": e["prompt"], "choices": e.get("choices", [])}
-                for e in lesson.get("examples", [])]
+                for e in found.get("examples", [])]
     return jsonify(stripped)
 
 
 @app.route("/api/example", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_example():
     """
     Record one practice-example answer and hand back the same
@@ -862,11 +1994,15 @@ def api_example():
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
-    example = next((e for e in lesson.get("examples", []) if e["id"] == body.get("example_id")), None)
+    example = next((e for e in found.get("examples", []) if e["id"] == body.get("example_id")), None)
     if not example:
         return jsonify({"error": "Unknown example."}), 400
 
@@ -876,7 +2012,7 @@ def api_example():
         return jsonify({"error": "No answer given."}), 400
 
     correct = chosen == example["answer"]
-    record_example(user["username"], lesson["id"], example["id"], chosen, correct)
+    db.record_example(user["id"], found["id"], example["id"], chosen, correct)
 
     return jsonify({
         "correct": correct,
@@ -885,30 +2021,202 @@ def api_example():
     })
 
 
+# ── The sub-app bridge ──────────────────────────────────────────────────────────
+#
+# A lesson or game is a folder that knows nothing about this application
+# beyond /kit/. These three routes are everything it can ask the platform
+# for, and each one re-derives its answer from the catalog rather than
+# believing the caller.
+#
+# That distrust is not paranoia about content authors. A sub-app runs in
+# the student's own browser, so "the lesson said so" and "the student's
+# devtools said so" are the same sentence arriving over the same wire.
+# Anything a sub-app can ask for, a bored thirteen-year-old can ask for.
+
+# One bump per breaking change to the kit's own surface. A sub-app declares
+# the major version it was written against and boot refuses to load one
+# built for a future it does not know about, rather than half-working.
+BRIDGE_VERSION = 1
+
+# Room for a save file, not a database. A game keeping levels, positions and
+# a half-built circuit fits in a few kilobytes; anything approaching this is
+# a sub-app using the platform as storage it should not have.
+MAX_STATE_BYTES = 64 * 1024
+
+
+def _open_lesson_or_error(user: dict, lesson_id: str):
+    """
+    Resolve a lesson this student may actually be working on right now.
+
+    Every sub-app route runs this: the same subscription, prerequisite and
+    assignment checks the lesson page itself applies. Without it, a sub-app
+    could act on a lesson its student was never allowed to open — and the
+    caller is a browser, so it will.
+
+    Returns (lesson, None) or (None, an error response).
+    """
+    found = get_lesson(lesson_id)
+    if not found:
+        return None, (jsonify({"error": "Unknown lesson."}), 400)
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return None, (jsonify({"error": "That lesson needs an active subscription."}), 402)
+    if prerequisite_block(user["id"], found):
+        return None, (jsonify({"error": "You haven't reached this lesson yet."}), 403)
+    return found, None
+
+
+@app.route("/api/award", methods=["POST"])
+@login_required("student")
+@membership_required
+def api_award():
+    """
+    A sub-app awarding something it declared it could award.
+
+    The rule that makes this safe: a lesson may only grant items listed in
+    its own manifest's `awards`. The request names an item; the server looks
+    up what THAT lesson is allowed to give and refuses anything else. So the
+    worst a tampered-with sub-app can do is grant its own rewards early —
+    which is the same thing finishing it does — and it can never mint the
+    rare trinket from a lesson it has not opened.
+
+    Granting is idempotent by primary key, so replaying this hands back an
+    empty list rather than a second trinket.
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    found, error = _open_lesson_or_error(user, body.get("lesson_id", ""))
+    if error:
+        return error
+
+    allowed = set(found.get("awards") or [])
+    wanted = body.get("items")
+    if isinstance(wanted, str):
+        wanted = [wanted]
+    if not isinstance(wanted, list):
+        return jsonify({"error": "Send items as a list."}), 400
+
+    refused = [i for i in wanted if i not in allowed]
+    if refused:
+        # Loud, because in normal use it cannot happen: either the manifest
+        # and the sub-app disagree, or somebody is trying it on.
+        log.warning("lesson %s tried to award items it does not declare",
+                    found["id"], extra={"username": user["username"]})
+        return jsonify({"error": "That lesson doesn't award that.",
+                        "refused": refused}), 403
+
+    catalog = load_items()
+    granted = db.grant_items(user["id"], [i for i in wanted if i in catalog])
+    return jsonify({
+        "ok": True,
+        "granted": [{**catalog[i], "id": i} for i in granted],
+    })
+
+
+@app.route("/api/state/<lesson_id>")
+@login_required("student")
+@membership_required
+def api_state_read(lesson_id: str):
+    """Hand a sub-app back whatever it last saved for this student."""
+    user = current_user()
+    found, error = _open_lesson_or_error(user, lesson_id)
+    if error:
+        return error
+    return jsonify({"ok": True, "state": db.get_lesson_state(user["id"], found["id"])})
+
+
+@app.route("/api/state", methods=["POST"])
+@login_required("student")
+@membership_required
+def api_state_write():
+    """
+    Save a sub-app's own state for this student.
+
+    The platform never looks inside the blob — see the note on migration 6.
+    It only enforces that it is a JSON object and that it is small: a save
+    file, not a database. A sub-app that needs more than that is asking for
+    something this seam does not offer, and should say so out loud rather
+    than growing into the platform's storage.
+    """
+    user = current_user()
+    body = request.get_json(silent=True) or {}
+
+    found, error = _open_lesson_or_error(user, body.get("lesson_id", ""))
+    if error:
+        return error
+
+    state = body.get("state")
+    if not isinstance(state, dict):
+        return jsonify({"error": "State must be a JSON object."}), 400
+
+    encoded = json.dumps(state)
+    if len(encoded.encode("utf-8")) > MAX_STATE_BYTES:
+        return jsonify({"error": f"State is over the {MAX_STATE_BYTES // 1024}KB limit.",
+                        "limit_bytes": MAX_STATE_BYTES}), 413
+
+    db.set_lesson_state(user["id"], found["id"], state)
+    return jsonify({"ok": True})
+
+
+@app.route("/art/manifest.json")
+def art_manifest():
+    """
+    Everything under static/art/, so a sub-app author can find out what
+    already exists instead of inventing a second Spark.
+
+    Shared art is the point: one file, every lesson, and replacing it
+    updates all of them at once (static_url fingerprints the URL, so that
+    actually reaches the browser). None of which helps if the person
+    building the next game has no way to know the file is there.
+
+    Public and cacheable — it is a directory listing of files that are
+    themselves public.
+    """
+    names: dict[str, list[str]] = {}
+    if ART_DIR.is_dir():
+        for path in sorted(ART_DIR.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in ART_EXTS:
+                continue
+            rel = path.relative_to(ART_DIR)
+            name = str(rel.with_suffix("")).replace("\\", "/")
+            names.setdefault(rel.parts[0] if len(rel.parts) > 1 else "", []).append(name)
+
+    return _cached(jsonify({
+        "bridge": BRIDGE_VERSION,
+        "usage": "Ignite.art('<name>') — no extension, the server resolves it",
+        "groups": names,
+        "count": sum(len(v) for v in names.values()),
+    }))
+
+
 @app.route("/api/quiz/finish", methods=["POST"])
 @login_required("student")
+@membership_required
 def api_quiz_finish():
     """Score the quiz, complete the lesson, and hand back any reward earned."""
     user = current_user()
     body = request.get_json(silent=True) or {}
 
-    lesson = get_lesson(body.get("lesson_id", ""))
-    if not lesson:
+    found = get_lesson(body.get("lesson_id", ""))
+    if not found:
         return jsonify({"error": "Unknown lesson."}), 400
+    if not billing.lesson_is_free(found) and not entitlement()["active"]:
+        return jsonify({"error": "That lesson needs an active subscription."}), 402
+    if prerequisite_block(user["id"], found):
+        return jsonify({"error": "Finish the lesson before this one first."}), 403
 
-    before = set(student_progress(user["username"]).get("items", []))
-    entry  = student_progress(user["username"])["lessons"].get(lesson["id"], {})
-    score  = quiz_score(lesson, entry)
+    entry = db.lesson_entries(user["id"]).get(found["id"], {})
+    score = quiz_score(found, entry)
 
     try:
         quiz_seconds = max(0, min(int(body.get("quiz_seconds")), 4 * 3600))
     except (TypeError, ValueError):
         quiz_seconds = None
 
-    set_lesson_status(user["username"], lesson["id"], "completed", score, quiz_seconds)
-
-    after   = set(student_progress(user["username"]).get("items", []))
-    new_ids = after - before
+    # The insert itself reports which items were newly granted, so there is
+    # no read-compare-read around it and a double submit cannot award twice.
+    new_ids = db.set_lesson_status(user["id"], found["id"], "completed",
+                                   score, quiz_seconds, reward=found.get("reward"))
     catalog = load_items()
     rewards = [{**catalog[i], "id": i} for i in new_ids if i in catalog]
 
@@ -916,7 +2224,7 @@ def api_quiz_finish():
         "ok":      True,
         "score":   score,
         "rewards": rewards,
-        "summary": summarise(user["username"]),
+        "summary": summarise(user["id"]),
     })
 
 
@@ -924,25 +2232,32 @@ def api_quiz_finish():
 
 @app.route("/grownup")
 @login_required("teacher", "parent")
+@membership_required
 def grownup_home():
     """
     Answers "is my kid doing the work?" without any digging: a headline
     per student, and anything needing attention pulled to the top.
+
+    Every number on this page comes from a fixed number of queries no
+    matter how many students there are.
     """
-    user     = current_user()
-    users    = load_users()
-    students = visible_students(user)
+    user = current_user()
+    students = db.visible_students(user)
+    ids = [s["id"] for s in students]
+
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
 
     cards = []
-    for username in students:
-        summary = summarise(username)
-        stuck   = [s for s in sticking_points(username) if not s["resolved"]]
+    for student in students:
+        summary = summaries[student["id"]]
+        stuck = stuck_counts.get(student["id"], 0)
         cards.append({
-            "username": username,
-            "name":     users[username]["name"],
-            "avatar":   users[username].get("avatar", ""),
-            "headline": headline(username),
-            "stuck":    len(stuck),
+            "username": student["username"],
+            "name":     student["name"],
+            "avatar":   student["avatar"],
+            "headline": headline(summary, stuck),
+            "stuck":    stuck,
             "quiet":    days_since(summary["last_active"]),
             **summary,
         })
@@ -951,200 +2266,1522 @@ def grownup_home():
     cards.sort(key=lambda c: (order.get(c["headline"]["tone"], 9), c["name"].lower()))
     needs_attention = [c for c in cards if c["headline"]["tone"] in ("warn", "idle")]
 
+    org = db.org_by_id(user["org_id"])
     return render_template("grownup.html",
                            cards=cards,
                            needs_attention=needs_attention,
                            is_teacher=user["role"] == "teacher",
-                           lesson_count=len(load_lessons()))
+                           org=org)
+
+
+def _visible_student_or_404(user: dict, username: str) -> dict:
+    """
+    Resolve a username from the URL to a student this account may see.
+
+    Ordering matters: an account that is not visible gets 404, not 403, so
+    the response cannot be used to discover which usernames exist in
+    another organisation.
+    """
+    student = db.user_by_username(username)
+    if not student or student["role"] != "student":
+        abort(404)
+    if not db.can_see_student(user, student["id"]):
+        abort(404)
+    return student
 
 
 @app.route("/grownup/student/<username>")
 @login_required("teacher", "parent")
+@membership_required
 def student_detail(username: str):
-    user    = current_user()
-    users   = load_users()
-    student = users.get(username)
+    """One student's full progress, for a grown-up.
 
-    if not student or student["role"] != "student":
-        abort(404)
-    if username not in visible_students(user):
-        abort(403)
+    _visible_student_or_404() is the gate: a teacher only reaches students
+    in their own classrooms, a parent only their linked children, and
+    anyone else gets a 404 rather than a 403 so the response cannot be
+    used to discover which usernames exist.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
 
-    entries      = student_progress(username).get("lessons", {})
-    assigned_ids = load_assignments().get(username)
-    rows         = []
-    for lesson in load_lessons():
-        entry = entries.get(lesson["id"], {"status": "not_started"})
-        rows.append({
-            **lesson,
-            "progress": entry,
-            "score":    quiz_score(lesson, entry),
-            "assigned": assigned_ids is None or lesson["id"] in assigned_ids,
-        })
+    entries = db.lesson_entries(student["id"])
+    assigned = db.assigned_lesson_ids(student["id"])
+    assigned_ids = None if assigned is None else set(assigned)
+    summary = summarise(student["id"])
+
+    grade, grade_source = _grade_for(student, request.args.get("grade"))
+    lessons = load_lessons()
+    all_tracks = load_tracks()
+    by_track = {t["id"]: t for t in all_tracks}
+    by_lesson = {l["id"]: l for l in lessons}
+
+    rows = []
+    for track in all_tracks:
+        track_block = tracks.requirement_block(
+            track, entries, by_track, by_lesson, assigned_ids, assigned_ids)
+        gates = tracks.gate(track, entries, assigned_ids)
+        for item in track["lessons"]:
+            entry = entries.get(item["id"], {"status": "not_started"})
+            block = track_block or tracks.requirement_block(
+                item, entries, by_track, by_lesson, assigned_ids, assigned_ids)
+            if not block:
+                state = gates.get(item["id"], {"locked": False, "after": None})
+                if state["locked"]:
+                    block = {"reason": tracks.BLOCK_SEQUENCE, "title": state["after"],
+                             "remedy": f"Finish “{state['after']}” first."}
+            rows.append({
+                **item,
+                # Filtered by who is looking: a resource marked for home is
+                # not shown to a teacher.
+                "resources": tracks.visible_resources(
+                    item.get("resources") or [], user["role"]),
+                "track_title": track["title"],
+                "progress": entry,
+                "score":    quiz_score(item, entry),
+                "assigned": assigned_ids is None or item["id"] in assigned_ids,
+                "block":    block,
+                # Where this sits relative to the grade being viewed, which
+                # is what the grown-up page groups on.
+                "fit": _fit(item.get("band"), grade),
+            })
+
+    sticking = sticking_points(student["id"], entries)
+    unresolved = len([s for s in sticking if not s["resolved"]])
+
+    # The tracker's own numbers, so the page can lead with where this child
+    # stands against their grade rather than with a list of our lessons.
+    statuses = {r["id"]: r["progress"].get("status", "not_started") for r in rows}
+    report = standards.report(load_frameworks(), lessons, grade, statuses)
 
     return render_template("student.html",
-                           student={**student, "username": username},
+                           student=student,
                            rows=rows,
-                           summary=summarise(username),
-                           headline=headline(username),
-                           sticking=sticking_points(username),
-                           practice=practice_examples(username),
-                           activity=recent_activity(username),
-                           quiet=days_since(summarise(username)["last_active"]),
+                           groups=_group_by_fit(rows),
+                           report=report,
+                           grade=grade,
+                           grade_source=grade_source,
+                           grade_label=standards.grade_label,
+                           grades=list(range(0, standards.LAST_GRADE + 1)),
+                           summary=summary,
+                           headline=headline(summary, unresolved),
+                           sticking=sticking,
+                           practice=practice_examples(student["id"], entries),
+                           activity=recent_activity(entries),
+                           quiet=days_since(summary["last_active"]),
                            is_teacher=user["role"] == "teacher",
                            custom_assignment=assigned_ids is not None)
 
 
+# How a lesson's age band sits against the grade being looked at. The
+# grown-up view groups on this, because "what should my child be doing now"
+# is the question they came with — and a lesson three years ahead is not a
+# gap, it is next year.
+FIT_ON = "on"          # this grade is inside the lesson's band
+FIT_BELOW = "below"    # the band ends before this grade: revision
+FIT_ABOVE = "above"    # the band starts after it: later
+FIT_UNKNOWN = "unknown"  # no band stated, so we say nothing
+
+_FIT_ORDER = [FIT_ON, FIT_ABOVE, FIT_BELOW, FIT_UNKNOWN]
+_FIT_TITLES = {
+    FIT_ON:      "At this grade",
+    FIT_ABOVE:   "Ahead of this grade",
+    FIT_BELOW:   "Below this grade",
+    FIT_UNKNOWN: "No age given",
+}
+
+
+def _fit(band: dict | None, grade: int) -> str:
+    """
+    Where a lesson's age band sits relative to the grade being viewed.
+
+    "Above" means the lesson is aimed HIGHER than this grade — it is ahead
+    of them, not beneath them — which is the opposite of what the word
+    suggests if you read it as a position in a list. No band at all is
+    FIT_UNKNOWN rather than a guess, so the page can say nothing instead of
+    filing the lesson under a grade nobody chose for it.
+    """
+    if not band or not band.get("grades"):
+        return FIT_UNKNOWN
+    grades = band["grades"]
+    if grade in grades:
+        return FIT_ON
+    return FIT_ABOVE if grade < grades[0] else FIT_BELOW
+
+
+def _group_by_fit(rows: list[dict]) -> list[dict]:
+    """Lesson rows bucketed by how they sit against the grade on screen."""
+    buckets: dict[str, list[dict]] = {}
+    for row in rows:
+        buckets.setdefault(row["fit"], []).append(row)
+    return [{"fit": fit, "title": _FIT_TITLES[fit], "rows": buckets[fit]}
+            for fit in _FIT_ORDER if buckets.get(fit)]
+
+
+# ── Grown-up resources ──────────────────────────────────────────────────────────
+#
+# Downloadable material attached to a lesson or a track — a parent guide, an
+# answer key, a worksheet — that a student must never see.
+#
+# WHERE THESE FILES LIVE IS THE WHOLE SECURITY DESIGN. There are two
+# existing ways to serve a file in this app and BOTH are open to everybody:
+#
+#   /static/...            nginx aliases it straight off disk. No Python
+#                          runs. There is nothing to authenticate against.
+#   /lessons/<id>/<file>   deliberately unauthenticated, because lesson
+#                          artwork has to load inside the game frame.
+#
+# Putting an answer key in either would hand it to every student with a
+# browser and a guess. So resources live in their own directory, are served
+# only through the route below, and that route serves ONLY files a manifest
+# actually names — a whitelist, so a traversal attempt has nothing to
+# traverse to even if the filename checks in tracks.resources() were wrong.
+
+_RESOURCE_OWNERS = ("lesson", "track")
+
+
+def _resource_owner(kind: str, owner_id: str) -> dict | None:
+    """The lesson or track a resource hangs off, or None."""
+    if kind == "lesson":
+        return get_lesson(owner_id)
+    if kind == "track":
+        return next((t for t in load_tracks() if t["id"] == owner_id), None)
+    return None
+
+
+def _resource_or_404(kind: str, owner_id: str, filename: str, role: str) -> tuple[dict, dict]:
+    """
+    Resolve (owner, resource) for a download, or 404.
+
+    The whitelist: `filename` has to appear in this owner's own manifest and
+    be visible to this role. A file sitting in the directory that no
+    manifest mentions is not servable, which means an accidental commit of
+    something private cannot be fetched by guessing its name.
+
+    404 rather than 403 throughout, so the response cannot be used to
+    discover which resources exist.
+    """
+    if kind not in _RESOURCE_OWNERS:
+        abort(404)
+    owner = _resource_owner(kind, owner_id)
+    if not owner:
+        abort(404)
+
+    allowed = tracks.visible_resources(owner.get("resources") or [], role)
+    resource = next((r for r in allowed if r["file"] and r["file"] == filename), None)
+    if not resource:
+        abort(404)
+    return owner, resource
+
+
+def _resource_paywalled(owner: dict, kind: str) -> bool:
+    """
+    Whether this owner's material needs a subscription.
+
+    Mirrors the lesson it belongs to rather than having a rule of its own:
+    a guide to a free lesson is free, a guide to a subscriber lesson is not.
+    Anything else would either sell help nobody needs or give away the
+    answer keys for the paid content.
+    """
+    if entitlement()["active"]:
+        return False
+    if kind == "lesson":
+        return not billing.lesson_is_free(owner)
+    # A track's own material is free when any lesson in it is.
+    return not any(billing.lesson_is_free(l) for l in owner.get("lessons") or [])
+
+
+@app.route("/grownup/resources")
+@login_required("parent", "teacher")
+@membership_required
+def resources_home():
+    """
+    Everything a grown-up can download, by track.
+
+    Teachers see the shared material; parents see that plus anything marked
+    for home only. Students cannot reach this route at all — the role list
+    on login_required is the first of the three checks, the second is
+    tracks.visible_resources() below, and the third is on the download
+    itself.
+    """
+    user = current_user()
+    role = user["role"]
+
+    groups = []
+    for track in load_tracks():
+        track_items = tracks.visible_resources(track.get("resources") or [], role)
+        lessons = []
+        for lesson in track["lessons"]:
+            items = tracks.visible_resources(lesson.get("resources") or [], role)
+            if items:
+                lessons.append({
+                    "id": lesson["id"], "title": lesson["title"],
+                    "band_label": lesson.get("band_label", ""),
+                    "resources": items,
+                    "locked": _resource_paywalled(lesson, "lesson"),
+                })
+        if track_items or lessons:
+            groups.append({
+                "id": track["id"], "title": track["title"],
+                "description": track.get("description", ""),
+                "band_label": track.get("band_label", ""),
+                "skills": track.get("skills") or [],
+                "resources": track_items,
+                "locked": _resource_paywalled(track, "track"),
+                "lessons": lessons,
+            })
+
+    return render_template("resources.html", groups=groups, role=role)
+
+
+@app.route("/grownup/resources/<kind>/<owner_id>/<path:filename>")
+@login_required("parent", "teacher")
+@membership_required
+def resource_download(kind: str, owner_id: str, filename: str):
+    """
+    Hand over one file, to a grown-up who is allowed it.
+
+    Sent as an attachment with `Cache-Control: private, no-store`: these go
+    out over the same connection as the student's own pages, and a shared
+    or browser cache holding an answer key would undo the whole point.
+    """
+    user = current_user()
+    # The manifest entry itself is not needed here — only that the lookup
+    # succeeded, which is what proves this grown-up may have the file.
+    owner, _ = _resource_or_404(kind, owner_id, filename, user["role"])
+
+    if _resource_paywalled(owner, kind):
+        return redirect(url_for("locked", lesson_id=owner_id))
+
+    directory = RESOURCES_DIR / f"{kind}s" / owner_id
+    if not (directory / filename).is_file():
+        log.error("resource %s/%s/%s is in the manifest but not on disk",
+                  kind, owner_id, filename)
+        abort(404)
+
+    log.info("resource downloaded",
+             extra={"username": user["username"], "resource": f"{kind}/{owner_id}/{filename}"})
+    response = make_response(send_from_directory(directory, filename, as_attachment=True))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@app.route("/grownup/resources/<kind>/<owner_id>/<path:filename>/read")
+@login_required("parent", "teacher")
+@membership_required
+def resource_read(kind: str, owner_id: str, filename: str):
+    """
+    Read a Markdown guide in the browser rather than downloading it.
+
+    Most of these get opened on a phone at a kitchen table, where a
+    downloaded .md file is useless. Only text renders; anything else is
+    sent to the download route instead of being guessed at.
+    """
+    user = current_user()
+    owner, resource = _resource_or_404(kind, owner_id, filename, user["role"])
+
+    if _resource_paywalled(owner, kind):
+        return redirect(url_for("locked", lesson_id=owner_id))
+
+    path = RESOURCES_DIR / f"{kind}s" / owner_id / filename
+    if path.suffix.lower() not in (".md", ".markdown", ".txt"):
+        return redirect(url_for("resource_download", kind=kind, owner_id=owner_id,
+                                filename=filename))
+    if not path.is_file():
+        abort(404)
+
+    body = render_markdown(path.read_text(encoding="utf-8", errors="replace"))
+    response = make_response(render_template(
+        "resource.html", owner=owner, owner_kind=kind, resource=resource, body=body))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+# ── Curriculum tracker ──────────────────────────────────────────────────────────
+#
+# The parent-facing question this answers: "for a kid this age, what is a
+# US student expected to be able to do, and where has mine actually got to?"
+#
+# Everything here leans on standards.py, which carries the long version of
+# why this is harder than it sounds. The short version, which the screen
+# itself also says: there is no national curriculum, so "the standards" are
+# whichever ones a state adopted, and the alignment between our lessons and
+# any of them is our own reading.
+
+@app.route("/grownup/student/<username>/standards")
+@login_required("parent", "teacher")
+@membership_required
+def student_standards(username: str):
+    """
+    One student against one grade's standards.
+
+    Visibility runs through _visible_student_or_404() like every other
+    student screen, so a parent sees only their own children and a teacher
+    only the classrooms they are assigned to. The tracker adds no new way
+    to see a child.
+
+    The grade comes from ?grade= if given, else the student's recorded
+    grade, else a guess from the age floor — and which of those three it
+    was is passed to the template, because "we guessed" and "their parent
+    told us" should not look the same on screen.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    grade, source = _grade_for(student, request.args.get("grade"))
+
+    lessons = load_lessons()
+    statuses = db.lesson_statuses(student["id"], [l["id"] for l in lessons])
+    report = standards.report(load_frameworks(), lessons, grade, statuses)
+
+    return render_template("standards.html",
+                           student=student,
+                           report=report,
+                           grade_source=source,
+                           grades=list(range(0, standards.LAST_GRADE + 1)),
+                           grade_label=standards.grade_label)
+
+
+def _grade_for(student: dict, requested: str | None) -> tuple[int, str]:
+    """
+    Which grade to measure against, and where that number came from.
+
+    Three sources, worst last. The guess exists so the page shows something
+    useful before anyone has set a grade, but it is labelled as a guess
+    every time: we hold no date of birth, only the age floor a student
+    attested to at signup, and grade cut-offs vary by state anyway.
+    """
+    if requested:
+        try:
+            asked = int(requested)
+        except ValueError:
+            asked = None
+        if asked is not None and 0 <= asked <= standards.LAST_GRADE:
+            return asked, "chosen"
+
+    if student.get("grade_level") is not None:
+        return student["grade_level"], "recorded"
+
+    return standards.grade_for_age(cfg.MIN_AGE), "guessed"
+
+
+@app.route("/grownup/student/<username>/grade", methods=["POST"])
+@login_required("parent", "teacher")
+@membership_required
+def set_student_grade(username: str):
+    """
+    Record which grade a student is in.
+
+    Open to a parent as well as a teacher: for a homeschooling family the
+    parent is the only person who knows, and this is the one fact the
+    tracker cannot work properly without. Clearing it back to "not set" is
+    allowed — an empty answer is better than a wrong one.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    raw = (request.form.get("grade_level") or "").strip()
+    grade = None
+    if raw:
+        try:
+            grade = int(raw)
+        except ValueError:
+            flash("Pick a grade from the list.", "error")
+            return redirect(url_for("student_standards", username=username))
+
+    try:
+        db.set_grade_level(student["id"], grade)
+    except ValueError:
+        flash("That is not a grade between kindergarten and 12.", "error")
+        return redirect(url_for("student_standards", username=username))
+
+    if grade is None:
+        flash(f"Cleared {student['name']}'s grade.", "success")
+    else:
+        flash(f"{student['name']} is in {standards.grade_label(grade)}.", "success")
+    return redirect(url_for("student_standards", username=username))
+
+
 @app.route("/grownup/student/<username>/assign", methods=["POST"])
 @login_required("teacher", "parent")
+@membership_required
 def student_assign(username: str):
     """Narrow (or re-widen) which lessons show up on one student's menu."""
-    user    = current_user()
-    student = load_users().get(username)
-
-    if not student or student["role"] != "student":
-        abort(404)
-    if username not in visible_students(user):
-        abort(403)
+    user = current_user()
+    student = _visible_student_or_404(user, username)
 
     valid_ids = {l["id"] for l in load_lessons()}
-    checked   = [i for i in request.form.getlist("lesson_id") if i in valid_ids]
+    checked = [i for i in request.form.getlist("lesson_id") if i in valid_ids]
 
-    assignments = load_assignments()
-    if len(checked) == len(valid_ids):
-        # Everything is checked — that's the unrestricted default, so drop
-        # the entry rather than storing a list that just says "all of them".
-        assignments.pop(username, None)
-    else:
-        assignments[username] = checked
-    write_json(ASSIGNMENTS_FILE, assignments)
+    # Everything is checked — that's the unrestricted default, so drop the
+    # row rather than storing a list that just says "all of them".
+    db.set_assignment(student["id"],
+                      None if len(checked) == len(valid_ids) else checked,
+                      user["id"])
 
     flash(f"Updated {student['name']}'s lesson menu.", "success")
     return redirect(url_for("student_detail", username=username))
 
 
-# ── Groups (teacher only) ───────────────────────────────────────────────────────
+@app.route("/grownup/link", methods=["POST"])
+@login_required("parent")
+@membership_required
+def link_child():
+    """
+    A parent attaches themselves to a student with the student's link
+    code.  The code is scoped to the parent's own organisation, so a
+    guessed code cannot reach across schools.
+    """
+    user = current_user()
+    student = db.student_by_link_code(request.form.get("link_code", ""))
 
-@app.route("/groups")
+    if not student or student["org_id"] != user["org_id"]:
+        flash("That student code didn't match anyone in your class.", "error")
+        return redirect(url_for("grownup_home"))
+
+    db.link_parent(user["id"], student["id"])
+    flash(f"Linked to {student['name']}.", "success")
+    return redirect(url_for("grownup_home"))
+
+
+# ── Classrooms ──────────────────────────────────────────────────────────────────
+#
+# A classroom is the roster a teacher is assigned to, and it is what decides
+# which students that teacher can see anywhere in the app.
+#
+# Who may do what, and why:
+#
+#   org admin   creates classrooms, assigns teachers, moves students in and
+#               out. They see the whole organisation already.
+#   teacher     sees the classrooms they run and the students in them, and
+#               nothing else.
+#
+# Roster changes are admin-only on purpose. If an ordinary teacher could add
+# any student in the organisation to their own classroom, they could see any
+# student by adding them — which is exactly the boundary classrooms exist to
+# draw. Relaxing that is a deliberate decision, not an oversight.
+
+@app.route("/classrooms")
 @login_required("teacher")
-def groups_home():
-    groups   = load_groups()
-    students = {u: d for u, d in load_users().items() if d["role"] == "student"}
+@membership_required
+def classrooms_home():
+    """Every classroom this account may see.
+
+    An admin gets the whole organisation, plus the students nobody has
+    placed in a classroom yet — those are invisible to ordinary teachers,
+    so if the admin does not see them, nobody will.
+
+    A teacher gets the classrooms they are assigned to, and an explanation
+    rather than a blank page when that is none of them.
+    """
+    user = current_user()
+    is_admin = bool(user["org_admin"])
+
+    # An admin sees every classroom in the organisation; a teacher sees the
+    # ones they actually run.
+    rows = db.classroom_rows(user["org_id"], None if is_admin else user["id"])
+
+    students = db.visible_students(user)
+    ids = [s["id"] for s in students]
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
+
+    # One query for the whole organisation's memberships, then matched in
+    # memory — rather than a query per classroom card.
+    membership = db.classroom_membership(user["org_id"])
 
     cards = []
-    for gid, group in groups.items():
-        members = [m for m in group.get("members", []) if m in students]
-        stats   = [summarise(m) for m in members]
-        stuck   = sum(len([s for s in sticking_points(m) if not s["resolved"]]) for m in members)
+    for row in rows:
+        members = membership.get(row["id"], [])
+        stats = [summaries[m] for m in members if m in summaries]
         cards.append({
-            "id": gid, "name": group["name"], "members": len(members),
-            "avg": round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
-            "stuck": stuck,
+            "id":       row["id"],
+            "name":     row["name"],
+            "students": row["students"],
+            "teachers": row["teachers"],
+            "avg":      round(sum(s["percent"] for s in stats) / len(stats)) if stats else 0,
+            "stuck":    sum(stuck_counts.get(m, 0) for m in members),
         })
 
-    return render_template("groups.html",
-                           groups=sorted(cards, key=lambda c: c["name"].lower()),
-                           student_count=len(students),
-                           lesson_count=len(load_lessons()))
+    return render_template("classrooms.html",
+                           classrooms=cards,
+                           is_admin=is_admin,
+                           unplaced=db.unplaced_students(user["org_id"]) if is_admin else [])
 
 
-@app.route("/groups/new", methods=["POST"])
-@login_required("teacher")
-def group_create():
+def _classroom_or_404(user: dict, classroom_id: int) -> dict:
+    """
+    Resolve a classroom this account may open.
+
+    Scoped by org first, then by assignment for a non-admin. 404 rather than
+    403 throughout, so the response cannot be used to discover which
+    classrooms exist elsewhere.
+    """
+    classroom = db.classroom_in_org(classroom_id, user["org_id"])
+    if not classroom:
+        abort(404)
+    if not user["org_admin"] and not db.teaches_classroom(user["id"], classroom_id):
+        abort(404)
+    return classroom
+
+
+@app.route("/classrooms/new", methods=["POST"])
+@org_admin_required
+def classroom_create():
+    """Create a classroom and put its creator in it.
+
+    The admin who makes a classroom is assigned to it straight away.
+    Without that a brand new classroom belongs to nobody, and would drop
+    off the list of every teacher including the one who just made it.
+    """
+    user = current_user()
     name = request.form.get("name", "").strip()
     if not name:
-        flash("Give the group a name.", "error")
-        return redirect(url_for("groups_home"))
+        flash("Give the classroom a name.", "error")
+        return redirect(url_for("classrooms_home"))
 
-    groups = load_groups()
-    gid    = f"g{max((int(k[1:]) for k in groups if k[1:].isdigit()), default=0) + 1}"
-    groups[gid] = {"name": name, "members": [],
-                   "created": datetime.now().isoformat(timespec="seconds")}
-    write_json(GROUPS_FILE, groups)
+    classroom_id = db.create_classroom(user["org_id"], name[:120], user["id"])
+    # The admin who made it is its first teacher; otherwise a brand new
+    # classroom belongs to nobody and drops off every teacher's screen.
+    db.add_classroom_teacher(classroom_id, user["id"])
+
     flash(f"Created “{name}”.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
 
 
-@app.route("/groups/<gid>")
+@app.route("/classrooms/<int:classroom_id>")
 @login_required("teacher")
-def group_detail(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
-    if not group:
-        abort(404)
+@membership_required
+def classroom_detail(classroom_id: int):
+    """One classroom: who teaches it, who is in it, how they are doing.
 
-    users    = load_users()
-    students = {u: d for u, d in users.items() if d["role"] == "student"}
-    members  = []
-    for username in group.get("members", []):
-        if username not in students:
-            continue
-        members.append({
-            "username": username,
-            "name":     students[username]["name"],
-            "headline": headline(username),
-            "stuck":    len([s for s in sticking_points(username) if not s["resolved"]]),
-            **summarise(username),
+    Reachable by an admin, or by a teacher assigned to this classroom —
+    _classroom_or_404() enforces both, in that order. The add/remove
+    controls are only rendered for an admin, and separately refused
+    server-side; a hidden form is not a permission check.
+    """
+    user = current_user()
+    classroom = _classroom_or_404(user, classroom_id)
+
+    roster = db.classroom_students(classroom_id)
+    ids = [m["id"] for m in roster]
+    summaries = summarise_many(ids)
+    stuck_counts = db.unresolved_counts(ids, _catalog["valid_pairs"])
+
+    students = []
+    for row in roster:
+        summary = summaries[row["id"]]
+        students.append({
+            "id":       row["id"],
+            "username": row["username"],
+            "name":     row["name"],
+            "link_code": row["link_code"],
+            "headline": headline(summary, stuck_counts.get(row["id"], 0)),
+            "stuck":    stuck_counts.get(row["id"], 0),
+            **summary,
         })
 
-    available = [{"username": u, "name": d["name"]}
-                 for u, d in sorted(students.items())
-                 if u not in group.get("members", [])]
+    # Only an admin can change the roster, so only an admin needs the lists
+    # of who could be added.
+    in_class = set(ids)
+    addable, addable_teachers = [], []
+    if user["org_admin"]:
+        addable = [{"id": s["id"], "username": s["username"], "name": s["name"]}
+                   for s in db.visible_students(user) if s["id"] not in in_class]
+        assigned = {t["id"] for t in db.classroom_teachers(classroom_id)}
+        addable_teachers = [t for t in db.org_teachers(user["org_id"])
+                            if t["id"] not in assigned]
 
-    return render_template("group.html", gid=gid, group=group,
-                           members=sorted(members, key=lambda m: m["name"].lower()),
-                           available=available)
+    return render_template("classroom_detail.html",
+                           classroom=classroom,
+                           students=students,
+                           teachers=db.classroom_teachers(classroom_id),
+                           addable=addable,
+                           addable_teachers=addable_teachers,
+                           is_admin=bool(user["org_admin"]))
 
 
-@app.route("/groups/<gid>/add", methods=["POST"])
-@login_required("teacher")
-def group_add_member(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
-    if not group:
+@app.route("/classrooms/<int:classroom_id>/students/add", methods=["POST"])
+@org_admin_required
+def classroom_add_student(classroom_id: int):
+    """Put a student in a classroom, which is what lets its teachers see them.
+
+    Admin-only, and the student is resolved through
+    _visible_student_or_404() so an id from another organisation cannot be
+    posted in.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+    student = _visible_student_or_404(user, request.form.get("username", ""))
+
+    db.add_classroom_student(classroom_id, student["id"])
+    flash(f"Added {student['name']}.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+
+@app.route("/classrooms/<int:classroom_id>/students/remove", methods=["POST"])
+@org_admin_required
+def classroom_remove_student(classroom_id: int):
+    """Take a student out of a classroom.
+
+    Their work is untouched — only the membership goes, and with it the
+    classroom's teachers' sight of them.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+    student = _visible_student_or_404(user, request.form.get("username", ""))
+
+    db.remove_classroom_student(classroom_id, student["id"])
+    flash(f"Removed {student['name']} from this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+
+@app.route("/classrooms/<int:classroom_id>/teachers/add", methods=["POST"])
+@org_admin_required
+def classroom_add_teacher(classroom_id: int):
+    """Assign a teacher to a classroom.
+
+    This is the grant that gives them sight of its students, so it is
+    admin-only and the account is resolved within the organisation first.
+    Students cannot be assigned: being a teacher of a classroom means
+    seeing other people's children.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+    teacher = _member_or_404(user, request.form.get("teacher_id", ""))
+    if teacher["role"] != "teacher":
         abort(404)
 
-    username = request.form.get("username", "").strip()
-    users    = load_users()
-    if users.get(username, {}).get("role") != "student":
-        flash("That isn't a student account.", "error")
-        return redirect(url_for("group_detail", gid=gid))
-
-    if username not in group["members"]:
-        group["members"].append(username)
-        write_json(GROUPS_FILE, groups)
-        flash(f"Added {users[username]['name']}.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    db.add_classroom_teacher(classroom_id, teacher["id"])
+    flash(f"{teacher['name']} now teaches this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
 
 
-@app.route("/groups/<gid>/remove", methods=["POST"])
+@app.route("/classrooms/<int:classroom_id>/teachers/remove", methods=["POST"])
+@org_admin_required
+def classroom_remove_teacher(classroom_id: int):
+    """Unassign a teacher, revoking their sight of that classroom's students.
+
+    Removing the last teacher is allowed and leaves the classroom visible
+    only to admins. The screen says so rather than silently stranding it.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+    teacher = _member_or_404(user, request.form.get("teacher_id", ""))
+
+    db.remove_classroom_teacher(classroom_id, teacher["id"])
+    flash(f"{teacher['name']} no longer teaches this classroom.", "success")
+    return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+
+@app.route("/classrooms/<int:classroom_id>/delete", methods=["POST"])
+@org_admin_required
+def classroom_delete(classroom_id: int):
+    """Delete a classroom.
+
+    The students stay in the organisation and keep every bit of their
+    work; only the roster and its teacher assignments go.
+    """
+    user = current_user()
+    name = db.delete_classroom(classroom_id, user["org_id"])
+    if name:
+        flash(f"Deleted “{name}”. The students are still in the class.", "success")
+    return redirect(url_for("classrooms_home"))
+
+
+
+# ── Provisioning student accounts ───────────────────────────────────────────────
+#
+# The self-serve signup form asks for an email address and sends a
+# confirmation link. That works for a parent at a kitchen table and fails
+# completely for a class of twenty-eight, half of whom have no inbox and
+# the other half of whom are on a district account that drops outside mail.
+# So a teacher can create the accounts directly: usernames they choose,
+# passwords the system generates and they hand out on paper, and no email
+# anywhere in the loop.
+
+# One import at a time, so a pasted spreadsheet cannot become a
+# denial-of-service against the seat count or the database.
+_MAX_IMPORT = 200
+
+
+def _username_from_name(name: str, taken: set[str]) -> str | None:
+    """
+    Derive a free username from a display name.
+
+    "Ada Lovelace" becomes "ada.lovelace", then "ada.lovelace2" and so on.
+    `taken` carries the names claimed earlier in the same import, which the
+    database cannot tell us about yet because those rows are still being
+    written in this transaction.
+
+    Returns None if the name has nothing usable in it — no letters or
+    digits at all — rather than inventing a username nobody can read out.
+    """
+    cleaned = re.sub(r"[^a-z0-9]+", ".", name.strip().lower()).strip(".")
+    if not cleaned:
+        return None
+    base = cleaned[:28] or "student"
+    if len(base) < 3:
+        base = f"{base}.s"
+    candidate = base
+    for suffix in range(2, 500):
+        if candidate not in taken and not db.username_taken(candidate):
+            return candidate
+        candidate = f"{base}{suffix}"
+    return None
+
+
+def _provision_student(cur, *, org_id: int, classroom_id: int, name: str,
+                       username: str, by_user_id: int) -> dict:
+    """
+    Create one student account and put it in the classroom.
+
+    Runs inside the caller's transaction so a bulk import is all-or-nothing
+    per row. Returns the generated password alongside the username — this
+    is the only moment either the teacher or we will ever see it, since
+    only its hash is stored.
+    """
+    password = security.temp_password()
+    db.create_student_in_classroom(
+        cur, org_id=org_id, classroom_id=classroom_id, username=username,
+        name=name, password_hash=generate_password_hash(password),
+        by_user_id=by_user_id)
+    return {"name": name, "username": username, "password": password}
+
+
+@app.route("/classrooms/<int:classroom_id>/students/new", methods=["POST"])
 @login_required("teacher")
-def group_remove_member(gid: str):
-    groups = load_groups()
-    group  = groups.get(gid)
-    if not group:
+@membership_required
+def classroom_new_student(classroom_id: int):
+    """
+    Create one student account straight into this classroom.
+
+    Open to any teacher of the classroom, not just an admin:
+    _classroom_or_404 already refused anyone who does not teach it, and
+    making a teacher wait for an admin to enrol their own class is the
+    friction this whole flow exists to remove.
+    """
+    user = current_user()
+    _classroom_or_404(user, classroom_id)
+
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip().lower()
+
+    def back(message: str, category: str = "error"):
+        flash(message, category)
+        return redirect(url_for("classroom_detail", classroom_id=classroom_id))
+
+    if not name:
+        return back("Enter the student's name.")
+    if not request.form.get("consent_ok"):
+        return back("Confirm you have permission to create accounts for these students.")
+
+    if username:
+        problem = security.username_problem(username)
+        if problem:
+            return back(problem)
+        if db.username_taken(username):
+            return back(f"The username “{username}” is taken. Pick another.")
+    else:
+        username = _username_from_name(name, set())
+        if not username:
+            return back("That name has no letters or numbers in it to build a username from.")
+
+    try:
+        with db.write() as cur:
+            created = _provision_student(cur, org_id=user["org_id"],
+                                         classroom_id=classroom_id, name=name,
+                                         username=username, by_user_id=user["id"])
+    except psycopg.errors.UniqueViolation:
+        return back("That username was just taken. Try another.")
+
+    _resize_org_seats(user["org_id"])
+    log.info("student provisioned",
+             extra={"username": username, "by": user["username"], "org_id": user["org_id"]})
+
+    # The password is shown once, here, and never again — only its hash is
+    # stored. Rendering the results page rather than flashing it keeps it
+    # off every subsequent screen and out of the session cookie.
+    return render_template("roster_result.html",
+                           classroom=db.classroom_in_org(classroom_id, user["org_id"]),
+                           created=[created], failed=[])
+
+
+@app.route("/classrooms/<int:classroom_id>/students/import", methods=["GET", "POST"])
+@login_required("teacher")
+@membership_required
+def classroom_import_students(classroom_id: int):
+    """
+    Create a whole class at once from a pasted list.
+
+    One student per line: a name, optionally followed by a comma and the
+    username to give them. A header row saying "name,username" is ignored
+    if present, because every spreadsheet export has one.
+
+    Rows are independent. A duplicate username or an unusable name fails
+    that row and the rest still go through, reported side by side on the
+    results page — an import of thirty students should not be defeated by
+    one typo on line nine.
+    """
+    user = current_user()
+    classroom = _classroom_or_404(user, classroom_id)
+
+    if request.method != "POST":
+        return render_template("roster_import.html", classroom=classroom)
+
+    raw = request.form.get("roster", "")
+    if request.files.get("roster_file"):
+        # Decoded leniently: these files come out of Excel on a school
+        # laptop and are as likely to be cp1252 as UTF-8. Mangling one
+        # accented character beats refusing the whole import.
+        raw = request.files["roster_file"].read(512_000).decode("utf-8", "replace")
+
+    if not request.form.get("consent_ok"):
+        flash("Confirm you have permission to create accounts for these students.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+
+    rows = _parse_roster(raw)
+    if not rows:
+        flash("No students found in that list. One name per line.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+    if len(rows) > _MAX_IMPORT:
+        flash(f"That's {len(rows)} students. Import at most {_MAX_IMPORT} at a time.", "error")
+        return render_template("roster_import.html", classroom=classroom, roster=raw)
+
+    created, failed = [], []
+    claimed: set[str] = set()
+    for name, wanted in rows:
+        username = wanted
+        if username:
+            problem = security.username_problem(username)
+            if problem:
+                failed.append({"name": name, "reason": problem})
+                continue
+            if username in claimed or db.username_taken(username):
+                failed.append({"name": name, "reason": f"Username “{username}” is taken."})
+                continue
+        else:
+            username = _username_from_name(name, claimed)
+            if not username:
+                failed.append({"name": name, "reason": "No letters or numbers to build a username from."})
+                continue
+
+        try:
+            # A transaction per row, so one failure rolls back only itself.
+            with db.write() as cur:
+                created.append(_provision_student(
+                    cur, org_id=user["org_id"], classroom_id=classroom_id,
+                    name=name, username=username, by_user_id=user["id"]))
+            claimed.add(username)
+        except psycopg.errors.UniqueViolation:
+            failed.append({"name": name, "reason": f"Username “{username}” was just taken."})
+        except Exception:
+            log.exception("roster import row failed")
+            failed.append({"name": name, "reason": "Something went wrong creating this account."})
+
+    if created:
+        _resize_org_seats(user["org_id"])
+    # Not "created": logging.LogRecord already has that attribute (the
+    # record's own timestamp) and makeRecord raises rather than let an
+    # extra shadow it, which turns the log line into a 500.
+    log.info("roster imported",
+             extra={"by": user["username"],
+                    "accounts_created": len(created),
+                    "accounts_failed": len(failed)})
+
+    return render_template("roster_result.html", classroom=classroom,
+                           created=created, failed=failed)
+
+
+def _parse_roster(raw: str) -> list[tuple[str, str]]:
+    """
+    Turn pasted text into (name, requested_username) pairs.
+
+    Tolerant by design: blank lines go, a leading header row goes, quotes
+    and stray whitespace are stripped, and anything past the second column
+    is ignored so a spreadsheet with extra columns still imports. The
+    username is lowercased here because usernames are matched
+    case-insensitively and a teacher typing "Ada.L" should get what they
+    expect.
+    """
+    rows: list[tuple[str, str]] = []
+    for line in csv.reader(io.StringIO(raw)):
+        if not line:
+            continue
+        name = line[0].strip()
+        username = (line[1].strip().lower() if len(line) > 1 else "")
+        if not name:
+            continue
+        if not rows and name.lower() in ("name", "student", "full name", "student name"):
+            continue
+        rows.append((name, username))
+    return rows
+
+
+@app.route("/grownup/student/<username>/reset-password", methods=["POST"])
+@login_required("teacher")
+@membership_required
+def student_reset_password(username: str):
+    """
+    Give a student a new password, because they forgot theirs.
+
+    The reason this exists: the email reset loop is useless to a student
+    with no email address, and most of them have none. A teacher who can
+    already see all of this student's work is not gaining anything by
+    being able to reset their password, so this is open to any teacher of
+    their classroom rather than admins only.
+
+    Restricted to students on purpose. A teacher must not be able to reset
+    another teacher's or a parent's password — that would turn any
+    compromised teacher account into a way to take over the org admin's,
+    and grown-ups have email addresses and the ordinary reset flow.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    password = security.temp_password()
+    db.set_password(student["id"], generate_password_hash(password), must_change=True)
+    security.clear_attempts("login_user", student["username"])
+    log.info("student password reset by teacher",
+             extra={"username": student["username"], "by": user["username"]})
+
+    return render_template("roster_result.html",
+                           classroom=None,
+                           reset=True,
+                           created=[{"name": student["name"],
+                                     "username": student["username"],
+                                     "password": password}],
+                           failed=[])
+
+
+@app.route("/grownup/student/<username>/delete", methods=["POST"])
+@org_admin_required
+def student_delete(username: str):
+    """
+    Erase a student account on request.
+
+    Admin-only, unlike the password reset. A reset is recoverable and
+    routine; this is neither, so it sits with the person who answers for
+    the organisation. What goes and what stays is documented on
+    db.delete_user.
+    """
+    user = current_user()
+    student = _visible_student_or_404(user, username)
+
+    if request.form.get("confirm", "").strip().upper() != "DELETE":
+        flash("Type DELETE to confirm.", "error")
+        return redirect(url_for("student_detail", username=username))
+
+    db.delete_user(student["id"])
+    _resize_org_seats(user["org_id"])
+    log.info("student deleted",
+             extra={"username": student["username"], "by": user["username"]})
+    flash(f"Deleted {student['name']} and all of their work.", "success")
+    return redirect(url_for("grownup_home"))
+
+
+# ── Locked lesson ───────────────────────────────────────────────────────────────
+
+@app.route("/locked")
+@login_required()
+def locked():
+    """
+    Where a student lands on a lesson that will not open.
+
+    Two quite different situations share this page, and it says which:
+
+      prerequisite  the track is staged and they have not reached this one.
+                    Nothing to buy; go and finish the lesson before it.
+      subscription  nobody is paying for their account.
+
+    Deliberately not a 402 with a Buy button: a 13-year-old is not the
+    payer, so this tells them who to ask rather than selling to them.
+    """
+    user = current_user()
+    lesson = get_lesson(request.args.get("lesson_id", "")) or None
+    why = request.args.get("why", "subscription")
+
+    blocked = None
+    if lesson and user["role"] == "student":
+        blocked = prerequisite_block(user["id"], lesson)
+    # Trust the recomputed answer over the query string, which a student
+    # can type anything into.
+    if blocked:
+        why = "prerequisite"
+    elif why == "prerequisite":
+        why = "subscription"
+
+    return render_template("locked.html", lesson=lesson, why=why, blocked=blocked,
+                           entitlement=entitlement()), (403 if why == "prerequisite" else 402)
+
+
+# ── Org administration (admin teachers only) ────────────────────────────────────
+
+@app.route("/org")
+@org_admin_required
+def org_home():
+    user = current_user()
+    org = db.org_by_id(user["org_id"])
+
+    return render_template("org.html",
+                           org=org,
+                           members=db.org_members(org["id"]),
+                           pending=db.pending_members(org["id"]),
+                           seats=db.count_billable_seats(org["id"]),
+                           entitlement=entitlement())
+
+
+def _member_or_404(user: dict, raw_id: str) -> dict:
+    """
+    Resolve a member id from a form to someone in the admin's own org.
+
+    Scoping the lookup by org_id is what stops an admin posting another
+    org's user id and editing a roster they cannot see.
+    """
+    try:
+        member_id = int(raw_id)
+    except (TypeError, ValueError):
+        abort(404)
+    member = db.member_in_org(member_id, user["org_id"])
+    if not member:
+        abort(404)
+    return member
+
+
+@app.route("/org/join-policy", methods=["POST"])
+@org_admin_required
+def org_join_policy():
+    user = current_user()
+    policy = request.form.get("join_policy", "open")
+    if policy not in ("open", "approval"):
+        abort(400, "Unknown join policy.")
+
+    db.set_join_policy(user["org_id"], policy)
+    flash("New sign-ups need approval." if policy == "approval"
+          else "Anyone with the join code can sign up.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/rotate-code", methods=["POST"])
+@org_admin_required
+def org_rotate_code():
+    user = current_user()
+    code = db.rotate_join_code(user["org_id"])
+    flash(f"New join code: {code}. The old one no longer works.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/approve", methods=["POST"])
+@org_admin_required
+def org_approve_member(member_id: str):
+    user = current_user()
+    member = _member_or_404(user, member_id)
+
+    db.set_membership_status(member["id"], user["org_id"], "active")
+    _resize_org_seats(user["org_id"])
+    flash(f"{member['name']} is in.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/remove", methods=["POST"])
+@org_admin_required
+def org_remove_member(member_id: str):
+    """
+    Put a member out of the organisation.
+
+    Removing yourself is refused: an admin who did it by accident would
+    lock themselves out of the org they administer, and there is no
+    self-service way back in. Their work is untouched — the membership goes,
+    not the account, which is what /settings/delete is for.
+    """
+    user = current_user()
+    member = _member_or_404(user, member_id)
+
+    if member["id"] == user["id"]:
+        flash("You can't remove yourself.", "error")
+        return redirect(url_for("org_home"))
+    # Removing the last admin would leave the org with nobody who can
+    # approve members or pay the bill.
+    if member["org_admin"] and db.count_org_admins(user["org_id"]) <= 1:
+        flash("Make someone else an admin first — an org needs one.", "error")
+        return redirect(url_for("org_home"))
+
+    db.set_membership_status(member["id"], user["org_id"], "removed")
+    _resize_org_seats(user["org_id"])
+    flash(f"Removed {member['name']}. Their work is kept.", "success")
+    return redirect(url_for("org_home"))
+
+
+@app.route("/org/members/<member_id>/admin", methods=["POST"])
+@org_admin_required
+def org_set_admin(member_id: str):
+    """
+    Promote a teacher to admin, or demote one.
+
+    Two guards. An organisation must keep at least one admin, or nobody can
+    manage its roster or its billing and there is no way to appoint someone
+    from inside. And only teachers can hold it: admin carries sight of every
+    student in the org, which is not a thing to hand a student or a parent.
+    """
+    user = current_user()
+    member = _member_or_404(user, member_id)
+    make_admin = request.form.get("admin") == "1"
+
+    if not make_admin and member["org_admin"] and db.count_org_admins(user["org_id"]) <= 1:
+        flash("An org needs at least one admin.", "error")
+        return redirect(url_for("org_home"))
+
+    if not db.set_org_admin(member["id"], user["org_id"], make_admin):
+        flash("Only teacher accounts can be admins.", "error")
+        return redirect(url_for("org_home"))
+
+    flash(f"{member['name']} is {'now an admin' if make_admin else 'no longer an admin'}.",
+          "success")
+    return redirect(url_for("org_home"))
+
+
+def _resize_org_seats(org_id: int) -> None:
+    """
+    Keep the Stripe quantity in step with the roster.
+
+    Best-effort on purpose: a Stripe outage must not stop a teacher
+    approving a student. The nightly `manage.py sync-seats` reconciles
+    anything that failed here.
+    """
+    if not billing.enabled(cfg):
+        return
+    subscription = db.subscription_for_org(org_id)
+    if not subscription or not subscription.get("stripe_subscription_id"):
+        return
+    try:
+        billing.update_seats(cfg,
+                             stripe_subscription_id=subscription["stripe_subscription_id"],
+                             quantity=db.count_billable_seats(org_id))
+    except Exception:
+        log.exception("could not resize seats for org %s", org_id)
+
+
+# ── Billing ─────────────────────────────────────────────────────────────────────
+
+def _billing_context(user: dict) -> dict:
+    """
+    Who is the payer for this account, and what are they paying with?
+
+    An org admin manages the school's subscription; a parent manages their
+    own. Nobody else sees a billing page at all.
+    """
+    if user["role"] == "teacher" and user["org_admin"]:
+        org = db.org_by_id(user["org_id"])
+        subscription = db.subscription_for_org(org["id"])
+        return {
+            "kind": "org",
+            "org": org,
+            "subscription": subscription,
+            "seats": db.count_billable_seats(org["id"]),
+            "price_key": cfg.PRICE_ORG_SEAT,
+            "metadata": {"account_kind": "org", "org_id": org["id"], "ref": f"org:{org['id']}"},
+        }
+    if user["role"] == "parent":
+        subscription = db.subscription_for_parent(user["id"])
+        return {
+            "kind": "parent",
+            "org": None,
+            "subscription": subscription,
+            "seats": max(1, len(db.visible_students(user))),
+            "price_key": cfg.PRICE_FAMILY,
+            "metadata": {"account_kind": "parent", "user_id": user["id"],
+                         "ref": f"parent:{user['id']}"},
+        }
+    return {}
+
+
+@app.route("/billing")
+@login_required("teacher", "parent")
+@membership_required
+def billing_home():
+    user = current_user()
+    context = _billing_context(user)
+    if not context:
         abort(404)
 
-    username = request.form.get("username", "").strip()
-    if username in group["members"]:
-        group["members"].remove(username)
-        write_json(GROUPS_FILE, groups)
-        flash("Removed from group.", "success")
-    return redirect(url_for("group_detail", gid=gid))
+    subscription = context["subscription"]
+    return render_template("billing.html",
+                           ctx=context,
+                           subscription=subscription,
+                           entitlement=entitlement(),
+                           invoices=db.invoices_for(subscription["id"]) if subscription else [],
+                           trial_days=cfg.TRIAL_DAYS,
+                           due_days=cfg.INVOICE_DUE_DAYS)
 
 
-@app.route("/groups/<gid>/delete", methods=["POST"])
-@login_required("teacher")
-def group_delete(gid: str):
-    groups = load_groups()
-    group  = groups.pop(gid, None)
-    if group:
-        write_json(GROUPS_FILE, groups)
-        flash(f"Deleted “{group['name']}”.", "success")
-    return redirect(url_for("groups_home"))
+@app.route("/billing/subscribe", methods=["POST"])
+@login_required("teacher", "parent")
+@membership_required
+def billing_subscribe():
+    """Send the payer to Stripe's hosted Checkout. No card touches us."""
+    user = current_user()
+    context = _billing_context(user)
+    if not context:
+        abort(404)
+    if not billing.enabled(cfg):
+        flash("Payments aren't switched on yet.", "error")
+        return redirect(url_for("billing_home"))
+
+    existing = context["subscription"]
+    try:
+        customer_id = billing.ensure_customer(
+            cfg,
+            existing_id=existing["stripe_customer_id"] if existing else None,
+            email=(context["org"]["billing_email"] if context["kind"] == "org" and context["org"]["billing_email"]
+                   else user["email"]),
+            name=context["org"]["name"] if context["kind"] == "org" else user["name"],
+            metadata=context["metadata"],
+        )
+        url = billing.checkout_session(
+            cfg,
+            customer_id=customer_id,
+            price_lookup_key=context["price_key"],
+            quantity=context["seats"],
+            success_url=f"{cfg.BASE_URL}{url_for('billing_return')}",
+            cancel_url=f"{cfg.BASE_URL}{url_for('billing_home')}",
+            metadata=context["metadata"],
+            trial_days=cfg.TRIAL_DAYS if not existing else None,
+        )
+    except billing.BillingUnavailable as exc:
+        log.error("checkout unavailable: %s", exc)
+        flash("Payments aren't available right now. Try again shortly.", "error")
+        return redirect(url_for("billing_home"))
+    except Exception:
+        log.exception("could not start checkout")
+        flash("Something went wrong starting checkout.", "error")
+        return redirect(url_for("billing_home"))
+
+    return redirect(url, code=303)
 
 
-# ── Main ────────────────────────────────────────────────────────────────────────
+@app.route("/billing/portal", methods=["POST"])
+@login_required("teacher", "parent")
+@membership_required
+def billing_portal():
+    """
+    Stripe's hosted account page: change card, cancel, download invoices.
+
+    Everything a payer wants to do to their own billing, on Stripe's
+    domain, with no billing UI of ours in the way.
+    """
+    user = current_user()
+    context = _billing_context(user)
+    if not context or not context["subscription"]:
+        abort(404)
+
+    try:
+        url = billing.portal_session(
+            cfg,
+            customer_id=context["subscription"]["stripe_customer_id"],
+            return_url=f"{cfg.BASE_URL}{url_for('billing_home')}",
+        )
+    except Exception:
+        log.exception("could not open the customer portal")
+        flash("Couldn't open the billing portal. Try again shortly.", "error")
+        return redirect(url_for("billing_home"))
+
+    return redirect(url, code=303)
+
+
+@app.route("/billing/return")
+@login_required("teacher", "parent")
+def billing_return():
+    """
+    Where Stripe sends the browser after Checkout.
+
+    It grants nothing. Anyone can visit this URL, so entitlement changes
+    only when the signed webhook arrives — this page just says so politely
+    while that happens.
+    """
+    return render_template("billing_return.html", entitlement=entitlement())
+
+
+@app.route("/billing/invoice-request", methods=["POST"])
+@org_admin_required
+def billing_invoice_request():
+    """
+    Ask to be billed by invoice on terms instead of by card.
+
+    This records the request; it does not grant it. Net 30 is unsecured
+    credit, and a school district is worth extending it to in a way an
+    anonymous signup is not — a human approves it with
+    `manage.py approve-invoice`.
+    """
+    user = current_user()
+    org = db.org_by_id(user["org_id"])
+
+    billing_email = request.form.get("billing_email", "").strip()
+    problem = security.email_problem(billing_email)
+    if problem:
+        flash(problem, "error")
+        return redirect(url_for("billing_home"))
+
+    db.set_billing_profile(
+        org["id"],
+        billing_email=billing_email,
+        po_number=request.form.get("po_number", "").strip() or None,
+        tax_exempt=request.form.get("tax_exempt") == "1",
+        requested=True,
+    )
+    log.info("invoice terms requested", extra={"org_id": org["id"], "org": org["name"]})
+
+    emailer.send(cfg, cfg.EMAIL_FROM, "Invoice billing requested",
+                 f"""{org['name']} has asked to be billed by invoice.
+
+  Org id:        {org['id']}
+  Billing email: {billing_email}
+  PO number:     {request.form.get('po_number', '') or '—'}
+  Tax exempt:    {'yes' if request.form.get('tax_exempt') == '1' else 'no'}
+  Seats:         {db.count_billable_seats(org['id'])}
+
+Approve with:  python game/manage.py approve-invoice {org['id']}
+""")
+
+    flash("Request received. We'll confirm by email, usually within a "
+          "business day, and then send the first invoice.", "success")
+    return redirect(url_for("billing_home"))
+
+
+# ── Stripe webhook ──────────────────────────────────────────────────────────────
+#
+# Deliberately outside /api/, which would have exempted it from CSRF as a
+# side effect of that prefix requiring JSON. The exemption here is
+# explicit and justified: the Stripe-Signature header IS this endpoint's
+# authentication, and it is checked before anything else happens.
+
+@app.route("/stripe/webhook", methods=["POST"])
+@security.csrf_exempt
+def stripe_webhook():
+    """
+    Stripe telling us something changed.
+
+    The only route in the app exempt from CSRF, because the caller is Stripe
+    and has no session or token to present. What replaces CSRF is the
+    signature check below: the body is verified against the exact bytes
+    Stripe sent, so anything that re-reads or re-encodes it first breaks
+    verification.
+
+    Then idempotency. Stripe retries, and retries can arrive out of order or
+    twice, so the event id is CLAIMED in the database before any work
+    happens and released again if that work throws. Applying one event
+    twice would double-count a seat or extend a subscription that never
+    renewed.
+
+    Failures answer 500 on purpose: Stripe treats that as "try again",
+    which is what we want. A 200 would tell it the event was handled and it
+    would never come back.
+    """
+    if not billing.enabled(cfg):
+        abort(404)
+
+    # The signature is computed over the exact bytes Stripe sent. Anything
+    # that re-encodes the body invalidates it.
+    payload = request.get_data()
+    signature = request.headers.get("Stripe-Signature")
+
+    try:
+        event = billing.verify_webhook(cfg, payload, signature)
+    except Exception as exc:
+        # 400, not 500: the request is malformed or forged, and Stripe
+        # should not retry it.
+        log.warning("rejected webhook: %s", exc)
+        return jsonify({"error": "invalid signature"}), 400
+
+    event_id, event_type = event["id"], event["type"]
+
+    if event_type not in billing.HANDLED_EVENTS:
+        # Acknowledged, not acted on. Returning non-2xx for events we do
+        # not care about would have Stripe retry them until it disables
+        # the endpoint.
+        return jsonify({"ok": True, "ignored": event_type})
+
+    if not db.claim_event(event_id, event_type):
+        # Already handled. Stripe retries and delivers out of order, so
+        # this is normal traffic, not an error.
+        return jsonify({"ok": True, "duplicate": True})
+
+    try:
+        outcome = billing.handle_event(cfg, event)
+    except Exception:
+        log.exception("webhook %s (%s) failed", event_id, event_type)
+        # Hand the claim back so the retry can try again, and ask for one.
+        db.release_event(event_id)
+        return jsonify({"error": "handler failed"}), 500
+
+    db.finish_event(event_id)
+    log.info("webhook handled", extra={"event": event_type, "outcome": outcome})
+    return jsonify({"ok": True})
+
+
+# ── Errors ──────────────────────────────────────────────────────────────────────
+
+@app.errorhandler(HTTPException)
+def _http_error(err):
+    """
+    Every deliberate HTTP status — 404, 405, 413, 415, 429 and the rest.
+
+    This has to be registered separately from the catch-all below:
+    a handler for Exception also catches HTTPException, which turned an
+    ordinary 405 into a 500 with a stack trace in the log.
+    """
+    if request.path.startswith("/api/"):
+        return jsonify({"error": err.description or "Request rejected."}), err.code
+    return render_template("error.html", code=err.code,
+                           message=err.description or ""), err.code
+
+
+@app.errorhandler(Exception)
+def _server_error(err):
+    # Genuinely unexpected. Never let a stack trace or a database message
+    # reach a browser.
+    log.exception("unhandled error on %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Something went wrong."}), 500
+    return render_template("error.html", code=500, message=""), 500
+
+
+# ── Boot ────────────────────────────────────────────────────────────────────────
+
+def init_app() -> None:
+    """
+    Prepare this process to serve.  Called once per gunicorn worker and
+    once by the development server.
+
+    Opening the pool never blocks and never fails the boot: a worker that
+    starts during a database blip comes up anyway and reconnects by itself,
+    rather than dying and turning a short outage into a crash loop.
+
+    Migrations are the one thing that genuinely needs a live database, so
+    they wait for one — with a budget, and then loudly. In production they
+    should not run here at all: apply them in a pre-deploy step and set
+    RUN_MIGRATIONS=0, which also avoids old tasks meeting a new schema
+    mid-rollout. See docs/AWS_READINESS.md.
+
+    They take a Postgres advisory lock, so several workers or containers
+    starting at the same moment cannot apply them twice.
+    """
+    db.init_pool(cfg)
+
+    if os.environ.get("RUN_MIGRATIONS", "1") == "1":
+        if not db.wait_for_database(cfg.DB_BOOT_RETRY):
+            raise RuntimeError(
+                f"database unreachable after {cfg.DB_BOOT_RETRY}s and RUN_MIGRATIONS "
+                "is on, so the schema cannot be verified. Set RUN_MIGRATIONS=0 and "
+                "migrate in a pre-deploy step, or raise DB_BOOT_RETRY.")
+        applied = db.migrate()
+        if applied:
+            log.info("applied %d migration(s)", applied)
+
+    refresh_catalog()
+    log.info("catalog loaded: %d lesson(s) across %d track(s), "
+             "%d standard(s) in %d framework(s)",
+             len(load_lessons()), len(load_tracks()),
+             len(_catalog["standard_by_code"]), len(_catalog["frameworks"]))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -1155,17 +3792,23 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5000, help="Port (default: 5000)")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug reloader.")
+    parser.add_argument("--migrate-only", action="store_true",
+                        help="Apply database migrations and exit.")
     args = parser.parse_args()
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    seed_users()
-    app.secret_key = load_secret_key()
+    if args.migrate_only:
+        db.init_pool(cfg)
+        applied = db.migrate()
+        print(f"  Migrations applied: {applied}")
+        db.close_pool()
+        return
 
-    found = load_lessons()
-    print(f"  Lessons discovered: {len(found)}")
-    for lesson in found:
-        quiz_n = len(lesson.get("quiz", []))
-        print(f"    {lesson['id']:16} {lesson['type']:12} {quiz_n} question(s)")
+    init_app()
+
+    print(f"  Lessons discovered: {len(load_lessons())} "
+          f"across {len(load_tracks())} track(s)")
+    for item in load_lessons():
+        print(f"    {item['id']:16} {item['type']:12} {len(item.get('quiz', []))} question(s)")
 
     if not art_exists("backgrounds/classroom"):
         print("  Classroom art not found — placeholder will be shown:")

@@ -1,18 +1,22 @@
 {
   "title": "Your First Loop",
   "subject": "Code",
+  "track": "code",
   "type": "reading",
   "content": "02-loops.md",
   "order": 40,
   "duration_min": 7,
   "reward": "badge-loop",
   "description": "Make the computer do the boring part for you.",
-
   "quiz": [
     {
       "id": "q1",
       "prompt": "How many times does this run?  for (int i = 0; i < 5; i++)",
-      "choices": ["Four times", "Five times", "Six times"],
+      "choices": [
+        "Four times",
+        "Five times",
+        "Six times"
+      ],
       "answer": 1,
       "explain": "i takes the values 0, 1, 2, 3, 4 — that's five passes. It stops the moment i reaches 5."
     },
@@ -38,5 +42,9 @@
       "answer": 1,
       "explain": "That's an infinite loop. Before writing one, always ask: what inside this loop will eventually make the condition false?"
     }
+  ],
+  "standards": [
+    "2-AP-11",
+    "2-AP-12"
   ]
 }

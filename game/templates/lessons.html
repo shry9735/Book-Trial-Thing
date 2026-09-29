@@ -14,39 +14,98 @@
     <span class="pill in_progress">{{ summary.completed }} of {{ summary.total }} done</span>
   </div>
 
-  {% for category, cat_lessons in categories.items() %}
-    <div class="category-head">{{ category }}</div>
+  {% if kit_count %}
+    <p class="kit-note">
+      🧰 {{ kit_count }} of these {{ 'has' if kit_count == 1 else 'have' }} a
+      hands-on kit you can build along with. You don't need one to do the
+      lesson{{ '' if kit_count == 1 else 's' }}.
+      {% if store_url %}
+        <a href="{{ store_url }}" target="_blank" rel="noopener noreferrer">See the kits →</a>
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% for track in tracks %}
+    <div class="track-head">
+      <div>
+        <div class="category-head">{{ track.title }}</div>
+        {% if track.description %}
+          <div class="track-blurb">{{ track.description }}</div>
+        {% endif %}
+      </div>
+      <div class="track-meta">
+        {% if track.sequential %}
+          <span class="pill" title="These open one at a time, in order">In order</span>
+        {% endif %}
+        <span class="track-count">
+          {{ track.progress.completed }} / {{ track.progress.total }}
+        </span>
+      </div>
+    </div>
+
     <div class="lesson-grid">
-      {% for lesson in cat_lessons %}
-        {% set status = lesson.progress.status %}
-        <a class="panel lesson-card" href="{{ url_for('lesson', lesson_id=lesson.id) }}">
+      {% for lesson in track.cards %}
+        {% set shut = lesson.locked or lesson.prereq_locked %}
+        <a class="panel lesson-card {% if shut %}locked{% endif %}"
+           href="{{ url_for('lesson', lesson_id=lesson.id) }}">
 
           <div class="lesson-thumb" style="background-image:url('{{ art(lesson.thumb) }}')">
             <span class="lesson-type">
-              {% if lesson.type == 'video' %}▶ Video
-              {% elif lesson.type == 'interactive' %}🎮 Play
-              {% else %}📖 Read{% endif %}
+              {% if lesson.type == 'reading' %}📖 Read
+              {% elif lesson.type == 'video' %}▶ Video
+              {% else %}🎮 Play{% endif %}
             </span>
             {% if lesson.quiz %}
               <span class="lesson-quiz-tag">{{ lesson.quiz | length }} Q</span>
             {% endif %}
-            {% if status in ('completed', 'in_progress') %}
-              <span class="lesson-status {{ status }}">
+            {% set status = lesson.progress.status | default('not_started') %}
+            {% if status != 'not_started' %}
+              {# .lesson-status is a 24px circle: a glyph, not a sentence.
+                 The title attribute carries the words. #}
+              <span class="lesson-status {{ status }}"
+                    title="{{ 'Finished' if status == 'completed' else 'In progress' }}">
                 {% if status == 'completed' %}✓{% else %}⋯{% endif %}
               </span>
             {% endif %}
           </div>
 
           <div class="lesson-body">
-            <div class="lesson-name">{{ lesson.title }}</div>
-            <div class="lesson-desc">{{ lesson.description }}</div>
+            <div class="lesson-name">
+              {% if lesson.prereq_locked %}
+                {# Not a paywall. Says which lesson opens this one. #}
+                <span class="lock-badge" title="Finish “{{ lesson.prereq_after }}” first">🔗</span>
+              {% elif lesson.locked %}
+                <span class="lock-badge" title="Needs a subscription">🔒</span>
+              {% endif %}
+              {{ lesson.title }}
+            </div>
+            <div class="lesson-desc">
+              {% if lesson.prereq_locked %}
+                Opens when you finish “{{ lesson.prereq_after }}”.
+              {% else %}
+                {{ lesson.description }}
+              {% endif %}
+            </div>
             <div class="lesson-meta">
               <span>⏱ {{ lesson.duration_min }} min</span>
+              {% if lesson.kit %}
+                <span class="kit-tag" title="There's a hands-on kit for this one">
+                  🧰 Kit
+                </span>
+              {% endif %}
             </div>
           </div>
 
         </a>
       {% endfor %}
+    </div>
+  {% else %}
+    <div class="panel">
+      <div class="login-form">
+        <p class="login-blurb">
+          Nothing here yet. Your teacher hasn't set any lessons for you.
+        </p>
+      </div>
     </div>
   {% endfor %}
 

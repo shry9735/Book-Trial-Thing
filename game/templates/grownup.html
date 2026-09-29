@@ -6,9 +6,45 @@
 <div class="t-heading">
   <h1>{% if is_teacher %}Your Students{% else %}Your Family{% endif %}</h1>
   {% if is_teacher %}
-    <a class="btn sm ghost" href="{{ url_for('groups_home') }}">Manage Groups</a>
+    <a class="btn sm ghost" href="{{ url_for('classrooms_home') }}">Classrooms</a>
   {% endif %}
 </div>
+
+{# A teacher hands the join code out; students and parents type it at
+   sign-up. Rotating it is a support call away, so it lives on the page
+   they already look at. #}
+{% if is_teacher and org %}
+  <div class="panel join-panel">
+    <div class="join-row">
+      <div>
+        <div class="join-label">Class join code</div>
+        <code class="join-code">{{ org.join_code }}</code>
+      </div>
+      <div class="join-note">
+        Students and parents need this to sign up for <b>{{ org.name }}</b>.
+        Each student also gets their own code, shown on their page, which is
+        what links a parent to that child.
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if not is_teacher %}
+  <div class="panel join-panel">
+    <form class="join-row" method="POST" action="{{ url_for('link_child') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div>
+        <div class="join-label">Add a child</div>
+        <input type="text" name="link_code" maxlength="6" placeholder="Student code"
+               style="text-transform:uppercase" required />
+      </div>
+      <button type="submit" class="btn sm">Link</button>
+      <div class="join-note">
+        Ask their teacher for the six-character student code.
+      </div>
+    </form>
+  </div>
+{% endif %}
 
 {# The whole point of this page: if something needs doing, it's at the top
    in plain words. If nothing does, that's stated too — so a quick look is
@@ -82,7 +118,7 @@
         <div class="kid-bar"><div style="width:{{ card.percent }}%"></div></div>
 
         <div class="kid-foot">
-          <span>🎒 {{ card.trinkets | length }} trinket{{ '' if card.trinkets | length == 1 else 's' }}</span>
+          <span>🎒 {{ card.trinkets }} trinket{{ '' if card.trinkets == 1 else 's' }}</span>
           <span class="kid-foot-sep">·</span>
           <span>
             {% if card.quiet is none %}Not started
@@ -96,14 +132,26 @@
     {% endfor %}
   </div>
 {% else %}
+  {# An empty dashboard has three quite different causes and one of them —
+     a teacher in no classroom — is the system working as designed. Saying
+     which, and who fixes it, is the difference between an empty page and a
+     page that looks broken. #}
   <div class="panel empty">
     <div class="big">🎒</div>
-    {% if is_teacher %}
-      No student accounts yet.
+    {% if is_teacher and not user.org_admin %}
+      You're not assigned to a classroom yet, so there are no students to
+      show.<br />
+      An admin at your school can add you to one.
+    {% elif is_teacher %}
+      No students yet. Once they sign up with the join code above they'll
+      appear here —<br />
+      then put them in a
+      <a href="{{ url_for('classrooms_home') }}">classroom</a> so their
+      teacher can see them too.
     {% else %}
       No children linked to your account yet.<br />
-      Ask a teacher to link them, or add usernames to
-      <code>children</code> in <code>data/users.json</code>.
+      Ask their teacher for the six-character student code, then add it
+      above.
     {% endif %}
   </div>
 {% endif %}
