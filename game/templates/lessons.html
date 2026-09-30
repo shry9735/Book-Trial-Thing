@@ -73,7 +73,7 @@
             <div class="lesson-name">
               {% if lesson.prereq_locked %}
                 {# Not a paywall. Says which lesson opens this one. #}
-                <span class="lock-badge" title="Finish “{{ lesson.prereq_after }}” first">🔗</span>
+                <span class="lock-badge" title="Not unlocked yet">🔗</span>
               {% elif lesson.locked %}
                 <span class="lock-badge" title="Needs a subscription">🔒</span>
               {% endif %}
@@ -81,7 +81,7 @@
             </div>
             <div class="lesson-desc">
               {% if lesson.prereq_locked %}
-                Opens when you finish “{{ lesson.prereq_after }}”.
+                Not unlocked yet. {{ lesson.block_remedy }}
               {% else %}
                 {{ lesson.description }}
               {% endif %}

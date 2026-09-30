@@ -1764,6 +1764,10 @@ def lessons():
         # evaluated once here rather than per card.
         track_block = tracks.requirement_block(
             track, entries, by_track, by_lesson, assigned_ids, available_ids)
+        # Something only a grown-up can open is left off the menu entirely.
+        # A card the student can do nothing about is a wall, not a goal.
+        if track_block and track_block["reason"] == tracks.BLOCK_UNASSIGNED:
+            continue
 
         cards = []
         for lesson in track["lessons"]:
@@ -1772,6 +1776,8 @@ def lessons():
 
             block = track_block or tracks.requirement_block(
                 lesson, entries, by_track, by_lesson, assigned_ids, available_ids)
+            if block and block["reason"] == tracks.BLOCK_UNASSIGNED:
+                continue
             if not block:
                 prereq = gates.get(lesson["id"], {"locked": False, "after": None})
                 if prereq["locked"]:
@@ -1817,6 +1823,7 @@ def lesson(lesson_id: str):
 
       unknown lesson      404
       not assigned        403 — a teacher narrowed this student's menu
+      not handed out      404 — the menu hides it, so the URL does too
       needs a subscription  -> /locked, which explains who can buy one
       not reached yet     -> /locked, which names the lesson that opens it
 
@@ -1840,6 +1847,8 @@ def lesson(lesson_id: str):
     # Staged tracks release their lessons in order. Checked here as well as
     # on the menu, because a bookmarked or guessed URL skips the menu.
     blocked_by = prerequisite_block(user["id"], found)
+    if blocked_by and blocked_by["reason"] == tracks.BLOCK_UNASSIGNED:
+        abort(404)
     if blocked_by:
         return redirect(url_for("locked", lesson_id=lesson_id, why="prerequisite"))
 
@@ -3301,6 +3310,10 @@ def locked():
     blocked = None
     if lesson and user["role"] == "student":
         blocked = prerequisite_block(user["id"], lesson)
+    # A lesson waiting on a grown-up is hidden from the menu, and this page
+    # must not be the one place that admits it exists.
+    if blocked and blocked["reason"] == tracks.BLOCK_UNASSIGNED:
+        abort(404)
     # Trust the recomputed answer over the query string, which a student
     # can type anything into.
     if blocked:

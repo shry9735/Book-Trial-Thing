@@ -36,6 +36,7 @@ if os.environ.get("APP_ENV") == "production":
     sys.exit("selftest refuses to run against APP_ENV=production")
 
 import app as appmod        # noqa: E402
+from selftest_fixtures import gate_for_tests   # noqa: E402
 import db                   # noqa: E402
 import tracks               # noqa: E402
 
@@ -403,7 +404,10 @@ def t_prerequisite_beats_sequence():
 @check("a non-sequential track locks nothing on its own")
 def t_non_sequential():
     assert block_for("fresh", "code-01-loops") is None
-    assert block_for("fresh", "code-02-debug") is None
+    # Debug is shut, but by its own requirement, not by the track's order.
+    block = block_for("fresh", "code-02-debug")
+    assert block and block["reason"] == tracks.BLOCK_PREREQUISITE, block
+    assert "Your First Loop" in block["remedy"], block["remedy"]
 
 
 # ── The routes actually enforce it ──────────────────────────────────────────────
@@ -411,16 +415,26 @@ def t_non_sequential():
 @check("a blocked lesson URL redirects instead of opening")
 def t_url_enforced():
     c = signed_in("fresh")
-    response = c.get("/lesson/story-science-fair", follow_redirects=False)
+    response = c.get("/lesson/code-02-debug", follow_redirects=False)
     assert response.status_code == 302, response.status_code
     assert "/locked" in response.headers["Location"], response.headers["Location"]
+
+
+@check("a lesson nobody has handed out does not exist, as far as the student knows")
+def t_unassigned_hidden():
+    c = signed_in("fresh")
+    assert c.get("/lesson/story-science-fair").status_code == 404
+    assert c.get("/locked?why=prerequisite&lesson_id=story-science-fair").status_code == 404
+    html = c.get("/lessons").get_data(as_text=True)
+    assert "The Day of the Science Fair" not in html, "an unassigned lesson is on the menu"
 
 
 @check("the locked page names the reason and the remedy")
 def t_locked_page_explains():
     c = signed_in("fresh")
-    html = c.get("/locked?why=prerequisite&lesson_id=story-science-fair").get_data(as_text=True)
-    assert "teacher" in html.lower(), "the unassigned remedy is missing"
+    html = c.get("/locked?why=prerequisite&lesson_id=code-02-debug").get_data(as_text=True)
+    assert "isn't unlocked yet" in html, "the headline is missing"
+    assert "Your First Loop" in html, "the remedy does not name the lesson"
     # And the prep skills, which are advisory but the most useful thing on
     # the page when a student is stuck.
     assert "Handy to know first" in html, "prep skills missing from the locked page"
@@ -441,15 +455,19 @@ def t_menu_shows_reasons():
     assert "Meet the Breadboard" in html, "the menu did not render"
     # The card for a blocked lesson carries the sentence, not just a padlock.
     assert "lock-badge" in html, "nothing on the menu is marked locked"
+    assert "Not unlocked yet. Finish “Your First Loop” first." in html, \
+        "a blocked card does not say how to unlock it"
 
 
 @check("a blocked lesson cannot be reached by guessing the URL after signing in")
 def t_no_bypass():
     # Every entry point goes through prerequisite_block, not just the menu.
     c = signed_in("fresh")
-    for lesson_id in ("circuits-04-voltage", "circuits-03-resistor", "story-science-fair"):
+    for lesson_id in ("circuits-04-voltage", "circuits-03-resistor", "code-02-debug"):
         response = c.get(f"/lesson/{lesson_id}", follow_redirects=False)
         assert response.status_code == 302, f"{lesson_id} opened ({response.status_code})"
+    response = c.get("/lesson/story-science-fair", follow_redirects=False)
+    assert response.status_code == 404, f"story-science-fair answered {response.status_code}"
 
 
 # ── The grown-up view ───────────────────────────────────────────────────────────
@@ -547,7 +565,7 @@ TESTS = [
     t_hidden_prerequisite_opens, t_visible_prerequisite_still_blocks,
     t_partial_track_requirement,
     t_sequence_still_works, t_prerequisite_beats_sequence, t_non_sequential,
-    t_url_enforced, t_locked_page_explains, t_api_enforced,
+    t_url_enforced, t_unassigned_hidden, t_locked_page_explains, t_api_enforced,
     t_menu_shows_reasons, t_no_bypass,
     t_grouped_by_fit, t_regroup, t_fit_edges, t_grownup_shows_metadata,
     t_grownup_shows_blocks, t_grownup_leads_with_grade, t_parent_view,
@@ -558,6 +576,7 @@ TESTS = [
 def main() -> int:
     appmod.db.init_pool(appmod.cfg)
     reset_database()
+    gate_for_tests(appmod)
     appmod.refresh_catalog()
     build_world()
 

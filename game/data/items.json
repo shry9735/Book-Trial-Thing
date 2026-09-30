@@ -54,5 +54,40 @@
     "art": "items/trinket-clipboard",
     "blurb": "Got a prototype through judging day and knew exactly why it did what it did.",
     "rarity": "rare"
+  },
+  "trinket-band-silver": {
+    "name": "Silver Band",
+    "icon": "⚪",
+    "art": "items/trinket-band-silver",
+    "blurb": "Finished the Color Challenge. Ten percent tolerance — close enough to build with.",
+    "rarity": "common"
+  },
+  "trinket-band-gold": {
+    "name": "Gold Band",
+    "icon": "🟡",
+    "art": "items/trinket-band-gold",
+    "blurb": "Scored 60+ on the Color Challenge. Five percent tolerance, like most resistors in the kit.",
+    "rarity": "uncommon"
+  },
+  "trinket-band-brown": {
+    "name": "Brown Band",
+    "icon": "🟤",
+    "art": "items/trinket-band-brown",
+    "blurb": "Scored 85+ on the Color Challenge. One percent tolerance — the precise ones.",
+    "rarity": "rare"
+  },
+  "trinket-band-violet": {
+    "name": "Violet Band",
+    "icon": "🟣",
+    "art": "items/trinket-band-violet",
+    "blurb": "Scored 105+ on the Color Challenge. A tenth of a percent. Almost nobody reads bands that fast.",
+    "rarity": "epic"
+  },
+  "trinket-golden-capacitor": {
+    "name": "Golden Capacitor",
+    "icon": "🪙",
+    "art": "items/trinket-golden-capacitor",
+    "blurb": "A button’s metal contacts bounce when you press them, flickering on and off in a few thousandths of a second. A capacitor is like a little bucket of charge that takes time to fill back up, so those quick flickers can’t change its level. The board sees one smooth press.",
+    "rarity": "rare"
   }
 }

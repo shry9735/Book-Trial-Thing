@@ -148,10 +148,12 @@
      * granted; the server decides, and refuses anything else. Awarding the
      * same item twice is harmless — the second call grants nothing and the
      * callback gets an empty list, so it is safe to call on every win.
+     * The second argument, `ok`, is false when the request failed, which
+     * is the one way to tell "already had it" from "did not get through".
      */
     award: function (items, done) {
       request('/api/award', { items: [].concat(items) }, function (res) {
-        if (done) done((res && res.granted) || []);
+        if (done) done((res && res.granted) || [], !!(res && res.ok));
       });
       return this;
     },

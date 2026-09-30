@@ -6,6 +6,11 @@
   "order": 50,
   "duration_min": 15,
   "reward": "trinket-wrench",
+  "requires": {
+    "lessons": [
+      "code-01-loops"
+    ]
+  },
   "description": "The robot drives in circles. Find out why before the Faire.",
   "quiz": [
     {

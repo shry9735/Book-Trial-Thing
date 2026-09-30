@@ -87,7 +87,10 @@ completed. Three things it deliberately does **not** do:
 
 A requirement on the track holds every lesson in it. `"assignment": true`
 means a grown-up has to hand it out — and with no assignment row at all
-that lesson stays shut, because nothing has been handed out.
+that lesson stays shut, because nothing has been handed out. Until then it
+is **hidden** from the student entirely: there is nothing they can do to
+open it, so a card for it would only be a wall. Everything else a student
+can open themselves stays on the menu, saying what to finish first.
 
 There are four reasons something will not open and the UI says a different
 sentence for each: `subscription`, `unassigned`, `prerequisite`, and

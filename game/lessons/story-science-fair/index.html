@@ -160,8 +160,6 @@
     text-transform: uppercase; color: var(--orange-dk); margin-bottom: 3px;
   }
   .sf-say .line { font-size: 0.88rem; line-height: 1.55; font-style: italic; }
-  .sf-say.text-msg { border-left-color: var(--teal); background: var(--teal-lt); }
-  .sf-say.text-msg .who { color: var(--teal-dk); }
 
   /* D.U.D.E.A.D.'s aside — a tap-to-read comment, not a wall of text
      blocking the story. The badge only appears when he has something to
@@ -253,6 +251,18 @@
     opacity: 0; pointer-events: none;
   }
   .sf-tick.go { animation: sf-tick 1.5s ease forwards; }
+
+  /* A trinket found mid-story. Same float as the clock tick, slower, and
+     below it so the two can show at once. */
+  .sf-found {
+    position: absolute; top: 72px; right: 18px; z-index: 5;
+    padding: 6px 12px; border-radius: 10px;
+    background: #fff4dc; border: 2px solid var(--gold);
+    color: var(--gold-dk); font-weight: 700; font-size: 0.85rem;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+  }
+  .sf-found.go { animation: sf-tick 3.2s ease forwards; }
   @keyframes sf-tick {
     0%   { opacity: 0; transform: translateY(0); }
     18%  { opacity: 1; transform: translateY(6px); }
@@ -309,6 +319,7 @@
 
   </div>
   <div class="sf-tick" id="tick"></div>
+  <div class="sf-found" id="found"></div>
 </div>
 
 <script src="/kit/lesson-kit.js"></script>
@@ -324,6 +335,10 @@
 'use strict';
 
 var START_MIN = 552;   // 9:12, in minutes past midnight
+
+/* Every risky choice that can come due at judging, in the order it would
+   go wrong along the lane — see CONSEQUENCES in story.js. */
+var SEEDS = ['debounce', 'loose', 'calib', 'power'];
 var JUDGE_MIN = 600;   // 10:00
 
 var state = {
@@ -332,8 +347,24 @@ var state = {
   seeds:  {},        // planted, may or may not come due
   fired:  [],        // seeds that actually went wrong in Act 3
   caught: [],        // seeds the checklist rescued
-  checked: false
+  checked: false,
+  checklistCut: false, // the judge arrived mid-checklist, so it didn't count
+  outOfTime: null    // what you were in the middle of when the judge came
 };
+
+/* Which decision each seed belongs to, and what you were doing there if
+   the judge turns up before it is done. */
+var SEED_OF = { d3: 'loose', debounce: 'debounce', d4: 'power', d5: 'calib' };
+var DOING = {
+  d1: 'tracking down the swerve', d2: 'tracking down the swerve',
+  d3: 'the sensor wiring', debounce: 'the start button',
+  d4: 'the power supply', d5: 'the calibration', d6: 'the checklist'
+};
+
+function freshState() {
+  return { node: 'start', now: START_MIN, seeds: {}, fired: [], caught: [],
+           checked: false, checklistCut: false, outOfTime: null };
+}
 
 var el = {
   stage:       Ignite.$('#stage'),
@@ -346,6 +377,7 @@ var el = {
   mid:         Ignite.$('#mid'),
   box:         Ignite.$('#box'),
   tick:        Ignite.$('#tick'),
+  found:       Ignite.$('#found'),
   dudeNote:    Ignite.$('#dudeNote'),
   dudeAvatar:  Ignite.$('#dudeNoteAvatar'),
   dudePopup:   Ignite.$('#dudePopup')
@@ -354,7 +386,7 @@ var el = {
 el.dudeAvatar.src = Ignite.art('characters/dude-ad');
 
 var ACT_OF = {
-  start: 1, break: 1, d1: 1, reflash: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
+  start: 1, break: 1, d1: 1, poke: 1, serial: 1, d2: 1, swap: 1, found: 1, d3: 1,
   power_sym: 2, d4: 2, d5: 2,
   d6: 3
 };
@@ -382,16 +414,17 @@ function drawHud() {
 
   /* One chip per decision made, so the run so far is always visible. */
   el.notebook.innerHTML = '';
-  ['loose', 'power', 'calib'].forEach(function (key) {
+  SEEDS.forEach(function (key) {
     if (!(key in state.seeds)) return;
     var risky = state.seeds[key];
     var chip = document.createElement('span');
     chip.className = 'sf-chip ' + (risky ? 'risk' : 'good');
     chip.textContent = risky ? '!' : '✓';
     chip.title = {
-      loose: risky ? 'Sensor leads left untaped'  : 'Sensor leads taped down',
-      power: risky ? 'Still running on USB power' : 'Battery pack wired in',
-      calib: risky ? 'Calibrated on the carpet'   : 'Calibrated on the gym floor'
+      loose:    risky ? 'Sensor leads left untaped'  : 'Sensor leads taped down',
+      debounce: risky ? 'Start button not debounced' : 'Start button debounced',
+      power:    risky ? 'Still running on USB power' : 'Battery pack wired in',
+      calib:    risky ? 'Calibrated on the carpet'   : 'Calibrated on the gym floor'
     }[key];
     el.notebook.appendChild(chip);
   });
@@ -406,6 +439,20 @@ function spendTime(mins) {
   el.tick.classList.add('go');
 }
 
+/* Hand out an item a choice earns. The server grants each item once, so
+   the popup only shows the first time — a replay that makes the same
+   choice gets nothing new to announce. */
+function awardFound(id) {
+  Ignite.award(id, function (granted) {
+    if (!granted.length) return;
+    var item = granted[0];
+    el.found.textContent = (item.icon || '✨') + ' Found: ' + item.name + '!';
+    el.found.classList.remove('go');
+    void el.found.offsetWidth;
+    el.found.classList.add('go');
+  });
+}
+
 /* ── Rendering ───────────────────────────────────────────────────────── */
 
 function paragraphs(list) {
@@ -416,9 +463,8 @@ function paragraphs(list) {
 
 function sayBlock(who, line) {
   if (!who) return '';
-  var isText = who === 'Ms. Chen';
-  return '<div class="sf-say' + (isText ? ' text-msg' : '') + '">' +
-           '<div class="who">' + who + (isText ? ' · text' : '') + '</div>' +
+  return '<div class="sf-say">' +
+           '<div class="who">' + who + '</div>' +
            '<div class="line">' + line + '</div>' +
          '</div>';
 }
@@ -429,7 +475,7 @@ function sayBlock(who, line) {
 var currentNote = null;
 
 function dudeNoteContent(note) {
-  return '<div class="head">💡 D.U.D.E.A.D. — ' + note.topic + '</div>' +
+  return '<div class="head">💡 D.U.D.E.A.D.: ' + note.topic + '</div>' +
          '<div class="body">' + note.body + '</div>';
 }
 
@@ -506,9 +552,8 @@ function show(id) {
           '<span class="ico">⏱</span>' +
           (mins ? '+' + mins + ' min on the clock' : 'no time added') +
         '</span>';
-      /* This is a consequence readout, not an answer key: it tells you
-         what picking this does to the clock, same as the +N popup you'd
-         see after choosing — just shown before you commit instead of after. */
+      /* A readout, not an answer key: the right fix is sometimes the
+         cheap one and sometimes not, so the number alone decides nothing. */
       if (over) btn.title = 'This runs past your judging slot.';
       btn.addEventListener('click', function () { choose(choice); });
       box.appendChild(btn);
@@ -524,31 +569,49 @@ function show(id) {
 function choose(choice) {
   spendTime(choice.cost || 0);
 
+  /* Judging does not wait for you to be ready. If this choice runs past
+     10:00 — or reaches it anywhere but on the way to the judge — she is
+     at your table now, and whatever you were doing is NOT done. This is
+     checked before the choice counts for anything: a calibration the
+     judge walked in on is not a calibration, a checklist she interrupted
+     is not a checklist, and a capacitor still in Spark's bag earns
+     nothing. */
+  if (state.now > JUDGE_MIN || (state.now >= JUDGE_MIN && choice.to !== 'judging')) {
+    if (choice.check) {
+      /* Cut off mid-checklist: every fix is already done or skipped, so
+         nothing is in pieces — you just don't get the checklist. */
+      state.now = JUDGE_MIN;
+      state.checklistCut = true;
+      drawHud();
+      judging();
+      return;
+    }
+    interrupt(state.node);
+    return;
+  }
+
+  if (choice.award) awardFound(choice.award);
+
   /* Record every decision, risky or not, so the notebook shows the whole
      run rather than only the mistakes. */
   if (choice.seed) state.seeds[choice.seed] = true;
-  else {
-    var opposite = { d3: 'loose', d4: 'power', d5: 'calib' }[state.node];
-    if (opposite) state.seeds[opposite] = false;
-  }
+  else if (SEED_OF[state.node]) state.seeds[SEED_OF[state.node]] = false;
 
   if (choice.check) state.checked = true;
 
   drawHud();
 
-  /* Judging does not wait for you to be ready. If that choice ran the
-     clock past 10:00 and you weren't already on your way to the judge,
-     she is at your table now — wherever you are in the story. */
-  if (state.now >= JUDGE_MIN && choice.to !== 'judging') { interrupt(); return; }
-
   if (choice.to === 'judging') judging();
   else show(choice.to);
 }
 
-/* Called on before you're ready. Anything you hadn't gotten to yet is
-   still exactly as broken as it was when the clock ran out. */
-function interrupt() {
-  ['loose', 'power', 'calib'].forEach(function (key) {
+/* Called on before you're ready. The job you were in the middle of is
+   unfinished, and anything you hadn't gotten to yet is still exactly as
+   broken as it was when the clock ran out. */
+function interrupt(node) {
+  state.outOfTime = DOING[node] || 'something';
+  state.now = JUDGE_MIN;             // she arrives at ten, not when you'd have finished
+  SEEDS.forEach(function (key) {
     if (!(key in state.seeds)) state.seeds[key] = true;
   });
 
@@ -558,8 +621,9 @@ function interrupt() {
   drawHud();
 
   el.box.innerHTML =
-    paragraphs(['The judge sets her clipboard down at the end of your table. You are not ready. Her schedule does not know that.']) +
-    sayBlock('Spark', '“We’re not quite—”') +
+    paragraphs(['The judge sets her clipboard down at the end of your table. You are halfway through ' +
+                state.outOfTime + ' and not ready. Her schedule does not know that.']) +
+    sayBlock('Spark', '“We’re not quite...”') +
     paragraphs(['“You are now,” she says.']) +
     '<div class="sf-next"><button class="lk-btn" id="nextBtn">Continue →</button></div>';
   el.box.scrollTop = 0;
@@ -571,7 +635,7 @@ function interrupt() {
 function judging() {
   /* The checklist is a visual inspection — it finds the wire you can see,
      and cannot find a power budget or the wrong calibration surface. */
-  var due = ['loose', 'power', 'calib'].filter(function (k) { return state.seeds[k]; });
+  var due = SEEDS.filter(function (k) { return state.seeds[k]; });
 
   if (state.checked && state.seeds.loose) {
     state.caught.push('loose');
@@ -597,10 +661,12 @@ function judging() {
   }
 
   /* Opening beat of the judging run, plus anything the checklist saved. */
-  var intro = [
-    'The judge sets her clipboard down at the end of your table and asks you to run it.',
-    'Spark puts Tracer on the start line. You press the button.'
-  ];
+  var intro = (state.outOfTime ? []
+    : state.checklistCut ? [
+        'You are halfway down the checklist when the judge sets her clipboard down at the end of your table and asks you to run it. The rest of the list will have to wait.'
+      ]
+    : ['The judge sets her clipboard down at the end of your table and asks you to run it.']
+  ).concat(['Spark puts Tracer on the start line. You press the button.']);
   var rescued = state.caught.map(function (k) { return CONSEQUENCES[k].caught; });
 
   setScene({ art: 'characters/dude-ad', lcd: state.checked ? 'READY. LET’S GO.' : 'SYSTEMS NOMINAL.' });
@@ -616,48 +682,45 @@ function judging() {
 
 function finish() {
   var n   = state.fired.length;
-  var key = n === 0 ? (state.caught.length ? 'recovered' : 'clean')
+  var key = state.outOfTime ? 'outOfTime'
+          : n === 0 ? (state.caught.length ? 'caught' : 'clean')
           : n === 1 ? 'recovered'
           : n === 2 ? 'rough'
           : 'hard';
   var end = ENDINGS[key];
 
   /* The host awards the trinket and records the score — a lesson never
-     scores itself, it reports what happened. */
-  var lateBy = Math.max(0, state.now - JUDGE_MIN);
-  var score   = Math.max(20, 100 - n * 22 - Math.min(15, lateBy * 2));
+     scores itself, it reports what happened. Running out of time caps
+     the score well below any finish that got to the judge on time, so
+     "do everything, however long it takes" is never the safe play. */
+  var score = Math.max(20, 100 - n * 22);
+  if (state.outOfTime) score = Math.max(10, Math.min(40, score) - 10);
 
   el.act.textContent = 'Ending';
   setScene({ art: 'characters/dude-ad', lcd: end.lcd });
   drawHud();
   setDudeNote(null);
 
-  var tags = ['loose', 'power', 'calib'].map(function (k) {
-    var label = { loose: 'Loose connection', power: 'Power supply', calib: 'Calibration' }[k];
-    if (state.fired.indexOf(k) > -1) return '<span class="sf-tag risk">' + label + ' — failed</span>';
-    if (state.caught.indexOf(k) > -1) return '<span class="sf-tag good">' + label + ' — caught on the checklist</span>';
-    if (state.seeds[k] === false)     return '<span class="sf-tag good">' + label + ' — handled</span>';
+  var tags = SEEDS.map(function (k) {
+    var label = { debounce: 'Start button', loose: 'Loose connection',
+                  calib: 'Calibration', power: 'Power supply' }[k];
+    if (state.fired.indexOf(k) > -1) return '<span class="sf-tag risk">' + label + ': failed</span>';
+    if (state.caught.indexOf(k) > -1) return '<span class="sf-tag good">' + label + ': caught on the checklist</span>';
+    if (state.seeds[k] === false)     return '<span class="sf-tag good">' + label + ': handled</span>';
     return '';
   }).filter(Boolean).join('');
 
-  var late = state.now - JUDGE_MIN;
-  var lateLine = late > 0
-    ? ['The judge had been waiting ' + late + ' minute' + (late === 1 ? '' : 's') +
-       ' by the time you got to the line. She does not say anything about it, which is somehow worse.']
-    : [];
-
   el.box.innerHTML =
     '<div class="sf-end-title">' + end.title + '</div>' +
-    paragraphs(lateLine) +
     paragraphs(end.text) +
     sayBlock(end.who, end.say) +
     paragraphs(end.text2) +
     '<div class="sf-scoreline">' + tags + '</div>' +
     '<div class="sf-p" style="margin-top:11px;color:var(--ink-dim);font-size:0.8rem">' +
-      'Finished at ' + clockText(state.now) + (lateBy ? ' — ' + lateBy + ' min late. ' : '. ') +
+      (state.outOfTime ? 'Out of time at 10:00, halfway through ' + state.outOfTime + '. '
+                       : 'Finished at ' + clockText(state.now) + '. ') +
       (n === 0 ? 'Nothing came due in front of the judge.'
                : n + ' problem' + (n === 1 ? '' : 's') + ' came due in front of the judge.') +
-      ' Different choices genuinely end this differently — it is worth another run.' +
     '</div>' +
     '<div class="sf-next" style="gap:9px">' +
       '<button class="lk-btn ghost" id="againBtn">Try Again</button>' +
@@ -666,7 +729,7 @@ function finish() {
   el.box.scrollTop = 0;
 
   Ignite.$('#againBtn').addEventListener('click', function () {
-    state = { node: 'start', now: START_MIN, seeds: {}, fired: [], caught: [], checked: false };
+    state = freshState();
     el.portrait.innerHTML = '';
     el.mid.innerHTML = '';
     show('start');

@@ -40,13 +40,15 @@ if os.environ.get("APP_ENV") == "production":
     sys.exit("selftest refuses to run against APP_ENV=production")
 
 import app as appmod        # noqa: E402
+from selftest_fixtures import gate_for_tests   # noqa: E402
 import db                   # noqa: E402
 
 PASSED, FAILED = [], []
 PASSWORD = "correct-horse-battery"
 
 # code-02-debug declares trinket-wrench (folded in from its `reward`), and
-# sits in a non-sequential track so it opens without a chain in front of it.
+# sits in a non-sequential track. It needs code-01-loops finished first,
+# which build_world() does for every student.
 OPEN_LESSON = "code-02-debug"
 ITS_AWARD = "trinket-wrench"
 NOT_ITS_AWARD = "badge-breadboard"
@@ -131,6 +133,8 @@ def build_world():
     for username in ("kid", "other"):
         signup(client(), "student", username=username, email=f"{username}@h.test",
                join_code=code, name=username.title())
+        db.set_lesson_status(db.user_by_username(username)["id"],
+                             "code-01-loops", "completed", None)
     WORLD.update(org=head["org_id"], code=code)
 
 
@@ -572,6 +576,7 @@ TESTS = [
 def main() -> int:
     appmod.db.init_pool(appmod.cfg)
     reset_database()
+    gate_for_tests(appmod)
     appmod.refresh_catalog()
     build_world()
 

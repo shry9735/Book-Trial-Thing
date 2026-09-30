@@ -61,6 +61,23 @@
 
   .target { font-size: 2rem; font-weight: 700; color: var(--orange); letter-spacing: 0.02em; }
   .feedback { min-height: 42px; display: flex; align-items: center; justify-content: center; }
+
+  /* The trinket this run earned, on the end card. Rarity colours match
+     the satchel's, so the same item reads the same in both places. */
+  .prize {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-radius: 10px; border: 2px solid;
+    background: #fff; text-align: left;
+  }
+  .prize-icon { font-size: 2.2rem; line-height: 1; }
+  .prize-name { font-weight: 700; }
+  .prize-rarity { font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
+  .prize-note { font-size: 0.72rem; color: var(--ink-mid); }
+  .prize.common   { border-color: #c9b99a; } .prize.common   .prize-rarity { color: #8a7a60; }
+  .prize.uncommon { border-color: #7fc3a0; } .prize.uncommon .prize-rarity { color: #2e7d55; }
+  .prize.rare     { border-color: #e0b340; } .prize.rare     .prize-rarity { color: #9a6d00; }
+  .prize.epic     { border-color: #b48ad6; } .prize.epic     .prize-rarity { color: #6a3d8f; }
+  .next-tier { font-size: 0.74rem; color: var(--ink-mid); }
 </style>
 </head>
 <body>
@@ -96,6 +113,15 @@
     <img class="lk-sprite lk-float" id="endSprite" width="120" height="120" alt="" />
     <div class="lk-title" id="endTitle">Nice work!</div>
     <div class="lk-text" id="endText"></div>
+    <div class="prize" id="prize" style="display:none">
+      <div class="prize-icon" id="prizeIcon"></div>
+      <div>
+        <div class="prize-rarity" id="prizeRarity"></div>
+        <div class="prize-name" id="prizeName"></div>
+        <div class="prize-note" id="prizeNote"></div>
+      </div>
+    </div>
+    <div class="next-tier" id="nextTier"></div>
     <button class="lk-btn lg" id="continueBtn">Continue to Quiz →</button>
   </div>
 </div>
@@ -126,6 +152,19 @@ var COLORS = [
 var ROUNDS     = 5;
 var ROUND_TIME = 15000;
 
+/* One trinket per run, named for the tolerance band: the more precise the
+   band, the rarer it is. Highest threshold first. The ids must match the
+   "awards" list in lesson.json — the server refuses anything else.
+
+   Each round is 10 points plus a second of speed bonus per second left,
+   so 125 is the ceiling and 105 needs about four seconds a resistor. */
+var PRIZES = [
+  { min: 105, id: 'trinket-band-violet', name: 'Violet Band', icon: '🟣', rarity: 'epic' },
+  { min: 85,  id: 'trinket-band-brown',  name: 'Brown Band',  icon: '🟤', rarity: 'rare' },
+  { min: 60,  id: 'trinket-band-gold',   name: 'Gold Band',   icon: '🟡', rarity: 'uncommon' },
+  { min: 0,   id: 'trinket-band-silver', name: 'Silver Band', icon: '⚪', rarity: 'common' }
+];
+
 var state = {
   round:    0,
   score:    0,
@@ -148,7 +187,13 @@ var el = {
   endcard:  Ignite.$('#endcard'),
   endTitle: Ignite.$('#endTitle'),
   endText:  Ignite.$('#endText'),
-  endSprite:Ignite.$('#endSprite')
+  endSprite:Ignite.$('#endSprite'),
+  prize:      Ignite.$('#prize'),
+  prizeIcon:  Ignite.$('#prizeIcon'),
+  prizeName:  Ignite.$('#prizeName'),
+  prizeRarity:Ignite.$('#prizeRarity'),
+  prizeNote:  Ignite.$('#prizeNote'),
+  nextTier:   Ignite.$('#nextTier')
 };
 
 var ORDINAL = ['first', 'second', 'third'];
@@ -266,6 +311,32 @@ function finish() {
     'You scored ' + state.score + ' points across ' + ROUNDS + ' resistors.';
 
   Ignite.progress(percent);
+  awardPrize(state.score);
+}
+
+function awardPrize(score) {
+  var index = 0;
+  while (score < PRIZES[index].min) index++;
+  var prize = PRIZES[index];
+  var better = PRIZES[index - 1];
+
+  el.prizeIcon.textContent   = prize.icon;
+  el.prizeName.textContent   = prize.name;
+  el.prizeRarity.textContent = prize.rarity;
+  el.prize.className         = 'prize ' + prize.rarity;
+  el.nextTier.textContent    = better
+    ? 'Score ' + better.min + ' or more for the ' + better.name + '.'
+    : 'That’s the rarest band there is.';
+
+  Ignite.award(prize.id, function (granted, ok) {
+    /* Awarding is idempotent, so an empty list on a good request means it
+       was already in the satchel. Either way the student sees what this
+       run was worth. */
+    el.prizeNote.textContent = !ok ? 'Couldn’t reach your satchel — try again later.'
+      : granted.length ? 'New! Added to your satchel.'
+      : 'Already in your satchel.';
+    el.prize.style.display = 'flex';
+  });
 }
 
 Ignite.$('#continueBtn').addEventListener('click', function () {

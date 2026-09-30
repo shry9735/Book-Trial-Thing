@@ -1085,6 +1085,7 @@ table.data tr:hover td { background: var(--brand-lt); }
 .item-rarity.common   { background: var(--border-lt); color: var(--ink-dim); border-color: var(--border); }
 .item-rarity.uncommon { background: var(--accent-lt);   color: var(--accent-dk); border-color: var(--accent-pale); }
 .item-rarity.rare     { background: #fff4dc;          color: var(--gold-dk); border-color: var(--gold); }
+.item-rarity.epic     { background: #f1e6fa;          color: #6a3d8f;        border-color: #b48ad6; }
 
 
 /* ══════════════════════════════════════════════════════════════════════

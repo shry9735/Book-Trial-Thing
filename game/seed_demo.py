@@ -145,7 +145,13 @@ STUCK_UNRESOLVED = {"resistors-basics": 2}
 # assigned you these two". Everyone else has None, which means no filter.
 ASSIGNMENTS = {"lena": ["circuits-01-breadboard", "circuits-02-led"]}
 
-ITEMS = {"ahead": ["badge-breadboard", "trinket-led", "trinket-resistor"],
+# Maya's two Color Challenge bands: Gold from a first run, then Brown (85+,
+# rare) on a replay — the rarity tiers are something to show off. The
+# Golden Capacitor is from picking Spark's capacitor in the Science Fair
+# story, which awards it on the spot rather than at the end.
+ITEMS = {"ahead": ["badge-breadboard", "trinket-led", "trinket-resistor",
+                   "trinket-band-gold", "trinket-band-brown",
+                   "trinket-golden-capacitor"],
          "stuck": ["badge-breadboard", "trinket-led"],
          "steady": ["badge-breadboard"],
          "quiet": ["badge-breadboard"]}

@@ -6,6 +6,12 @@
   "order": 30,
   "duration_min": 10,
   "reward": "trinket-resistor",
+  "awards": [
+    "trinket-band-silver",
+    "trinket-band-gold",
+    "trinket-band-brown",
+    "trinket-band-violet"
+  ],
   "description": "Read the color bands before the timer runs out.",
   "quiz": [
     {

@@ -788,7 +788,7 @@ def t_pages_render():
     # /locked answers 402 for a paywall and 403 for a gate, never 200 —
     # a "you cannot have this" page returning OK would be a lie to a cache.
     visit(student, "/locked", 402)
-    visit(student, "/locked?why=prerequisite&lesson_id=story-science-fair", 403)
+    visit(student, "/locked?why=prerequisite&lesson_id=code-02-debug", 403)
 
     teacher = client()
     login(teacher, "ms_chen")
