@@ -489,7 +489,7 @@ def t_grownup_shows_metadata():
     c = signed_in("head")
     html = c.get("/grownup/student/kid").get_data(as_text=True)
     assert "Ages 11-14" in html, "no age band on the grown-up view"
-    assert "Wants first" in html, "no prep skills on the grown-up view"
+    assert "Builds on" in html, "no prep skills on the grown-up view"
     assert "Rearrange a formula" in html, "the maths a lesson needs is not shown"
 
 
@@ -505,10 +505,10 @@ def t_grownup_shows_blocks():
 def t_grownup_leads_with_grade():
     c = signed_in("head")
     html = c.get("/grownup/student/kid").get_data(as_text=True)
-    grade_at = html.index("Standards met here")
+    grade_at = html.index("Standards met")
     lessons_at = html.index("grouped against")
     assert grade_at < lessons_at, "the lesson list came before the grade summary"
-    assert "no national US curriculum" in html, "the caveat is missing"
+    assert "national frameworks" in html, "the caveat is missing"
 
 
 @check("a parent sees the same organisation as a teacher")
@@ -519,7 +519,7 @@ def t_parent_view():
     c = signed_in("pat")
     html = c.get("/grownup/student/kid").get_data(as_text=True)
     assert "At this grade" in html
-    assert "Wants first" in html
+    assert "Builds on" in html
 
 
 @check("every grown-up page still renders across the grades")

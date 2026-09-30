@@ -33,9 +33,9 @@ passwords; they are gone, along with the JSON files they lived in.
 A parent links to a child with the six-character **student code** shown on
 that student's page in the teacher view.
 
-The login screen has Student and Teacher tabs, but they only restyle the panel —
-the account's own role decides where you land, so a kid picking the wrong tab
-still gets to the classroom.
+Everyone signs in on the same form — there is no role to pick. The account's
+own role decides where you land: students in the classroom, parents and
+teachers on the progress dashboard.
 
 ### Configuration
 

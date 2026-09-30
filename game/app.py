@@ -970,9 +970,8 @@ def home():
     """Send each role to the screen it actually wants.
 
     Students land in the classroom, grown-ups on the progress dashboard.
-    The login form has role tabs, but they only restyle the panel — this
-    is what decides where you end up, so picking the wrong tab is
-    harmless.
+    There is one login form for every role; this is what decides where
+    you end up.
     """
     user = current_user()
     if not user:
@@ -998,16 +997,15 @@ def login():
     if request.method != "POST":
         if current_user():
             return redirect(url_for("home"))
-        return render_template("login.html", role_tab=request.args.get("role", "student"))
+        return render_template("login.html")
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
-    role_tab = request.form.get("role_tab", "student")
     ip = security.client_ip(cfg.TRUSTED_PROXIES)
 
     def refuse(message: str, status: int = 200):
         flash(message, "error")
-        return render_template("login.html", role_tab=role_tab, username=username), status
+        return render_template("login.html", username=username), status
 
     # Two independent buckets: one stops a single account being ground
     # down, the other stops one host spraying many accounts.
@@ -1168,7 +1166,7 @@ def signup():
 
     if cfg.REQUIRE_EMAIL_VERIFICATION:
         flash("Check your email for a confirmation link.", "success")
-        return redirect(url_for("login", role=role))
+        return redirect(url_for("login"))
 
     start_session(user)
     return redirect(url_for("home"))

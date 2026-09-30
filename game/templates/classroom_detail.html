@@ -46,7 +46,7 @@
         </tr>
       {% else %}
         <tr><td colspan="3" class="dim">
-          Nobody is assigned. No teacher can see these students yet.
+          No teachers assigned.
         </td></tr>
       {% endfor %}
     </tbody>
@@ -110,8 +110,7 @@
   {% endif %}
 
   {% if is_admin and addable %}
-    {# Moving an existing student between classrooms stays admin-only: it
-       hands one teacher sight of another teacher's pupils. #}
+    {# Admin only. #}
     <form class="inline-form" method="POST"
           action="{{ url_for('classroom_add_student', classroom_id=classroom.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -127,26 +126,22 @@
   {% if not is_admin %}
     <div class="billing-body">
       <p class="dim small">
-        Only an admin can move students between classrooms, but you can
-        create new ones for your own class below.
+        Only admins can move students between classrooms.
       </p>
     </div>
   {% endif %}
 </div>
 
 {# ── Enrolling new students ──────────────────────────────────────────── #}
-{#  Open to any teacher of this classroom, not just an admin. The account
-    is created here and now, with no email address and a password printed
-    on the next screen — which is what makes this usable for a class of
-    twenty-eight children who mostly do not have an inbox. #}
+{#  Any teacher of this classroom. No email needed; the first password is
+    shown on the next screen. #}
 <div class="panel">
   <div class="panel-head teal">Create student logins</div>
   <div class="billing-body">
 
     <p class="login-blurb">
-      Make accounts for students who don't have one. They don't need an
-      email address — you'll get their usernames and first passwords to
-      hand out, and each student picks their own password when they sign in.
+      No email address needed. You'll get a username and temporary password
+      for each student; they choose their own password when they first sign in.
     </p>
 
     <form class="login-form" method="POST"

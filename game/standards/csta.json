@@ -7,7 +7,7 @@
   "owner": "Computer Science Teachers Association. Licensed CC BY-NC-SA 4.0 — NonCommercial.",
   "claim_status": "self_assessed",
   "licence_note": "CSTA asks that a crosswalk be reviewed by their Standards Review Team before a product publicly claims alignment (licensing@csteachers.org). Nothing here reproduces or adapts their licensed text — only the codes, which are identifiers, and our own summaries.",
-  "adoption": "Not adopted by states directly. Most state computer science standards are derived from these and from the K-12 CS Framework they share, so the codes travel well even when a state renumbers them.",
+  "adoption": "Not adopted by states directly. Most state computer science standards are derived from these and from the K-12 CS Framework they share.",
   "code_help": "2-AP-13 reads as: level 2 (grades 6-8), Algorithms and Programming, standard 13. Levels are 1A (K-2), 1B (3-5), 2 (6-8), 3A (9-10), and 3B (11-12 specialist).",
   "standards": [
     {

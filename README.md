@@ -59,6 +59,7 @@ them if you want something to look at.
 | Path | What it is |
 |---|---|
 | `demo.sh` | One command from a fresh clone to a seeded, running demo. See [`docs/DEMO.md`](docs/DEMO.md). |
+| `stop-demo.sh` | Stops the demo, keeping its data. `--wipe` deletes the database too. |
 | `game/` | The web app. Start at [`game/README.md`](game/README.md). |
 | `game/lessons/` | One folder per lesson. Drop a folder in, it appears. |
 | `game/tracks/` | One folder per track — order, staging, age band, prep skills. |

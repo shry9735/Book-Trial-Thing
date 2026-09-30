@@ -1,5 +1,4 @@
-{# Terms and Privacy. Standalone: no nav, no HUD, readable signed out —
-   somebody deciding whether to sign up has nowhere to sign in to yet. #}
+{# Terms and Privacy. Standalone and readable while signed out. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -26,14 +25,9 @@
 <div class="t-main">
 
   {% if not reviewed %}
-    {# Shown until LEGAL_REVIEWED is set. Saying this out loud is both the
-       honest thing to do and a very effective reminder. #}
+    {# Shown until LEGAL_REVIEWED is set. #}
     <div class="legal-draft">
-      <b>Draft — not yet reviewed by a lawyer.</b>
-      This page is boilerplate written to describe how Ignite Academy
-      actually works. It is a starting point for a solicitor or attorney to
-      review, not legal advice, and it has not been checked against the law
-      where you live.
+      <b>Draft.</b> This page has not yet had legal review.
     </div>
   {% endif %}
 

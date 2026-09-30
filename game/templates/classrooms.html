@@ -48,13 +48,12 @@
     <div class="login-form">
       {% if is_admin %}
         <p class="login-blurb">
-          No classrooms yet. Make one above, then put students in it — a teacher
-          only sees the students in the classrooms they're assigned to.
+          No classrooms yet. Create one above, then add students to it.
         </p>
       {% else %}
         <p class="login-blurb">
-          You're not assigned to a classroom yet, so there are no students to
-          show. An admin at your school can add you to one.
+          You're not assigned to a classroom yet. An admin at your school can
+          add you to one.
         </p>
       {% endif %}
     </div>
@@ -62,9 +61,7 @@
 {% endif %}
 
 {% if is_admin and unplaced %}
-  {# Students who signed up with the join code but are in no classroom are
-     invisible to every ordinary teacher. Surfacing them here is what stops
-     them sitting unnoticed. #}
+  {# Students in no classroom are visible only to admins. #}
   <div class="panel">
     <div class="panel-head">Not in a classroom yet ({{ unplaced | length }})</div>
     <table class="t-table">
@@ -85,8 +82,7 @@
     </table>
     <div class="billing-body">
       <p class="dim small">
-        Until somebody puts them in a classroom, only admins can see these
-        students.
+        Only admins can see students who aren't in a classroom.
       </p>
     </div>
   </div>

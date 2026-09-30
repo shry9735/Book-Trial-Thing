@@ -1,5 +1,4 @@
-{# One guide, read in the browser. Most of these get opened on a phone at a
-   kitchen table, where a downloaded .md file would be useless. #}
+{# One guide, rendered in the browser. #}
 {% extends "teacher_base.html" %}
 {% block title %}{{ resource.title }} — Ignite Academy{% endblock %}
 
@@ -22,8 +21,7 @@
 
 {% if resource.kind == 'answers' %}
   <div class="std-caveat res-warn">
-    <b>This is an answer key.</b> A student who reads the working before
-    trying it gets nothing out of the lesson.
+    <b>Answer key.</b> For grown-ups — not for students.
   </div>
 {% endif %}
 

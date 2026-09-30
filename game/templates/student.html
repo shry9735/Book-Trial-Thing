@@ -41,18 +41,14 @@
   </div>
 </div>
 
-{# ── Where this child stands against their grade ─────────────────────
-   The page leads with this rather than with a list of our lessons, because
-   "is my kid where they should be" is the question a grown-up arrives
-   with. The caveat is not optional: there is no national curriculum, so
-   these numbers are a framework's opinion, not a verdict. #}
+{# ── Where this child stands against their grade ───────────────────── #}
 <div class="panel grade-panel">
   <div class="panel-head teal">
     {{ grade_label(grade) }}
     <span class="head-note">
       {% if grade_source == 'recorded' %}{{ student.name.split(' ')[0] }}'s grade
-      {% elif grade_source == 'chosen' %}just looking
-      {% else %}a guess — nobody has set a grade{% endif %}
+      {% elif grade_source == 'chosen' %}preview
+      {% else %}estimated — no grade set{% endif %}
     </span>
   </div>
   <div class="billing-body">
@@ -60,15 +56,15 @@
       <div class="std-summary">
         <div class="std-stat">
           <div class="std-stat-num done">{{ report.totals.covered }}</div>
-          <div class="std-stat-lbl">Standards met here</div>
+          <div class="std-stat-lbl">Standards met</div>
         </div>
         <div class="std-stat">
           <div class="std-stat-num open">{{ report.taught }}</div>
-          <div class="std-stat-lbl">We teach at this grade</div>
+          <div class="std-stat-lbl">Covered by lessons</div>
         </div>
         <div class="std-stat">
           <div class="std-stat-num none">{{ report.total }}</div>
-          <div class="std-stat-lbl">Exist at this grade</div>
+          <div class="std-stat-lbl">Standards at this grade</div>
         </div>
       </div>
       <form method="GET" action="{{ url_for('student_detail', username=student.username) }}">
@@ -81,9 +77,7 @@
       </form>
     </div>
     <p class="dim small" style="margin:10px 0 0">
-      There is no national US curriculum — each state sets its own. These are
-      the frameworks most state standards are built from, and the match to our
-      lessons is our own reading.
+      Based on the national frameworks most state standards follow.
       <a href="{{ url_for('student_standards', username=student.username) }}">
         See it standard by standard →</a>
     </p>
@@ -234,8 +228,7 @@
                 <div class="row-track">{{ row.track_title }}</div>
 
                 {% if row.block %}
-                  {# Says WHICH kind of block and what clears it. "Locked" on
-                     its own sends a parent to support. #}
+                  {# The kind of block and what clears it. #}
                   <div class="row-block block-{{ row.block.reason }}">
                     {%- if row.block.reason == 'unassigned' %}📋 Needs handing out
                     {%- elif row.block.reason == 'prerequisite' %}🔗 Blocked
@@ -269,10 +262,9 @@
                 {% endif %}
 
                 {% if row.skills %}
-                  {# The whole point of the skills list: a grown-up can see
-                     what maths a lesson leans on before their child stalls. #}
+                  {# Skills the lesson builds on. #}
                   <div class="row-skills">
-                    <b>Wants first:</b>
+                    <b>Builds on:</b>
                     {% for skill in row.skills %}{{ skill.name }}{% if skill.subject %}
                       <span class="skill-subject">{{ skill.subject }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
                   </div>
@@ -306,9 +298,7 @@
 </div>
 
 {# ── Account admin ───────────────────────────────────────────────────── #}
-{#  Teachers only. A parent viewing their own child gets none of this: the
-    reset is a teacher's classroom-management tool, and deletion belongs
-    to whoever answers for the organisation. #}
+{#  Teachers only. Deleting also requires org admin. #}
 {% if is_teacher %}
   <div class="panel">
     <div class="panel-head">Account</div>
@@ -327,9 +317,8 @@
       </form>
 
       <p class="dim small">
-        Use this when they've forgotten it. You'll get a new one to hand
-        over on the next screen, and they'll pick their own when they sign
-        in. It signs them out of any device they're already on.
+        Shows a temporary password on the next screen. They choose a new
+        one when they sign in, and are signed out everywhere else.
       </p>
 
       {% if user.org_admin %}

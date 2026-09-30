@@ -1,7 +1,6 @@
 # Voltage & Ohm's Law — answers and worked reasoning
 
-**This is the answer key. Keep it to yourself** — a student who sees the
-working before trying it gets nothing out of the lesson.
+**Answer key — for grown-ups only.**
 
 ## Quiz
 

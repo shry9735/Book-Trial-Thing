@@ -382,7 +382,7 @@ def t_paywall():
         # have it — silently hiding it would just look broken.
         index = c.get("/grownup/resources").get_data(as_text=True)
         assert "answers and reasoning" in index, "the paid guide vanished from the index"
-        assert "Needs a subscription" in index, "no explanation of why it is shut"
+        assert "Requires a subscription" in index, "no explanation of why it is shut"
 
         # A guide to a lesson that is still free is unaffected.
         assert c.get(download_url(TRACK_GUIDE) + "/read").status_code == 200

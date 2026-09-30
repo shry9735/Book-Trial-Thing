@@ -2,10 +2,10 @@
 {% block title %}{{ student.name }} against the standards{% endblock %}
 
 {% macro state_pill(state) -%}
-  {%- if state == 'covered' %}<span class="std-dot done" title="Finished a lesson for this">✓</span>
-  {%- elif state == 'started' %}<span class="std-dot part" title="Started a lesson for this">⋯</span>
-  {%- elif state == 'available' %}<span class="std-dot open" title="We teach this — not started">○</span>
-  {%- else %}<span class="std-dot none" title="We don't teach this">–</span>{% endif -%}
+  {%- if state == 'covered' %}<span class="std-dot done" title="Finished">✓</span>
+  {%- elif state == 'started' %}<span class="std-dot part" title="Started">⋯</span>
+  {%- elif state == 'available' %}<span class="std-dot open" title="Not started">○</span>
+  {%- else %}<span class="std-dot none" title="Not covered">–</span>{% endif -%}
 {%- endmacro %}
 
 {% block content %}
@@ -19,16 +19,10 @@
   </div>
 </div>
 
-{# ── The caveat, before any number ─────────────────────────────────────
-   Deliberately above the results, not tucked in a footnote. A parent who
-   reads "4 of 34" without knowing whose 34 it is has been misled. #}
+{# Above the results so the numbers are read with their source in mind. #}
 <div class="std-caveat">
-  <b>There is no national curriculum in the United States.</b>
-  Each state sets its own, so what your child is actually held to depends on
-  where you live. What is below are the widely used frameworks most state
-  standards are built from — and our own reading of which of our lessons
-  touch them. Nobody has audited that reading. Treat it as a conversation
-  starter with a teacher, not a report card.
+  These are the national frameworks most state standards are based on.
+  Your state's standards may differ.
 </div>
 
 {# ── Grade picker ──────────────────────────────────────────────────────── #}
@@ -37,30 +31,25 @@
     Which grade?
     <span class="head-note">
       {% if grade_source == 'recorded' %}from {{ student.name }}'s record
-      {% elif grade_source == 'chosen' %}just looking
-      {% else %}a guess{% endif %}
+      {% elif grade_source == 'chosen' %}preview
+      {% else %}estimated{% endif %}
     </span>
   </div>
   <div class="billing-body">
 
     {% if grade_source == 'guessed' %}
       <p class="login-blurb">
-        Nobody has told us what grade {{ student.name }} is in, so this is
-        showing <b>{{ report.grade_label }}</b> as a starting point. We don't
-        hold a birthday, and grade cut-offs vary by state — set it below and
-        the tracker stops guessing.
+        No grade is set for {{ student.name }}, so this shows
+        <b>{{ report.grade_label }}</b>. Set their grade below.
       </p>
     {% else %}
       <p class="login-blurb">
-        Showing <b>{{ report.grade_label }}</b> — where most children are
-        {{ report.ages[0] }} or {{ report.ages[1] }} years old.
+        Showing <b>{{ report.grade_label }}</b> (ages {{ report.ages[0] }}–{{ report.ages[1] }}).
       </p>
     {% endif %}
 
-    {# Two controls that look alike and do different things, so each says
-       which. The first only changes what is on screen; the second changes
-       the student's record. Getting that backwards would be a parent
-       filing their child in the wrong grade by accident. #}
+    {# Two similar controls: the first only changes this page, the second
+       saves the student's grade. Each is labelled to say which. #}
     <div class="grade-controls">
 
       <form method="GET"
@@ -76,7 +65,7 @@
           </select>
           <noscript><button type="submit" class="btn sm">Show</button></noscript>
         </div>
-        <div class="grade-hint">Just changes this page.</div>
+        <div class="grade-hint">Changes this page only.</div>
       </form>
 
       <form method="POST"
@@ -87,7 +76,7 @@
         </label>
         <div class="grade-row">
           <select id="record" name="grade_level">
-            <option value="">Nobody has said</option>
+            <option value="">Not set</option>
             {% for g in grades %}
               <option value="{{ g }}"
                       {% if student.grade_level is not none and g == student.grade_level %}selected{% endif %}>
@@ -97,7 +86,7 @@
           </select>
           <button type="submit" class="btn sm">Save</button>
         </div>
-        <div class="grade-hint">Remembered, and used as the default here.</div>
+        <div class="grade-hint">Saved to their profile.</div>
       </form>
 
     </div>
@@ -124,27 +113,19 @@
         </div>
         <div class="std-stat">
           <div class="std-stat-num open">{{ report.totals.available }}</div>
-          <div class="std-stat-lbl">We teach it — not begun</div>
+          <div class="std-stat-lbl">Not started</div>
         </div>
         <div class="std-stat">
           <div class="std-stat-num none">{{ report.totals.uncovered }}</div>
-          <div class="std-stat-lbl">We don't teach it</div>
+          <div class="std-stat-lbl">Not covered</div>
         </div>
       </div>
 
-      {# The honest sentence. Both denominators, because either one alone
-         flatters us: "4 of 7" hides what we skip, "4 of 34" hides that we
-         never claimed the other 27. #}
+      {# Both totals: standards at this grade, and the ones with lessons. #}
       <p class="login-blurb">
-        Of the {{ report.total }} standards at this grade, Ignite Academy has
-        lessons for <b>{{ report.taught }}</b>.
-        {{ student.name }} has finished
-        <b>{{ report.totals.covered }}</b> of those.
-        {% if report.totals.uncovered %}
-          The other {{ report.totals.uncovered }} are things you'd cover
-          elsewhere — we're an electronics and coding course, not a whole
-          curriculum.
-        {% endif %}
+        Ignite Academy has lessons for <b>{{ report.taught }}</b> of the
+        {{ report.total }} standards at this grade.
+        {{ student.name }} has finished <b>{{ report.totals.covered }}</b>.
       </p>
     </div>
   </div>
@@ -165,12 +146,11 @@
           {% if framework.code_help %}<br />{{ framework.code_help }}{% endif %}
         </p>
         <p class="dim small">
-          The wording below is ours, written for parents.
+          Descriptions are summaries.
           <a href="{{ framework.url }}" target="_blank" rel="noopener noreferrer">
             Read the official standards →</a>
           {% if framework.claim_status != 'verified' %}
-            <br /><b>Not endorsed by {{ framework.short }}</b> — the match
-            between their standards and our lessons is our own assessment.
+            <br />Lesson alignment is not endorsed by {{ framework.short }}.
           {% endif %}
         </p>
       </div>
@@ -192,7 +172,7 @@
                       {% endfor %}
                     </div>
                   {% else %}
-                    <div class="std-lessons dim">No lesson here covers this.</div>
+                    <div class="std-lessons dim">No lessons yet.</div>
                   {% endif %}
                 </td>
               </tr>
@@ -207,8 +187,8 @@
   <div class="panel">
     <div class="billing-body">
       <p class="login-blurb">
-        We don't have standards on file for {{ report.grade_label }} yet. Our
-        lessons aim at roughly 6th grade and up — try a higher grade.
+        No standards are listed for {{ report.grade_label }}. Lessons start
+        at 6th grade.
       </p>
     </div>
   </div>

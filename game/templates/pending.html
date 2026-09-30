@@ -2,18 +2,13 @@
 {% block title %}Waiting for approval — Ignite Academy{% endblock %}
 
 {% block content %}
-{# A pending member has a real account but no seat yet. This says who can
-   fix that, so nobody assumes the site is broken. #}
+{# Account exists but a teacher has not approved it yet. #}
 <div class="panel join-panel">
   <div class="panel-head">Almost there</div>
   <div class="login-form">
     <p class="login-blurb">
-      Your account for <b>{{ org.name if org else 'your class' }}</b> is set up, but a
-      teacher still has to let you in. You'll be able to start as soon as they do.
-    </p>
-    <p class="login-blurb">
-      If it's taking a while, ask them to check the pending list on their
-      class page.
+      Your account for <b>{{ org.name if org else 'your class' }}</b> is set up.
+      A teacher needs to approve it before you can start.
     </p>
     <form method="POST" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

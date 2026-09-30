@@ -5,7 +5,7 @@
 {# Reached by redirect from Stripe. It grants nothing: entitlement flips
    when the signed webhook lands, which is usually within seconds. #}
 <div class="panel join-panel">
-  <div class="panel-head teal">Thanks — that's gone through</div>
+  <div class="panel-head teal">Thank you</div>
   <div class="login-form">
     {% if entitlement.active %}
       <p class="login-blurb">
@@ -13,9 +13,8 @@
       </p>
     {% else %}
       <p class="login-blurb">
-        Stripe has taken the payment and is confirming it with us now. This
-        usually takes a few seconds — reload this page and it should show as
-        active.
+        Your payment is being confirmed. This usually takes a few seconds —
+        reload the page to see it.
       </p>
     {% endif %}
     <a class="btn block" href="{{ url_for('billing_home') }}">Go to billing</a>

@@ -22,8 +22,7 @@
     <a class="btn sm ghost" href="{{ url_for('billing_home') }}">Billing</a>
   {% endif %}
   {% if store_url %}
-    {# Physical goods are sold through an Amazon storefront, which runs its
-       own checkout. Nothing about it touches this app. #}
+    {# External storefront with its own checkout. #}
     <a class="btn sm ghost" href="{{ store_url }}" target="_blank" rel="noopener noreferrer">Shop</a>
   {% endif %}
   <a class="btn sm ghost" href="{{ url_for('resources_home') }}">Helping at home</a>

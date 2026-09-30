@@ -27,14 +27,14 @@
           {% if code == 404 %}
             That page doesn't exist, or isn't yours to see.
           {% elif code == 429 %}
-            Too many tries in a row. Wait a few minutes and have another go.
+            Too many attempts. Wait a few minutes and try again.
           {% elif code == 500 %}
-            That's on us. The problem has been logged — try again in a moment.
+            Something went wrong on our end. Try again in a moment.
           {% else %}
             {{ message or "That request couldn't be completed." }}
           {% endif %}
         </p>
-        <a class="btn block lg" href="{{ url_for('home') }}">Back to safety</a>
+        <a class="btn block lg" href="{{ url_for('home') }}">Back to home</a>
       </div>
     </div>
   </div>

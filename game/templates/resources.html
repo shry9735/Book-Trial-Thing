@@ -17,7 +17,7 @@
           <span class="res-tag" title="Not shown to teachers">For home</span>
         {% endif %}
         {% if item.kind == 'answers' %}
-          <span class="res-tag warn" title="Don't let a student read this">Answer key</span>
+          <span class="res-tag warn" title="Not for students">Answer key</span>
         {% endif %}
       </div>
       {% if item.description %}
@@ -26,7 +26,7 @@
 
       <div class="res-actions">
         {% if locked %}
-          <span class="dim small">Needs a subscription — same as the lesson.</span>
+          <span class="dim small">Requires a subscription.</span>
         {% elif item.url %}
           <a class="btn sm ghost" href="{{ item.url }}"
              target="_blank" rel="noopener noreferrer">Open →</a>
@@ -53,13 +53,8 @@
 </div>
 
 <div class="std-caveat">
-  <b>None of this is visible to students.</b>
-  These are notes for you — what a lesson is really about, the maths it
-  leans on, and how to help without taking over. Answer keys are in here
-  too, so keep the screen to yourself.
-  {% if role == 'teacher' %}
-    Material a family has marked for home only is not shown to teachers.
-  {% endif %}
+  <b>Students can't see this page.</b>
+  Guides and answer keys for each lesson.
 </div>
 
 {% for group in groups %}
@@ -74,11 +69,9 @@
       {% endif %}
 
       {% if group.skills %}
-        {# The same advisory list the student pages carry. A grown-up
-           deciding whether to sit down with their child wants to know what
-           it leans on before they start, not after. #}
+        {# Skills the track builds on. #}
         <p class="dim small">
-          <b>Leans on:</b>
+          <b>Builds on:</b>
           {% for skill in group.skills %}{{ skill.name }}{% if skill.subject %}
             <span class="skill-subject">{{ skill.subject }}</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
         </p>
@@ -105,7 +98,7 @@
   <div class="panel">
     <div class="billing-body">
       <p class="login-blurb">
-        Nothing here yet. Guides get added alongside the lessons.
+        No guides yet.
       </p>
     </div>
   </div>

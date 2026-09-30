@@ -350,7 +350,7 @@ def t_recorded_grade_used():
     c = signed_in("pat")
     html = c.get("/grownup/student/kid/standards").get_data(as_text=True)
     assert "6th grade" in html, "the recorded grade was not used"
-    assert "a guess" not in html, "a recorded grade was still labelled a guess"
+    assert "estimated" not in html, "a recorded grade was still labelled estimated"
 
 
 @check("with no grade recorded the page says it is guessing")
@@ -358,7 +358,7 @@ def t_guessed_grade_labelled():
     db.set_grade_level(db.user_by_username("other")["id"], None)
     c = signed_in("head")
     html = c.get("/grownup/student/other/standards").get_data(as_text=True)
-    assert "a guess" in html, "a guessed grade was presented as fact"
+    assert "estimated" in html, "a guessed grade was presented as fact"
 
 
 @check("the grade can be cleared back to not set")
@@ -463,14 +463,14 @@ def t_anonymous_blocked():
 
 # ── The page ────────────────────────────────────────────────────────────────────
 
-@check("the page says there is no national curriculum, above the numbers")
+@check("the page names the frameworks it measures against, above the numbers")
 def t_caveat_present():
     # Not a nicety. A parent reading "4 of 34" without knowing whose 34 it
     # is has been misled about something they may act on.
     c = signed_in("pat")
     html = c.get("/grownup/student/kid/standards").get_data(as_text=True)
-    assert "no national curriculum" in html.lower(), "the caveat is missing"
-    caveat = html.lower().index("no national curriculum")
+    assert "national frameworks" in html.lower(), "the caveat is missing"
+    caveat = html.lower().index("national frameworks")
     glance = html.lower().find("at a glance")
     assert glance == -1 or caveat < glance, "the caveat sits below the numbers"
 
@@ -480,7 +480,7 @@ def t_not_endorsed():
     c = signed_in("pat")
     html = c.get("/grownup/student/kid/standards").get_data(as_text=True)
     assert "not endorsed" in html.lower(), "no disclaimer of endorsement"
-    assert "own assessment" in html.lower()
+    assert "alignment" in html.lower()
 
 
 @check("every framework links out to its official text")

@@ -21,36 +21,16 @@
       <div class="tagline">Inspire &amp; Grow New Innovation</div>
     </div>
 
-    {# Tabs restyle the panel; the account's own role decides where you land,
-       so choosing the "wrong" one is harmless. #}
-    <div class="role-tabs">
-      <button type="button" class="role-tab {% if role_tab != 'teacher' %}active{% endif %}"
-              data-role="student" onclick="pickRole('student')">
-        🎒 Student
-      </button>
-      <button type="button" class="role-tab {% if role_tab == 'teacher' %}active{% endif %}"
-              data-role="teacher" onclick="pickRole('teacher')">
-        📋 Parent / Teacher
-      </button>
-    </div>
-
     <div class="panel">
-      <div class="panel-head {% if role_tab == 'teacher' %}teal{% endif %}" id="panelHead">
-        <span id="panelHeadText">
-          {% if role_tab == 'teacher' %}Class &amp; Progress Tools{% else %}Enter the Classroom{% endif %}
-        </span>
-      </div>
+      {# One form for everyone: the account's own role decides where you
+         land, so there is nothing to pick before signing in. #}
+      <div class="panel-head">Sign In</div>
 
       <form class="login-form" method="POST" action="{{ url_for('login') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <input type="hidden" name="role_tab" id="roleTab" value="{{ role_tab }}" />
 
-        <p class="login-blurb" id="blurb">
-          {% if role_tab == 'teacher' %}
-            Create groups, add students, and track who has finished what.
-          {% else %}
-            Sign in to pick up your lessons where you left off.
-          {% endif %}
+        <p class="login-blurb">
+          Students, parents and teachers all sign in here.
         </p>
 
         {% with msgs = get_flashed_messages(with_categories=true) %}
@@ -75,7 +55,7 @@
                  autocomplete="current-password" required />
         </div>
 
-        <button type="submit" class="btn block lg" id="submitBtn">Sign In</button>
+        <button type="submit" class="btn block lg">Sign In</button>
 
         <div class="hint-card">
           No account yet?
@@ -109,26 +89,6 @@
 
   </div>
 </div>
-
-<script>
-  var COPY = {
-    student: { head: 'Enter the Classroom',      blurb: 'Sign in to pick up your lessons where you left off.' },
-    teacher: { head: 'Class & Progress Tools',   blurb: 'Create groups, add students, and track who has finished what.' }
-  };
-
-  function pickRole(role) {
-    document.querySelectorAll('.role-tab').forEach(function (t) {
-      t.classList.toggle('active', t.dataset.role === role);
-    });
-    document.getElementById('roleTab').value = role;
-    document.getElementById('panelHead').classList.toggle('teal', role === 'teacher');
-    document.getElementById('panelHeadText').textContent = COPY[role].head;
-    document.getElementById('blurb').textContent = COPY[role].blurb;
-    document.getElementById('submitBtn').classList.toggle('teal', role === 'teacher');
-  }
-
-  pickRole('{{ role_tab }}' === 'teacher' ? 'teacher' : 'student');
-</script>
 
 </body>
 </html>
