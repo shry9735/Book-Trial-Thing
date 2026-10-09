@@ -432,6 +432,11 @@ def main() -> None:
         help="Style prefix prepended to every image prompt.",
     )
     parser.add_argument(
+        "--prompts-file",
+        help="JSON of {label: full prompt}, e.g. Book3/art_prompts.json. Uses these "
+             "prompts as written (style included) instead of asking Ollama.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse the book and print what would be generated without calling any API.",
@@ -500,6 +505,10 @@ def main() -> None:
 
     # ── Generate ──
     style = args.style
+    written_prompts = None
+    if args.prompts_file:
+        written_prompts = json.loads(Path(args.prompts_file).read_text())
+        print(f"Using {len(written_prompts)} written prompt(s) from {args.prompts_file}")
 
     for i, (label, page_text) in enumerate(pages, 1):
         out_path = out_dir / f"{label}.png"
@@ -515,15 +524,22 @@ def main() -> None:
             print(f"{prefix} — DRY RUN — '{preview}…'")
             continue
 
-        # Step 1: generate image prompt via Ollama
-        print(f"{prefix} — generating prompt…", end=" ", flush=True)
-        try:
-            raw_prompt = generate_prompt(page_text)
-        except Exception as e:
-            print(f"FAILED (Ollama): {e}")
-            continue
-        full_prompt = f"{style}, {raw_prompt}"
-        print(f"OK\n           prompt: {full_prompt[:100]}…")
+        # Step 1: the image prompt — written ahead of time, or via Ollama
+        if written_prompts is not None:
+            if label not in written_prompts:
+                print(f"{prefix} — skipped (no prompt for {label} in --prompts-file)")
+                continue
+            full_prompt = written_prompts[label]
+            print(f"{prefix}\n           prompt: {full_prompt[:100]}…")
+        else:
+            print(f"{prefix} — generating prompt…", end=" ", flush=True)
+            try:
+                raw_prompt = generate_prompt(page_text)
+            except Exception as e:
+                print(f"FAILED (Ollama): {e}")
+                continue
+            full_prompt = f"{style}, {raw_prompt}"
+            print(f"OK\n           prompt: {full_prompt[:100]}…")
 
         if args.prompts_only:
             print(f"           (--prompts-only: skipping image generation)")
