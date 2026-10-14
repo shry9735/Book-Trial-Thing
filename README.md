@@ -74,7 +74,8 @@ them if you want something to look at.
 | `deploy/` | nginx config and TLS certificate mount point. |
 | `make_epub.py` | Builds an EPUB from the same Markdown the lessons use. |
 | `ingest.py`, `query.py`, `webserver/` | Local RAG authoring tools — **not** part of the hosted app. |
-| `Book1/`, `Book2/` | Manuscript source. |
+| `Book1/`, `Book2/`, `Book3/` | Manuscript source. `Book3/` is *Lost Signal*, built by `build_book.py`. |
+| `characters/` | The cast: every character's profile, voice, backstory and art, and [`cast.yaml`](characters/cast.yaml), the one place a character's look is written down. Start at [`characters/README.md`](characters/README.md). |
 
 ---
 

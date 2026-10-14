@@ -56,6 +56,7 @@ import time
 from pathlib import Path
 
 import requests
+import yaml
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -72,13 +73,28 @@ STYLE_PREFIX = (
     "no text, no words"
 )
 
+# Every character's look comes from the shared cast, the same file the Lost
+# Signal build reads. This used to be written out here by hand, and it had
+# drifted: Spark had dark curly hair and D.U.D.E.A.D. was a small wheeled
+# robot, while every finished picture showed spiky blond hair and a
+# kid-sized humanoid. One definition, read by both, is the fix.
+CAST_FILE = Path(__file__).resolve().parent / "characters" / "cast.yaml"
+
+
+def character_looks() -> str:
+    """'Spark = 12-year-old boy, ...; Bitsy = ...' for every canon character."""
+    cast = yaml.safe_load(CAST_FILE.read_text(encoding="utf-8"))
+    return "; ".join(f"{entry['name']} = {' '.join(entry['look'].split())}"
+                     for entry in cast.values() if entry.get("status") == "canon")
+
+
 # Ollama system prompt that turns page text into an image prompt
-OLLAMA_SYSTEM = """\
+OLLAMA_SYSTEM = f"""\
 You are an art director creating illustration briefs for a children's book aimed at 10-year-olds.
 
 Given a page of text, write ONE concise image prompt (max 60 words) that:
 - Describes the key visual moment on the page
-- Names any characters present (Spark = boy with dark curly hair; Bitsy = girl with braids; D.U.D.E.A.D. = small wheeled robot with LCD screen)
+- Names any characters present, drawn exactly like this: {character_looks()}
 - Specifies the setting and mood
 - Avoids narrative spoilers
 - Does NOT include style words (those are added automatically)
@@ -542,11 +558,11 @@ def main() -> None:
             print(f"OK\n           prompt: {full_prompt[:100]}…")
 
         if args.prompts_only:
-            print(f"           (--prompts-only: skipping image generation)")
+            print("           (--prompts-only: skipping image generation)")
             continue
 
         # Step 2: generate image via ComfyUI
-        print(f"           rendering image…", end=" ", flush=True)
+        print("           rendering image…", end=" ", flush=True)
         try:
             image_bytes = generate_image(workflow, full_prompt)
         except Exception as e:

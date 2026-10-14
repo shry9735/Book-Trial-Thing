@@ -1864,7 +1864,7 @@ def recent_activity(entries: dict[str, dict], limit: int = 8) -> list[dict]:
 
 # ── Student screens ─────────────────────────────────────────────────────────────
 
-# DUDE_Ad's classroom greeting — robot Mr. T, but a few words tops.
+# D.U.D.E.A.D.'s classroom greeting — robot Mr. T, but a few words tops.
 DUDE_LINES = [
     "Let's build somethin'!",
     "I pity the bug!",

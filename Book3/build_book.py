@@ -7,7 +7,11 @@ Inputs (all in Book3/):
     pages.yaml         page numbers, locked once assigned (see below)
     front.md           front matter; {{MISSION_LOG}} expands to the log
     text/*.md          the prose, one section per page:  === A1-OPEN ===
-    art_prompts.yaml   style, character sheet, and one scene per page
+    art_prompts.yaml   style and one scene per page
+
+and the cast, from outside this book:
+    ../characters/cast.yaml   every character's name and look, shared with
+                              generate_art.py so the two can never disagree
 
 Outputs:
     story.md           '## Page N' per page, ready for make_epub.py
@@ -49,6 +53,23 @@ ACT_ORDER = (1, 2, 3, 4, 0)
 def load_yaml(name: str):
     path = HERE / name
     return yaml.safe_load(path.read_text()) if path.exists() else None
+
+
+CAST_FILE = HERE.parent / "characters" / "cast.yaml"
+
+
+def load_cast() -> dict:
+    """
+    The characters a scene can name, as {"SPARK": {"name", "look"}, ...}.
+
+    Read from characters/cast.yaml rather than kept here, so a character
+    looks the same in this book, in generate_art.py and in the character
+    bible. Only `canon` entries: a look somebody has merely proposed must
+    not quietly start appearing in finished art.
+    """
+    cast = yaml.safe_load(CAST_FILE.read_text())
+    return {token: {"name": entry["name"], "look": " ".join(entry["look"].split())}
+            for token, entry in cast.items() if entry.get("status") == "canon"}
 
 
 # ── page numbers ───────────────────────────────────────────────────────
@@ -211,6 +232,7 @@ def placeholder(art: dict, label: str, scene: str) -> str:
 def main() -> int:
     net = load_yaml("network.yaml")
     art = load_yaml("art_prompts.yaml")
+    art["characters"] = load_cast()
     pages = assign_pages(net)
     text = load_text()
     scenes = art["scenes"]

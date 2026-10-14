@@ -82,7 +82,7 @@ To import from somewhere other than the inbox: `python import_assets.py path/to/
 | `characters/avatar-student.*` | HUD portrait for a student |
 | `characters/avatar-parent.*` | HUD portrait for a parent |
 | `characters/avatar-teacher.*` | HUD portrait for a teacher |
-| `characters/dude-ad.*` | DUDE_Ad, the classroom mascot |
+| `characters/dude-ad.*` | D.U.D.E.A.D., the classroom mascot |
 | `ui/logo.*` | Login crest — replaces the 🔥 mark if present |
 | `lessons/<lesson-id>.*` | Lesson card thumbnail / video poster |
 | `books/<book-id>.*` | Book cover on the landing page (ids from `data/books.json`) |

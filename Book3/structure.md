@@ -13,7 +13,7 @@ with no connection to the game or the website.
 | `check_network.py` | Plays every possible reader through the map to prove it holds together |
 | `pages.yaml` | Locked page numbers |
 | `front.md`, `text/*.md` | The prose, one `=== PAGE-ID ===` section per page |
-| `art_prompts.yaml` | Style, character sheet and one illustration scene per page |
+| `art_prompts.yaml` | Style and one illustration scene per page. The character sheet is [`characters/cast.yaml`](../characters/cast.yaml) |
 | `build_book.py` | Assembles `story.md` and `art_prompts.json` (generated; edit the sources) |
 
 ```
@@ -223,7 +223,7 @@ python make_epub.py Book3/story.md -t "SPARK! Lost Signal" --art-dir Book3/art/ 
     --cover Book3/art/front.png -o Book3/spark-lost-signal.epub
 ```
 
-**Character sheet** (in `art_prompts.yaml`): Spark and D.U.D.E.A.D. match the
+**Character sheet** (in [`characters/cast.yaml`](../characters/cast.yaml)): Spark and D.U.D.E.A.D. match the
 game's portrait art. **Bitsy has no existing art. Her look (brown skin, two
 dark braids, purple glasses, teal hoodie) is a placeholder choice.** Change it
 in one place and every prompt updates. Generate her character sheet first

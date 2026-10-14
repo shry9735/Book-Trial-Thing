@@ -23,6 +23,10 @@
 # server never opens an image, it just serves the bytes.
 Pillow>=10.0
 
+# Book3/build_book.py and generate_art.py read the cast and the page map
+# from YAML. Was imported but never listed here.
+PyYAML>=6.0
+
 ebooklib>=0.18
 beautifulsoup4>=4.12
 qdrant-client>=1.9

@@ -28,48 +28,9 @@ style: >-
   simple shapes, no readable text, no letters, no words, no captions,
   no watermark.
 
-characters:
-  SPARK:
-    name: Spark
-    look: >-
-      12-year-old boy, messy spiky blond hair, big brown eyes, rosy cheeks,
-      yellow T-shirt under an open maroon vest, maroon trousers, yellow
-      canvas sneakers
-  BITSY:
-    name: Bitsy
-    look: >-
-      12-year-old girl, warm brown skin, two long dark-brown braids with
-      teal hair ties, round purple glasses, teal hoodie with sleeves pushed
-      up, dark jeans, white sneakers with purple laces
-  DUDE:
-    name: D.U.D.E.A.D.
-    look: >-
-      kid-sized friendly humanoid robot, rounded white boxy head with a wide
-      glowing yellow visor showing two big round cartoon eyes and a small
-      smile, round yellow ear-pieces, thin antenna topped with a yellow
-      ball, white boxy torso with a chunky gold chain necklace, maroon
-      segmented arms and legs with gold bolts, oversized yellow sneakers
-  TORRES:
-    name: Mr. Torres
-    look: >-
-      calm man in his fifties, short salt-and-pepper hair, neat gray beard,
-      red-and-black flannel shirt under a brown canvas work vest, reading
-      glasses on a cord
-  LINDQVIST:
-    name: Mrs. Lindqvist
-    look: >-
-      sturdy farmer woman in her sixties, short silver hair, tan barn
-      jacket, rubber boots
-  OKAFOR:
-    name: Mr. Okafor
-    look: >-
-      kind older man, close-cropped gray hair, glasses, cozy green cardigan,
-      an orange cat riding on his shoulder
-  REYES:
-    name: Officer Reyes
-    look: >-
-      friendly park ranger woman, olive-green uniform, wide-brimmed ranger
-      hat, rubber gloves
+# The character sheet lives in characters/cast.yaml, shared with
+# generate_art.py and the character bible. Write {SPARK}, {BITSY}, {DUDE},
+# {TORRES}, {LINDQVIST}, {OKAFOR} or {REYES} in a scene to put them in it.
 
 scenes:
 

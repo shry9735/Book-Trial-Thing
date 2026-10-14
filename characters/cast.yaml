@@ -1,0 +1,109 @@
+# The cast: one definition of every character's name and look.
+#
+# This is the single source both illustration tools read:
+#
+#   Book3/build_book.py   puts a character's look into every Lost Signal
+#                         prompt that names them, as {SPARK}, {DUDE} ...
+#   generate_art.py       tells the prompt-writing model what each
+#                         character looks like
+#
+# Change a look here and the next build of either picks it up. Do not copy
+# a look into another file: that is how Spark ended up with dark curly hair
+# in one tool and spiky blond hair everywhere else.
+#
+# status   canon     established by a book, the game or the art. Used.
+#          proposed  suggested in this folder, not yet agreed. Ignored by
+#                    both tools until you change it to canon.
+# folder   the profile (backstory, personality, voice) under characters/
+# art      served  the name the app uses: art('characters/spark')
+#          master  the full-quality original, under characters/
+#
+# Keys are the tokens a scene writes in braces, so they stay uppercase.
+
+SPARK:
+  name: Spark
+  status: canon
+  folder: spark
+  look: >-
+    12-year-old boy, messy spiky blond hair, big brown eyes, rosy cheeks,
+    yellow T-shirt under an open maroon vest, maroon trousers, yellow
+    canvas sneakers
+  art:
+    served: characters/spark
+    master: spark/art/spark.png
+
+BITSY:
+  name: Bitsy
+  status: canon
+  folder: bitsy
+  look: >-
+    12-year-old girl, warm brown skin, two long dark-brown braids with
+    teal hair ties, round purple glasses, teal hoodie with sleeves pushed
+    up, dark jeans, white sneakers with purple laces
+
+DUDE:
+  name: "D.U.D.E.A.D."
+  status: canon
+  folder: dudead
+  look: >-
+    kid-sized friendly humanoid robot, rounded white boxy head with a wide
+    glowing yellow visor showing two big round cartoon eyes and a small
+    smile, round yellow ear-pieces, thin antenna topped with a yellow
+    ball, white boxy torso with a chunky gold chain necklace, maroon
+    segmented arms and legs with gold bolts, oversized yellow sneakers
+  art:
+    served: characters/dude-ad
+    master: dudead/art/dude-ad.png
+
+TORRES:
+  name: "Mr. Torres"
+  status: canon
+  folder: mr-torres
+  look: >-
+    calm man in his fifties, short salt-and-pepper hair, neat gray beard,
+    red-and-black flannel shirt under a brown canvas work vest, reading
+    glasses on a cord
+
+LINDQVIST:
+  name: Mrs. Lindqvist
+  status: canon
+  folder: supporting.md#mrs-lindqvist
+  look: >-
+    sturdy farmer woman in her sixties, short silver hair, tan barn
+    jacket, rubber boots
+
+OKAFOR:
+  name: Mr. Okafor
+  status: canon
+  folder: supporting.md#mr-okafor
+  look: >-
+    kind older man, close-cropped gray hair, glasses, cozy green cardigan,
+    an orange cat riding on his shoulder
+
+REYES:
+  name: Officer Reyes
+  status: canon
+  folder: supporting.md#officer-reyes
+  look: >-
+    friendly park ranger woman, olive-green uniform, wide-brimmed ranger
+    hat, rubber gloves
+
+TRACER:
+  name: Tracer
+  status: proposed
+  folder: tracer
+  look: >-
+    small two-wheeled line-following robot about the size of a shoebox,
+    clear acrylic chassis showing a blue Arduino board and a small
+    breadboard of wires, a black sensor bar along the front edge, a small
+    blue LCD screen on a short post, two yellow wheels and a silver caster
+    ball
+
+CHEN:
+  name: Ms. Chen
+  status: proposed
+  folder: ms-chen
+  look: >-
+    woman in her late thirties, shoulder-length black hair tucked behind
+    one ear, rectangular dark-framed glasses, navy cardigan over a striped
+    shirt, a lanyard of keys, usually holding a coffee mug or her phone
