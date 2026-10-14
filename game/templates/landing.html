@@ -1,0 +1,171 @@
+{% extends "public_base.html" %}
+{# The front door for anybody not signed in. Signed-in visitors never see
+   this: home() sends them straight to their classroom or dashboard. #}
+
+{% block content %}
+
+{# ── Hero ──────────────────────────────────────────────────────────── #}
+<section class="hero">
+  <div class="wrap hero-inner">
+    <div class="hero-copy">
+      <p class="eyebrow eyebrow-on-dark">Electronics and code · ages 13 and up</p>
+      <h1>Kids learn <span class="flame-text">electronics and code.</span> Grown&#8209;ups finally see how it's going.</h1>
+      <p class="hero-lede">Ignite Academy is a browser game that teaches circuits and programming, paired with a progress view that tells a parent or teacher which idea a student is missing, not just the score.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Create an account</a>
+        <a class="btn btn-on-dark btn-lg" href="{{ url_for('login') }}">Log in</a>
+      </div>
+      <p class="hero-note">
+        Students join with the class code from their teacher.
+        <a href="{{ url_for('signup', role='parent') }}">Parents start here</a> ·
+        <a href="{{ url_for('signup', role='teacher') }}">Teachers start a class</a>
+      </p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <img src="{{ art('characters/spark') }}" alt="" width="1012" height="1522" />
+    </div>
+  </div>
+</section>
+
+{# ── What's new ─────────────────────────────────────────────────────── #}
+<section class="band" id="news" aria-labelledby="news-title">
+  <div class="wrap">
+    <div class="band-head">
+      <div>
+        <p class="eyebrow">What's new</p>
+        <h2 id="news-title">From the workshop</h2>
+      </div>
+      {% if posts %}<a class="more-link" href="{{ url_for('blog_index') }}">All posts →</a>{% endif %}
+    </div>
+
+    {% if posts %}
+      <div class="post-grid">
+        {% for post in posts %}
+          {% include "_post_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-note">News is on its way. Follow along with the <a href="{{ url_for('feed') }}">feed</a> and you'll see the first post the day it goes up.</p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Inside the app ─────────────────────────────────────────────────── #}
+<section class="band band-tint" id="inside" aria-labelledby="inside-title">
+  <div class="wrap">
+    <p class="eyebrow">Inside Ignite</p>
+    <h2 id="inside-title">One game for the student. One clear view for the grown-up.</h2>
+
+    <div class="feature">
+      <div class="feature-copy">
+        <h3>It looks like a game, because it is one.</h3>
+        <p>Students land in a workshop and work through short lessons: reading, video and hands-on builds. Lessons come in order, so nobody meets Ohm's Law before they've met a circuit, and the menu always says what unlocks the next one.</p>
+      </div>
+      <figure class="feature-shot">
+        <img src="{{ art('landing/classroom') }}" alt="The student's home screen: D.U.D.E.A.D. the robot stands in an electronics workshop beside a door to today's lessons." loading="lazy" width="1100" height="713" />
+      </figure>
+    </div>
+
+    <div class="feature feature-flip">
+      <div class="feature-copy">
+        <h3>See the wrong answer, not just the grade.</h3>
+        <p>A score of 39% tells a parent something went wrong. Ignite shows the exact question a student is stuck on, the answer they chose, and the one sentence that explains the right one. That's something you can help with at the kitchen table.</p>
+      </div>
+      <figure class="feature-shot">
+        <img src="{{ art('landing/progress') }}" alt="A student's progress page listing the two questions he is still getting wrong, the answer he chose for each, the correct answer, and a short explanation." loading="lazy" width="1060" height="738" />
+      </figure>
+    </div>
+
+    <div class="feature">
+      <div class="feature-copy">
+        <h3>Measured against the standards schools use.</h3>
+        <p>Pick a child and a grade, and see where their work lines up with the science, computer science and maths standards most US states build on. Our own plain-English wording, the official codes, and a clear note that the match is our reading, not an endorsement.</p>
+      </div>
+      <figure class="feature-shot">
+        <img src="{{ art('landing/standards') }}" alt="The standards report: a science standard marked as met, with the three lessons that cover it." loading="lazy" width="1060" height="304" />
+      </figure>
+    </div>
+  </div>
+</section>
+
+{# ── Books ──────────────────────────────────────────────────────────── #}
+{% if books %}
+<section class="band" id="books" aria-labelledby="books-title">
+  <div class="wrap">
+    <p class="eyebrow">Our books</p>
+    <h2 id="books-title">Choose-your-path adventures with Spark and the team</h2>
+    <p class="band-lede">You make the engineering calls, and every ending happens because of something you chose.</p>
+
+    <div class="book-grid">
+      {% for book in books %}
+      <article class="book">
+        <img class="book-cover" src="{{ art(book.cover) }}" alt="Cover of {{ book.title }}" loading="lazy" width="400" height="600" />
+        <div class="book-body">
+          <h3>{{ book.title }}</h3>
+          {% if book.subtitle %}<p class="book-subtitle">{{ book.subtitle }}</p>{% endif %}
+          {% if book.blurb %}<p>{{ book.blurb }}</p>{% endif %}
+          {% if book.details %}<p class="book-details">{{ book.details }}</p>{% endif %}
+          <div class="book-actions">
+            {% if book.links %}
+              {% for link in book.links %}
+                <a class="btn {% if loop.first %}btn-primary{% else %}btn-ghost{% endif %}" href="{{ link.url }}" rel="noopener noreferrer">{{ link.label }}</a>
+              {% endfor %}
+            {% else %}
+              <span class="chip">Coming soon</span>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ── Families and schools ───────────────────────────────────────────── #}
+<section class="band band-tint" aria-labelledby="ways-title">
+  <div class="wrap">
+    <p class="eyebrow">Two ways in</p>
+    <h2 id="ways-title">For a kitchen table or a whole school</h2>
+    <div class="ways">
+      <article class="way" id="families">
+        <h3>Families</h3>
+        <ul>
+          <li>Sign up with your child's class join code, then link them with their student code</li>
+          <li>Follow one child or several, across different classrooms</li>
+          <li>Guides and answer keys for helping at home, which students can't see</li>
+          <li>Teaching at home? Start a class for your family and you set the lessons</li>
+        </ul>
+        <div class="way-actions">
+          <a class="btn btn-primary" href="{{ url_for('signup', role='parent') }}">Create a parent account</a>
+          <a class="text-link" href="{{ url_for('signup', role='teacher') }}">Teaching at home? Start a class</a>
+        </div>
+      </article>
+      <article class="way way-school" id="schools">
+        <h3>Schools</h3>
+        <ul>
+          <li>Start a class and share one join code with your students</li>
+          <li>Each teacher sees only the students in their own classrooms</li>
+          <li>Import a roster in one go, or create student accounts yourself</li>
+          <li>Pay per seat by card, or on invoice terms for districts</li>
+        </ul>
+        <div class="way-actions">
+          <a class="btn btn-primary" href="{{ url_for('signup', role='teacher') }}">Start a class</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+{# ── Closing ────────────────────────────────────────────────────────── #}
+<section class="closing">
+  <div class="wrap closing-inner">
+    <h2>Ready when you are.</h2>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Create an account</a>
+      <a class="btn btn-on-dark btn-lg" href="{{ url_for('login') }}">Log in</a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

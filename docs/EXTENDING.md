@@ -8,6 +8,8 @@ files to touch, in order, and the mistake that is easy to make.
 - [Charge for a lesson](#charge-for-a-lesson)
 - [Flag a lesson as having a kit](#flag-a-lesson-as-having-a-kit)
 - [Add or stage a track](#add-or-stage-a-track)
+- [Write a blog post](#write-a-blog-post)
+- [Add a book](#add-a-book)
 - [Add a classroom feature](#add-a-classroom-feature)
 - [Re-skin it](#re-skin-it)
 - [Add a page](#add-a-page)
@@ -302,6 +304,78 @@ in `selftest_resources.py` so removing one fails loudly:
 
 There is a fourth, belt-and-braces: `app._without_resources()` strips the
 list before a lesson reaches a student's template context at all.
+
+---
+
+## Write a blog post
+
+The landing page shows the three newest posts, and `/blog` shows the rest.
+A post is a folder, the same way a lesson is:
+
+    game/content/blog/<slug>/post.json
+    game/content/blog/<slug>/post.md
+
+The folder name is the URL, `/blog/<slug>`: lowercase words joined by single
+hyphens, nothing else.
+
+```json
+{
+  "title":   "SPARK! Lost Signal is on the way",
+  "date":    "2026-10-08",
+  "summary": "One or two sentences. Shown on the card and in the feed.",
+  "author":  "The Ignite Academy team",
+  "image":   "books/spark-lost-signal",
+  "draft":   true
+}
+```
+
+`post.md` is the body, in Markdown. It's rendered the same way lesson prose is.
+Headings start at `##`, because the title is already the page's `#`.
+
+**Drafts** show everywhere except `APP_ENV=production`, with a *Draft* badge,
+so you can read a post on your laptop or the demo Pi first. Set
+`"draft": false` to publish it.
+
+**Scheduling:** a post dated in the future stays hidden until that date,
+UTC. No deploy is needed on the day.
+
+`image` is an art name under `game/static/art/`, the same as `Ignite.art()`
+uses. It's optional; leave it out and the card has no picture.
+
+Run `python scripts/check_content.py` before you push. It reports a broken
+post, a missing image, and which posts are still drafts. The site itself
+skips a broken post quietly rather than going down, so this check is where
+you find out.
+
+Raw HTML in `post.md` is rendered as written. That's fine while posts come
+in through the repository; anything that ever lets people post from a
+browser has to sanitise it first.
+
+## Add a book
+
+Books live in one list, `game/data/books.json`:
+
+```json
+{
+  "id":       "spark-lost-signal",
+  "title":    "SPARK! Lost Signal",
+  "subtitle": "A choose-your-path mission to the edge of space",
+  "blurb":    "A short paragraph for the card.",
+  "details":  "158 pages · 15 endings",
+  "status":   "available",
+  "links":    [ { "label": "Buy on Amazon", "url": "https://..." } ]
+}
+```
+
+With no `links`, the card says **Coming soon**. Add a link and it becomes a
+buy button; the first link is the main button. Links must be `https://`.
+`"status": "available"` with no links is reported as a problem and shown as
+coming soon.
+
+The cover is `game/static/art/books/<id>.*`. Stand-in covers are drawn by
+`scripts/make_thumbs.py`. Drop a real `.webp`, `.png` or `.jpg` beside the
+stand-in and it wins. Run `scripts/optimize_art.py` on it first if it's
+large.
 
 ---
 

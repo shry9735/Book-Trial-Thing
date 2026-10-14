@@ -11,14 +11,18 @@
 <div class="login-stage">
   <div class="login-box">
 
+    {# The crest leads back to the public landing page, which is where most
+       people arrive here from. #}
     <div class="login-crest">
-      {% if art_exists('ui/logo') %}
-        <img src="{{ art('ui/logo') }}" alt="Ignite Academy" style="max-width:220px;margin-bottom:10px" />
-      {% else %}
-        <div class="mark">🔥</div>
-      {% endif %}
-      <div class="title">Ignite Academy</div>
-      <div class="tagline">Inspire &amp; Grow New Innovation</div>
+      <a class="crest-link" href="{{ url_for('home') }}">
+        {% if art_exists('ui/logo') %}
+          <img src="{{ art('ui/logo') }}" alt="Ignite Academy" style="max-width:220px;margin-bottom:10px" />
+        {% else %}
+          <div class="mark">🔥</div>
+        {% endif %}
+        <div class="title">Ignite Academy</div>
+        <div class="tagline">Inspire &amp; Grow New Innovation</div>
+      </a>
     </div>
 
     {# A teacher's sign-up creates the class and its join code. Students and

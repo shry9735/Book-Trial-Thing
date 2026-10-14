@@ -233,6 +233,7 @@ COMPRESSIBLE = (
     "text/html", "text/css", "text/plain", "text/markdown",
     "application/javascript", "text/javascript",
     "application/json", "image/svg+xml",
+    "application/atom+xml", "application/xml",
 )
 
 # Matches nginx's gzip_min_length. Below roughly this, the gzip header and

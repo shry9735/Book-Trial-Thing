@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-check_content.py — lesson and track manifests hold together.
+check_content.py — lesson, track, blog and book content holds together.
 
 Two classes of problem, both invisible at runtime by design:
 
@@ -10,6 +10,12 @@ Two classes of problem, both invisible at runtime by design:
 
   An age band or a prep skill that is malformed is dropped rather than
   crashing the catalogue, for the same reason and with the same cost.
+
+  A blog post or book that cannot be read is left off the public site
+  rather than taking the landing page down. Same trade, same place to
+  catch it — and a post or book whose picture is missing would show the
+  bright "drop a graphic here" placeholder to the public, so that counts
+  as a problem too.
 
     python scripts/check_content.py           # exit non-zero on a problem
     python scripts/check_content.py --list    # print the content map
@@ -26,12 +32,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "game"))
 
+import blog                                          # noqa: E402
 import tracks                                        # noqa: E402
 
 LESSONS_DIR = ROOT / "game" / "lessons"
 TRACKS_DIR = ROOT / "game" / "tracks"
 STANDARDS_DIR = ROOT / "game" / "standards"
 RESOURCES_DIR = ROOT / "game" / "resources"
+BLOG_DIR = ROOT / "game" / "content" / "blog"
+BOOKS_FILE = ROOT / "game" / "data" / "books.json"
+ART_DIR = ROOT / "game" / "static" / "art"
+ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")   # as in app.py
+
+
+def art_exists(name: str) -> bool:
+    return any((ART_DIR / f"{name}{ext}").is_file() for ext in ART_EXTS)
 
 
 def load_lessons() -> tuple[list[dict], list[str]]:
@@ -169,6 +184,29 @@ def main() -> int:
         # would otherwise never find out.
         print(f"  note: on disk but declared nowhere, so unreachable: "
               f"{', '.join(sorted(orphans))}")
+
+    # The public site.
+    posts = []
+    if BLOG_DIR.is_dir():
+        for folder in sorted(p for p in BLOG_DIR.iterdir() if p.is_dir()):
+            post, post_problems = blog.read_post(folder)
+            problems += post_problems
+            if post:
+                posts.append(post)
+                if post["image"] and not art_exists(post["image"]):
+                    problems.append(f"blog/{post['slug']}: image {post['image']!r} "
+                                    f"is not under static/art/")
+    books, book_problems = blog.read_books(BOOKS_FILE)
+    problems += book_problems
+    for book in books:
+        if not art_exists(book["cover"]):
+            problems.append(f"books.json:{book['id']}: no cover at static/art/{book['cover']}.*")
+    drafts = [p["slug"] for p in posts if p["draft"]]
+    print(f"  {len(posts)} blog post(s), {len(books)} book(s)")
+    if drafts:
+        # Not a problem: a draft is the normal state of a post being
+        # written. Said here so nobody deploys expecting it to be live.
+        print(f"  note: still draft, so hidden in production: {', '.join(drafts)}")
 
     # Lessons inherit their track's skills, so one bad skill entry would
     # otherwise be reported once per lesson in the track.

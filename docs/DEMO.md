@@ -104,6 +104,12 @@ you are talking.
 
 Fifteen minutes, in the order the product makes sense.
 
+**0. The front door — 1 min.**
+Open the address the banner printed, signed out. That's the public landing
+page: what Ignite is, the latest posts, the books, and Log in / Create
+account at the top. The starter posts are drafts, so they show here (with a
+*Draft* badge) and would stay hidden on a production site. Click **Log in**.
+
 **1. The student (`maya`) — 3 min.**
 Land on the classroom, open *Today's Lessons*. Point out that lessons are
 grouped into tracks and that later ones say *"Opens when you finish…"*.

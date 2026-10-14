@@ -64,6 +64,8 @@ them if you want something to look at.
 | `game/lessons/` | One folder per lesson. Drop a folder in, it appears. |
 | `game/tracks/` | One folder per track — order, staging, age band, prep skills. |
 | `game/standards/` | US curriculum frameworks the [tracker](docs/STANDARDS.md) measures against. |
+| `game/content/blog/` | The public blog. One folder per post; drafts stay hidden in production. See [writing a post](docs/EXTENDING.md#write-a-blog-post). |
+| `game/data/books.json` | The books on the landing page, and where to buy them. |
 | `game/resources/` | Parent guides and answer keys. **Never served without a grown-up session** — see its README. |
 | `game/static/kit/` | The [sub-app bridge](docs/SUBAPPS.md) — the only thing a lesson or game needs to know about the platform. |
 | `docs/` | [Architecture, data model, extension guides](docs/README.md). |
@@ -138,12 +140,13 @@ export DATABASE_URL=postgresql://localhost/ignite_test
 .venv/bin/python game/selftest_classrooms.py  # 24  visibility, tracks
 .venv/bin/python game/selftest_accounts.py    # 48  provisioning, resets, deletion, legal
 .venv/bin/python game/selftest_standards.py   # 36  curriculum tracker
-.venv/bin/python game/selftest_gating.py      # 39  age bands, prep skills, four block reasons
+.venv/bin/python game/selftest_gating.py      # 40  age bands, prep skills, four block reasons
 .venv/bin/python game/selftest_resources.py   # 27  grown-up material, and the wall around it
 .venv/bin/python game/selftest_subapp.py      # 32  the platform/content seam, content caches
+.venv/bin/python game/selftest_public.py      # 20  landing page, blog, books, feeds, privacy
 ```
 
-280 checks. They wipe the database they point at, so aim them at a scratch
+301 checks. They wipe the database they point at, so aim them at a scratch
 one. All seven refuse to run with `APP_ENV=production`.
 
 Three static checks need no database at all, and are the ones that catch

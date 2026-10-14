@@ -68,6 +68,7 @@ jobs:
           python game/selftest_gating.py
           python game/selftest_resources.py
           python game/selftest_subapp.py
+          python game/selftest_public.py
 
       # Content is data, so these catch a broken lesson.json or a standards
       # code pointing at nothing without needing a database.

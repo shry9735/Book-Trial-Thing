@@ -1,0 +1,64 @@
+{% extends "public_base.html" %}
+{% if post.image %}{% set og_image = art(post.image) %}{% endif %}
+{% block title %}{{ post.title }} — Ignite Academy{% endblock %}
+{% block og_title %}{{ post.title }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block description %}{{ post.summary }}{% endblock %}
+
+{% block content %}
+<article class="post">
+  <header class="page-head">
+    <div class="wrap wrap-narrow">
+      <p class="post-meta">
+        <a href="{{ url_for('blog_index') }}">What's new</a> ·
+        <time datetime="{{ post.date.isoformat() }}">{{ post.date | long_date }}</time>
+        {% if post.author %} · {{ post.author }}{% endif %}
+        {% if post.draft %}<span class="chip chip-draft" title="Shown outside production only">Draft</span>{% endif %}
+      </p>
+      <h1>{{ post.title }}</h1>
+      <p class="band-lede">{{ post.summary }}</p>
+    </div>
+  </header>
+
+  {% if post.image %}
+    <div class="wrap wrap-narrow">
+      <img class="post-hero" src="{{ art(post.image) }}" alt="" />
+    </div>
+  {% endif %}
+
+  {# Rendered from the post's Markdown by render_content(). Posts come in
+     through the repository from people with commit access, so the HTML is
+     trusted. A browser editor for posts would have to sanitise this first. #}
+  <div class="wrap wrap-narrow prose">
+    {{ body | safe }}
+  </div>
+</article>
+
+{% if more %}
+<section class="band band-tint">
+  <div class="wrap">
+    <div class="band-head">
+      <h2>More from Ignite</h2>
+      <a class="more-link" href="{{ url_for('blog_index') }}">All posts →</a>
+    </div>
+    <div class="post-grid">
+      {% for post in more %}
+        {% include "_post_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if not user %}
+<section class="closing">
+  <div class="wrap closing-inner">
+    <h2>See it for yourself.</h2>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Create an account</a>
+      <a class="btn btn-on-dark btn-lg" href="{{ url_for('login') }}">Log in</a>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

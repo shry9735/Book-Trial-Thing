@@ -1,0 +1,16 @@
+{# One post as a card. Used on the landing page and under a post. #}
+<article class="post-card">
+  {% if post.image %}
+    <a class="post-card-image" href="{{ url_for('blog_post', slug=post.slug) }}" tabindex="-1" aria-hidden="true">
+      <img src="{{ art(post.image) }}" alt="" loading="lazy" />
+    </a>
+  {% endif %}
+  <div class="post-card-body">
+    <p class="post-meta">
+      <time datetime="{{ post.date.isoformat() }}">{{ post.date | long_date }}</time>
+      {% if post.draft %}<span class="chip chip-draft" title="Shown outside production only">Draft</span>{% endif %}
+    </p>
+    <h3><a href="{{ url_for('blog_post', slug=post.slug) }}">{{ post.title }}</a></h3>
+    <p>{{ post.summary }}</p>
+  </div>
+</article>

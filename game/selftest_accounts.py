@@ -104,6 +104,20 @@ def login(c, username, password=PASSWORD):
                   follow_redirects=True)
 
 
+def signed_in(c) -> bool:
+    """
+    Whether this client holds a live session.
+
+    Asked of /settings rather than "/": a signed-out visitor at "/" gets the
+    public landing page, so "/" no longer tells the two apart. /settings
+    needs a sign-in, so a dead session is sent to /login, and a live one is
+    not — it may be held on the first-password page, which still counts as
+    signed in.
+    """
+    response = c.get("/settings", follow_redirects=False)
+    return "/login" not in response.headers.get("Location", "")
+
+
 def post(c, path, from_path, **fields):
     page = c.get(from_path).get_data(as_text=True)
     fields["csrf_token"] = token_from(page)
@@ -194,7 +208,7 @@ def t_password_shown_once():
     # And it is a working password, once.
     fresh = client()
     login(fresh, "katherine.johnson", password)
-    assert fresh.get("/", follow_redirects=False).status_code == 302
+    assert signed_in(fresh), "the handed-out password did not sign in"
 
 
 @check("a provisioned student lands in the classroom that made them")
@@ -368,8 +382,7 @@ def t_first_password_clears():
     # The old handed-out password is dead.
     stale = client()
     login(stale, username, password)
-    assert stale.get("/", follow_redirects=False).status_code == 302
-    assert "login" in stale.get("/", follow_redirects=False).headers["Location"]
+    assert not signed_in(stale), "the old handed-out password still signs in"
 
 
 @check("a provisioned student can sign in with verification switched on")
@@ -396,8 +409,7 @@ def t_verification_still_applies():
     try:
         c = client()
         login(c, "unverified")
-        assert c.get("/", follow_redirects=False).status_code == 302, \
-            "an unverified account with an email got in"
+        assert not signed_in(c), "an unverified account with an email got in"
     finally:
         appmod.cfg.REQUIRE_EMAIL_VERIFICATION = False
 
@@ -419,7 +431,7 @@ def t_teacher_reset():
     # The student's old password no longer works.
     stale = client()
     login(stale, "ana", PASSWORD)
-    assert stale.get("/", follow_redirects=False).status_code == 302
+    assert not signed_in(stale), "the student's old password still signs in"
 
 
 @check("a reset signs the student out of every device they were on")

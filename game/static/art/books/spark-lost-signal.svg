@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600">
+  <defs>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16294a"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e2218a"/>
+      <stop offset="52%" stop-color="#ef5d52"/>
+      <stop offset="100%" stop-color="#f5921e"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0 L0 0 0 28" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="400" height="600" fill="url(#stage)"/>
+  <rect width="400" height="600" fill="url(#grid)"/>
+  <rect x="0" y="0" width="400" height="8" fill="url(#flame)"/>
+  <text x="200" y="62" text-anchor="middle" font-family="Trebuchet MS, Arial Rounded MT Bold, Verdana, sans-serif" font-size="14"
+        font-weight="bold" letter-spacing="4" fill="#f5a81c">A SPARK! ADVENTURE</text>
+  <text x="200" y="138" text-anchor="middle" font-family="Trebuchet MS, Arial Rounded MT Bold, Verdana, sans-serif" font-size="78"
+        font-weight="bold" fill="#ffffff">SPARK!</text>
+  <rect x="96" y="154" width="208" height="5" rx="2.5" fill="url(#flame)"/>
+  <text x="200" y="200" text-anchor="middle" font-family="Trebuchet MS, Arial Rounded MT Bold, Verdana, sans-serif" font-size="25"
+        font-weight="bold" fill="url(#flame)">LOST SIGNAL</text>
+  <circle cx="186" cy="300" r="62" fill="#ffffff" opacity="0.92"/>
+  <path d="M186 362 Q178 382 186 398 Q194 414 186 428" fill="none" stroke="#8fa2bd" stroke-width="3"/>
+  <rect x="160" y="428" width="52" height="40" rx="6" fill="#f5a81c" stroke="#c97f09" stroke-width="3"/>
+  <rect x="172" y="440" width="12" height="12" rx="2" fill="#0b1220"/>
+  <path d="M212 436 L232 420" stroke="#8fa2bd" stroke-width="3" stroke-linecap="round"/>
+  <path d="M262 396 a30 30 0 0 1 0 58" fill="none" stroke="#46d89b" stroke-width="4" stroke-linecap="round" opacity="0.90"/><path d="M276 380 a48 48 0 0 1 0 92" fill="none" stroke="#46d89b" stroke-width="4" stroke-linecap="round" opacity="0.65"/><path d="M290 364 a66 66 0 0 1 0 126" fill="none" stroke="#46d89b" stroke-width="4" stroke-linecap="round" opacity="0.40"/>
+  <circle cx="70" cy="260" r="2.5" fill="#ffffff" opacity="0.7"/>
+  <circle cx="320" cy="250" r="2" fill="#ffffff" opacity="0.6"/>
+  <circle cx="96" cy="420" r="2" fill="#ffffff" opacity="0.5"/>
+  <rect x="0" y="592" width="400" height="8" fill="url(#flame)"/>
+  <text x="200" y="574" text-anchor="middle" font-family="Trebuchet MS, Arial Rounded MT Bold, Verdana, sans-serif" font-size="13"
+        letter-spacing="2" fill="#8b97a8">IGNITE ACADEMY</text>
+</svg>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-make_thumbs.py — draw the stand-in lesson thumbnails and avatars.
+make_thumbs.py — draw the stand-in lesson thumbnails, avatars and book covers.
 
     python scripts/make_thumbs.py            # write any that are missing
     python scripts/make_thumbs.py --force    # redraw all of them
@@ -44,6 +44,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "game" / "static" / "art" / "lessons"
 AVATARS = ROOT / "game" / "static" / "art" / "ui"
+COVERS = ROOT / "game" / "static" / "art" / "books"
 
 W, H = 800, 200
 
@@ -318,6 +319,108 @@ def write_avatars(force: bool) -> tuple[int, int]:
     return wrote, skipped
 
 
+
+# ── Book covers ─────────────────────────────────────────────────────────────
+# Stand-ins for the public site's books section until real covers exist.
+# Same rule as everything else here: drop a real .webp/.png/.jpg at
+# game/static/art/books/<book-id>.<ext> and it wins, because find_art() tries
+# raster extensions before .svg. The ids match game/data/books.json.
+
+CW, CH = 400, 600
+
+
+def cover(title: str, motif: str) -> str:
+    """A cover: series line, the SPARK! wordmark, the title, one drawing."""
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{CW}" height="{CH}" viewBox="0 0 {CW} {CH}">
+  <defs>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="{STAGE_2}"/>
+      <stop offset="100%" stop-color="{STAGE}"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="{MAGENTA}"/>
+      <stop offset="52%" stop-color="{CORAL}"/>
+      <stop offset="100%" stop-color="{ORANGE}"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0 L0 0 0 28" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="{CW}" height="{CH}" fill="url(#stage)"/>
+  <rect width="{CW}" height="{CH}" fill="url(#grid)"/>
+  <rect x="0" y="0" width="{CW}" height="8" fill="url(#flame)"/>
+  <text x="200" y="62" text-anchor="middle" font-family="{FONT}" font-size="14"
+        font-weight="bold" letter-spacing="4" fill="{GOLD}">A SPARK! ADVENTURE</text>
+  <text x="200" y="138" text-anchor="middle" font-family="{FONT}" font-size="78"
+        font-weight="bold" fill="{WHITE}">SPARK!</text>
+  <rect x="96" y="154" width="208" height="5" rx="2.5" fill="url(#flame)"/>
+  <text x="200" y="200" text-anchor="middle" font-family="{FONT}" font-size="25"
+        font-weight="bold" fill="url(#flame)">{title}</text>
+{motif}
+  <rect x="0" y="{CH - 8}" width="{CW}" height="8" fill="url(#flame)"/>
+  <text x="200" y="{CH - 26}" text-anchor="middle" font-family="{FONT}" font-size="13"
+        letter-spacing="2" fill="{DIM}">IGNITE ACADEMY</text>
+</svg>
+"""
+
+
+def lost_signal_motif() -> str:
+    """Skylark: a weather balloon, its payload box, and the signal it sends."""
+    arcs = "".join(
+        f'<path d="M{262 + i * 14} {396 - i * 16} a{30 + i * 18} {30 + i * 18} 0 0 1 0 {58 + i * 34}" '
+        f'fill="none" stroke="{GREEN_GLOW}" stroke-width="4" stroke-linecap="round" opacity="{0.9 - i * 0.25:.2f}"/>'
+        for i in range(3))
+    return f"""  <circle cx="186" cy="300" r="62" fill="{WHITE}" opacity="0.92"/>
+  <path d="M186 362 Q178 382 186 398 Q194 414 186 428" fill="none" stroke="#8fa2bd" stroke-width="3"/>
+  <rect x="160" y="428" width="52" height="40" rx="6" fill="{GOLD}" stroke="{GOLD_DK}" stroke-width="3"/>
+  <rect x="172" y="440" width="12" height="12" rx="2" fill="{STAGE}"/>
+  <path d="M212 436 L232 420" stroke="#8fa2bd" stroke-width="3" stroke-linecap="round"/>
+  {arcs}
+  <circle cx="70" cy="260" r="2.5" fill="{WHITE}" opacity="0.7"/>
+  <circle cx="320" cy="250" r="2" fill="{WHITE}" opacity="0.6"/>
+  <circle cx="96" cy="420" r="2" fill="{WHITE}" opacity="0.5"/>"""
+
+
+def maker_faire_motif() -> str:
+    """D.U.D.E.A.D. going round in circles an hour before the judges."""
+    return f"""  <ellipse cx="200" cy="420" rx="128" ry="44" fill="none" stroke="{MAGENTA}"
+           stroke-width="4" stroke-dasharray="14 10" opacity="0.85"/>
+  <path d="M320 404 L336 420 L314 428 Z" fill="{MAGENTA}"/>
+  <rect x="146" y="282" width="108" height="92" rx="16" fill="#dfe6ef" stroke="#8fa2bd" stroke-width="3"/>
+  <rect x="164" y="306" width="30" height="22" rx="5" fill="{STAGE}"/>
+  <rect x="206" y="306" width="30" height="22" rx="5" fill="{STAGE}"/>
+  <circle cx="179" cy="317" r="6" fill="{GOLD}"/>
+  <circle cx="221" cy="317" r="6" fill="{GOLD}"/>
+  <path d="M168 352 L232 352" stroke="#8fa2bd" stroke-width="5" stroke-linecap="round"/>
+  <path d="M200 282 L200 262" stroke="#8fa2bd" stroke-width="4"/>
+  <circle cx="200" cy="256" r="8" fill="{MAGENTA}"/>
+  <rect x="160" y="374" width="80" height="26" rx="8" fill="#8fa2bd"/>
+  <circle cx="176" cy="402" r="10" fill="{STAGE}" stroke="#8fa2bd" stroke-width="3"/>
+  <circle cx="224" cy="402" r="10" fill="{STAGE}" stroke="#8fa2bd" stroke-width="3"/>"""
+
+
+COVER_DRAWINGS = {
+    "spark-lost-signal": lambda: cover("LOST SIGNAL", lost_signal_motif()),
+    "spark-maker-faire": lambda: cover("THE MAKER FAIRE", maker_faire_motif()),
+}
+
+
+def write_covers(force: bool) -> tuple[int, int]:
+    COVERS.mkdir(parents=True, exist_ok=True)
+    wrote = skipped = 0
+    for book_id, draw in sorted(COVER_DRAWINGS.items()):
+        real = [e for e in (".webp", ".png", ".jpg", ".jpeg", ".gif")
+                if (COVERS / f"{book_id}{e}").is_file()]
+        target = COVERS / f"{book_id}.svg"
+        if real or (target.is_file() and not force):
+            skipped += 1
+            continue
+        target.write_text(draw(), encoding="utf-8")
+        print(f"  wrote {target.relative_to(ROOT)}")
+        wrote += 1
+    return wrote, skipped
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -347,6 +450,9 @@ def main(argv: list[str]) -> int:
 
     a_wrote, a_skipped = write_avatars(args.force)
     wrote += a_wrote
+    c_wrote, c_skipped = write_covers(args.force)
+    wrote += c_wrote
+    skipped += c_skipped
     skipped += a_skipped
 
     # A lesson with no drawing still falls back to the placeholder, which is

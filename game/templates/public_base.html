@@ -1,0 +1,89 @@
+{# The public site's frame: landing page, blog, posts.
+
+   Log in and Create account sit in the top bar on every public page and
+   lead straight into the existing /login and /signup. Somebody already
+   signed in gets one button back to where they work instead.
+
+   Nothing here loads from another site. No web fonts, no analytics, no
+   embeds: these pages are read by parents of children, and every third
+   party on them would learn who visited. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Ignite Academy{% endblock %}</title>
+  {% set page_description %}{% block description %}A browser game that teaches electronics and code to students 13 and up, with a progress view that tells parents and teachers which idea a student is missing.{% endblock %}{% endset %}
+  <meta name="description" content="{{ page_description | trim }}" />
+  <link rel="canonical" href="{{ absolute_url(request.path) }}" />
+  <meta property="og:site_name" content="Ignite Academy" />
+  <meta property="og:title" content="{% block og_title %}Ignite Academy{% endblock %}" />
+  <meta property="og:description" content="{{ page_description | trim }}" />
+  <meta property="og:type" content="{% block og_type %}website{% endblock %}" />
+  <meta property="og:url" content="{{ absolute_url(request.path) }}" />
+  {# A page sets og_image at its top level to choose its own preview. #}
+  <meta property="og:image" content="{{ absolute_url(og_image if og_image is defined else art('characters/spark')) }}" />
+  <link rel="alternate" type="application/atom+xml" title="Ignite Academy — what's new" href="{{ url_for('feed') }}" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23e2218a'/%3E%3Cstop offset='1' stop-color='%23f5921e'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M32 9c1.6 11-6.4 14-9.8 20-3.4 6.2-1.8 11.6 1.9 14.2-.8-4.2 1-7.4 4.2-9.5-.5 5.3 2.4 8 5.3 10.6 3.7 3.2 4.2 7.4 2.6 11.6 6.9-2.6 11.7-9.5 11.7-17.5 0-11.4-8.8-16-11.7-22.3C34.4 13.6 33.6 11.2 32 9z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="{{ static_url('kit/brand.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/site.css') }}" />
+</head>
+<body class="site">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-top">
+  <div class="wrap site-top-inner">
+    <a class="brand" href="{{ url_for('home') }}">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 2c.6 4.2-2.4 5.3-3.7 7.6C7 12 7.6 14 9 15c-.3-1.6.4-2.8 1.6-3.6-.2 2 .9 3 2 4 1.4 1.2 1.6 2.8 1 4.4 2.6-1 4.4-3.6 4.4-6.6 0-4.3-3.3-6-4.4-8.4C12.9 3.6 12.6 2.7 12 2z" fill="#fff"/></svg>
+      </span>
+      <span class="brand-name">Ignite Academy</span>
+    </a>
+
+    <nav class="site-nav" aria-label="Site">
+      <a href="{{ url_for('blog_index') }}"{% if request.endpoint in ('blog_index', 'blog_post') %} aria-current="page"{% endif %}>What's new</a>
+      {% if not user %}
+        <a href="{{ url_for('home') }}#books">Books</a>
+        <a href="{{ url_for('home') }}#families">Families</a>
+        <a href="{{ url_for('home') }}#schools">Schools</a>
+      {% endif %}
+    </nav>
+
+    <div class="site-account">
+      {% if user %}
+        <a class="btn btn-primary" href="{{ url_for('home') }}">
+          {% if user.role == 'student' %}Go to your classroom{% else %}Go to your dashboard{% endif %}
+        </a>
+      {% else %}
+        <a class="btn btn-ghost" href="{{ url_for('login') }}">Log in</a>
+        <a class="btn btn-primary" href="{{ url_for('signup') }}">Create account</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="site-foot">
+  <div class="wrap site-foot-inner">
+    <div class="foot-brand">
+      <span class="brand-name">Ignite Academy</span>
+      <p>Electronics and code for curious students, and a clear view of their progress for the grown-ups helping them.</p>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="{{ url_for('blog_index') }}">What's new</a>
+      <a href="{{ url_for('feed') }}">Feed</a>
+      <a href="{{ url_for('legal', page='terms') }}">Terms</a>
+      <a href="{{ url_for('legal', page='privacy') }}">Privacy</a>
+      {% if store_url %}<a href="{{ store_url }}" rel="noopener noreferrer">Kit store</a>{% endif %}
+    </nav>
+    {% if config.LEGAL_EMAIL %}
+      <p class="foot-contact">Questions? <span class="contact-address">{{ config.LEGAL_EMAIL }}</span></p>
+    {% endif %}
+    <p class="foot-small">&copy; {{ current_year() }} Ignite Academy</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -138,6 +138,7 @@ else:
 _MARKDOWN_LOCK = threading.Lock()
 
 import billing
+import blog
 import db
 import emailer
 import security
@@ -163,6 +164,9 @@ ITEMS_FILE     = DATA_DIR / "items.json"
 # The student's game room layout, not a class roster — see /classrooms
 # for those. Same word, two different things.
 ROOM_FILE      = DATA_DIR / "classroom.json"
+# The public site: blog posts as folders, books as one list. See blog.py.
+BLOG_DIR       = CONTENT_DIR / "blog"
+BOOKS_FILE     = DATA_DIR / "books.json"
 
 ART_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg")
 
@@ -304,6 +308,11 @@ def refresh_catalog() -> None:
         _catalog["items"] = _read_json_file(ITEMS_FILE, {})
         _catalog["room"] = _read_json_file(
             ROOM_FILE, {"background": "backgrounds/classroom", "hotspots": []})
+        # The public site's posts and books. Drafts and future-dated posts
+        # are kept here and filtered per request, because whether a post
+        # shows depends on the date, and the date keeps moving after boot.
+        _catalog["posts"] = blog.load_posts(BLOG_DIR)
+        _catalog["books"] = blog.load_books(BOOKS_FILE)
         # Tracks are content too: built once here from the lesson catalog
         # plus tracks/*/track.json, never queried per request.
         built = tracks.build(TRACKS_DIR, lessons)
@@ -343,6 +352,24 @@ def refresh_catalog() -> None:
 
 def load_lessons() -> list[dict]:
     return _catalog["lessons"]
+
+
+def public_posts() -> list[dict]:
+    """
+    The blog posts a visitor may see right now, newest first.
+
+    Drafts show everywhere except production, so a post can be read on the
+    demo Pi or a laptop before anybody outside sees it. A post dated in the
+    future waits for its date. "Today" is the UTC date, so a post goes live
+    at midnight UTC — early evening of the day before in the US, which is
+    the safe direction for a scheduled announcement to err in.
+    """
+    today = datetime.now(timezone.utc).date()
+    return blog.visible(_catalog["posts"], today, include_drafts=not cfg.IS_PROD)
+
+
+def load_books() -> list[dict]:
+    return _catalog["books"]
 
 
 def get_lesson(lesson_id: str) -> dict | None:
@@ -619,11 +646,30 @@ def media(source: str) -> str:
     return art(source)
 
 
+def absolute_url(url: str) -> str:
+    """
+    A URL that works off this site: in a feed reader, a link preview, a
+    search result. BASE_URL is the canonical address; a URL that is already
+    absolute (static files behind CDN_URL) is left alone.
+    """
+    if url.startswith(("http://", "https://")):
+        return url
+    return cfg.BASE_URL + url
+
+
+def long_date(value) -> str:
+    """"October 14, 2026" — the way a person writes a date on a post."""
+    return f"{value:%B} {value.day}, {value.year}"
+
+
 app.jinja_env.globals.update(
     art=art, art_exists=art_exists, media=media, static_url=static_url,
     csrf_token=security.csrf_token,
     STAGE_W=STAGE_W, STAGE_H=STAGE_H,
+    absolute_url=absolute_url,
+    current_year=lambda: datetime.now(timezone.utc).year,
 )
+app.jinja_env.filters["long_date"] = long_date
 
 
 @app.route("/art/<path:name>")
@@ -967,18 +1013,141 @@ def inject_user():
 
 @app.route("/")
 def home():
-    """Send each role to the screen it actually wants.
+    """
+    The front door.
 
-    Students land in the classroom, grown-ups on the progress dashboard.
-    There is one login form for every role; this is what decides where
-    you end up.
+    Signed out, this is the public landing page: what Ignite is, the latest
+    posts, the books, and a way in — Log in and Create account sit at the
+    top of it. Signed in, it sends each role straight to the screen it
+    wants: students to the classroom, grown-ups to the progress dashboard.
+    A thirteen-year-old opening the app to play should not have to click
+    past a marketing page every time.
+
+    There is one login form for every role; this is what decides where you
+    end up after it.
     """
     user = current_user()
     if not user:
-        return redirect(url_for("login"))
+        return _public_page("landing.html",
+                            posts=public_posts()[:LANDING_POSTS],
+                            books=load_books())
     if user["role"] in ("teacher", "parent"):
         return redirect(url_for("grownup_home"))
     return redirect(url_for("classroom"))
+
+
+# ── The public site ─────────────────────────────────────────────────────────────
+#
+# Everything a visitor can see before they have an account: the landing page
+# above, the blog, the feed, and what search engines are told. None of it is
+# behind @login_required, so the membership-gate audit in selftest.py skips
+# it by construction, and none of it reads anything about a user except
+# whether there is one.
+
+LANDING_POSTS = 3
+
+# How long a browser may reuse a public page. Short, and not because the
+# content changes between deploys: what the page shows depends on the date,
+# and a scheduled post should appear within minutes of its midnight.
+PUBLIC_MAX_AGE = 300
+
+
+def _public_page(template: str, **context):
+    """
+    Render a public page with the cache headers it needs.
+
+    Private, and varying on Cookie. The header says "Log in" to a visitor
+    and "Go to your classroom" to somebody signed in, so one URL hands out
+    two different pages. That is the /legal lesson again: `public` here
+    would let a shared cache give a signed-in visitor's page to a stranger.
+    """
+    response = make_response(render_template(template, **context))
+    response.headers["Cache-Control"] = f"private, max-age={PUBLIC_MAX_AGE}"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
+@app.route("/blog")
+def blog_index():
+    """Every post a visitor may see, newest first."""
+    return _public_page("blog_index.html", posts=public_posts())
+
+
+@app.route("/blog/<slug>")
+def blog_post(slug: str):
+    """
+    One post.
+
+    The slug is checked before anything is looked up, so a crafted URL
+    never gets near a filesystem path. A draft in production and a post
+    whose date has not arrived are not "forbidden": as far as a visitor
+    can tell they do not exist, which is a 404.
+    """
+    if not blog.valid_slug(slug):
+        abort(404)
+    posts = public_posts()
+    post = next((p for p in posts if p["slug"] == slug), None)
+    if post is None:
+        abort(404)
+    more = [p for p in posts if p["slug"] != slug][:2]
+    return _public_page("blog_post.html", post=post,
+                        body=render_content(post["body"]), more=more)
+
+
+@app.route("/feed.xml")
+def feed():
+    """
+    An Atom feed of the latest posts, for anyone following along in a
+    reader. Links are absolute and built from BASE_URL, because a feed is
+    read somewhere other than this site and a relative link means nothing
+    there.
+
+    The same for every visitor, so — unlike the pages — it may be cached
+    publicly. Short, for the same reason as the pages: dates move.
+    """
+    posts = public_posts()[:20]
+    updated = posts[0]["date"] if posts else datetime.now(timezone.utc).date()
+    response = make_response(render_template(
+        "feed.xml", posts=posts, base=cfg.BASE_URL, updated=updated))
+    response.headers["Content-Type"] = "application/atom+xml; charset=utf-8"
+    response.headers["Cache-Control"] = "public, max-age=900"
+    return response
+
+
+@app.route("/robots.txt")
+def robots():
+    """
+    What search engines may index: the public pages and the files they
+    need to render, nothing behind a login.
+
+    Outside production the answer is "nothing at all". A demo box or a
+    staging copy shows drafts by design, and the worst place for a draft
+    to end up is a search result.
+    """
+    if cfg.IS_PROD:
+        lines = ["User-agent: *", "Allow: /$", "Allow: /blog", "Allow: /legal/",
+                 "Allow: /feed.xml", "Allow: /static/", "Allow: /art/",
+                 "Disallow: /", f"Sitemap: {cfg.BASE_URL}/sitemap.xml"]
+    else:
+        lines = ["User-agent: *", "Disallow: /"]
+    response = make_response("\n".join(lines) + "\n")
+    response.headers["Content-Type"] = "text/plain; charset=utf-8"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    """The public pages, with each post's date, for search engines."""
+    pages = [(url_for("home"), None), (url_for("blog_index"), None),
+             (url_for("legal", page="terms"), None),
+             (url_for("legal", page="privacy"), None)]
+    pages += [(url_for("blog_post", slug=p["slug"]), p["date"]) for p in public_posts()]
+    response = make_response(render_template(
+        "sitemap.xml", pages=pages, base=cfg.BASE_URL))
+    response.headers["Content-Type"] = "application/xml; charset=utf-8"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 @app.route("/login", methods=["GET", "POST"])

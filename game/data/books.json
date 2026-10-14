@@ -1,0 +1,20 @@
+[
+  {
+    "id": "spark-lost-signal",
+    "title": "SPARK! Lost Signal",
+    "subtitle": "A choose-your-path mission to the edge of space",
+    "blurb": "You, Spark and Bitsy built Skylark, a weather-balloon payload bound for the edge of space, and you make the calls. Some choices pay off right away. Others don't seem to matter at all until Skylark is thirty kilometers up.",
+    "details": "158 pages · 15 endings · Spark, Bitsy and D.U.D.E.A.D.",
+    "status": "coming-soon",
+    "links": []
+  },
+  {
+    "id": "spark-maker-faire",
+    "title": "SPARK! An Embedded Systems Adventure",
+    "subtitle": "One hour until the Maker Faire demo",
+    "blurb": "D.U.D.E.A.D. won't stop circling, the judges arrive in an hour, and you're the engineer. Some wrong choices cost you time right away. Others wait until you're standing in front of a judge.",
+    "details": "A choose-your-path story · Spark, Bitsy and D.U.D.E.A.D.",
+    "status": "coming-soon",
+    "links": []
+  }
+]

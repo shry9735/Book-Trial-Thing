@@ -1,0 +1,28 @@
+{% extends "public_base.html" %}
+{% block title %}What's new — Ignite Academy{% endblock %}
+{% block og_title %}What's new at Ignite Academy{% endblock %}
+{% block description %}News, new lessons and books from Ignite Academy.{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">What's new</p>
+    <h1>From the workshop</h1>
+    <p class="band-lede">New lessons, new books, and what we're building next. Follow along with the <a href="{{ url_for('feed') }}">feed</a>.</p>
+  </div>
+</section>
+
+<section class="band band-tight">
+  <div class="wrap">
+    {% if posts %}
+      <div class="post-list">
+        {% for post in posts %}
+          {% include "_post_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-note">No posts yet. The first one is on its way.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

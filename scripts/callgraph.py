@@ -43,9 +43,9 @@ LAYERS: list[tuple[str, list[str]]] = [
                     "selftest", "selftest_billing", "selftest_classrooms",
                     "selftest_accounts", "selftest_standards",
                     "selftest_gating", "selftest_resources", "selftest_subapp",
-                    "selftest_fixtures"]),
+                    "selftest_fixtures", "selftest_public"]),
     ("web",        ["app"]),
-    ("service",    ["billing", "security", "emailer", "tracks", "standards"]),
+    ("service",    ["billing", "security", "emailer", "tracks", "standards", "blog"]),
     ("data",       ["db"]),
     ("platform",   ["config", "logsetup"]),
 ]
