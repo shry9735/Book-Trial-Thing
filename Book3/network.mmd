@@ -1,0 +1,394 @@
+flowchart TD
+  A1_OPEN["Skylark"]
+  A1_BATT["Four AAs"]:::choice
+  A1_ALKALINE["Good Enough"]
+  A1_LITHIUM["Twelve Dollars"]
+  A1_FREEZER["The Freezer Test"]
+  A1_FREEZER_FIX["The All-Night Pharmacy"]
+  A1_PAINT["What Color Is Space?"]:::choice
+  A1_BLACK["Galaxy Black"]
+  A1_ORANGE["Safety Orange"]
+  A1_WARMER["The Hand Warmer"]:::choice
+  A1_WARM["Toasty"]
+  A1_NOWARM["Keep It Simple"]
+  A1_GPS["The 12-Kilometer Problem"]:::choice
+  A1_GPS_VERIFY["NAK"]
+  A1_GPS_QUICK["One Line"]
+  A1_GPS_SKIP["It Works on the Roof"]
+  A1_SD["What If the Battery Pops Out?"]:::choice
+  A1_FLUSH["Flush"]
+  A1_NOFLUSH["END"]
+  A1_CAM["Eight Gigabytes"]:::choice
+  A1_VIDEO["Rolling"]
+  A1_CAMMATH["The Whiteboard"]
+  A1_PHOTOS["Every Five Seconds"]
+  A1_SENSOR["In Case of Water"]:::choice
+  A1_SEALED["Sealed"]
+  A1_VENTED["Vented"]
+  A1_BEEPER["When Should It Beep?"]:::choice
+  A1_BEEP_PRES["Pressure Only"]
+  A1_BEEP_BOTH["Belt and Suspenders"]
+  A1_ANTENNA["Eight Point Two Centimeters"]:::choice
+  A1_COILED["Neat"]
+  A1_STRAIGHT["Straight Down"]
+  A1_LABEL["If Found"]:::choice
+  A1_LABELED["Reward"]
+  A1_NOLABEL["We'll Find It"]
+  A1_SOAK["The Soak Test"]:::choice
+  A1_SOAKRUN{"Three Hours on the Kitchen Table"}
+  A1_SOAK_CAM{"Recording Stopped"}
+  A1_SOAK_SD["Zero Bytes"]
+  A1_SOAK_CLEAN["Midnight"]
+  A1_QUICKCHECK["Five Minutes"]
+  A1_END["Packed"]
+  A2_OPEN["Frost on the Grass"]
+  A2_PREDICT["Where Will It Land?"]:::choice
+  A2_OLDPREDICT["Friday's Map"]
+  A2_REPREDICT["Fifteen Kilometers East"]
+  A2_LAKE["The Reservoir"]:::choice
+  A2_MOREGAS["A Little More Lift"]
+  A2_WAIT["An Hour on the Tarp"]
+  A2_HOPE["Fifty-Fifty"]
+  A2_SPARE["Just in Case"]:::choice
+  A2_WEIGH_FIRST["1.74 Kilograms"]
+  A2_HEAVY["1.86 Kilograms"]:::choice
+  A2_STRIP_BANK["Back to 1.74"]
+  A2_STRIP_BEEP["Lighter"]
+  A2_STRIP_CAM["No Pictures"]
+  A2_GLOVES["Bare Hands"]:::choice
+  A2_GLOVED["Blue Gloves"]
+  A2_BAREHAND["Carefully"]
+  A2_FILL["Free Lift"]:::choice
+  A2_FILL_RIGHT["Just Floats"]
+  A2_FILL_LOW["Looks About Right"]
+  A2_FILL_HIGH["More Is More"]
+  A2_CHUTE["The Parachute"]:::choice
+  A2_CHUTE_OPEN["Open"]
+  A2_CHUTE_FOLDED["Tidy"]
+  A2_GONOGO["Go / No-Go"]:::choice
+  A2_CHECK{"One Hundred Meters"}
+  A2_CHECK_ANT["Packets Dropping"]
+  A2_GATE{"Wind Check"}
+  A2_GUSTY["Gusts"]:::choice
+  A2_SNAG["Thump"]
+  A2_RELEASE["Liftoff"]
+  A3_OPEN["Five Meters per Second"]
+  A3_ROUTE["Stay or Go"]:::choice
+  A3_STAY["Perfect Reception"]
+  A3_DRIVE["Rolling"]
+  A3_GAS["A Quarter Tank"]:::choice
+  A3_GAS_NOW["Pump Four"]
+  A3_GAS_LATER["Later"]
+  A3_CLIMB{"Minus Forty"}
+  A3_GPSDROP["Frozen Dot"]:::choice
+  A3_GPS_TURN["U-Turn"]
+  A3_TEMP["Warmer?"]:::choice
+  A3_REBOOT{"Rebooting at Minus Fifty"}
+  A3_REBOOT_OK{"Ninety Seconds"}
+  A3_REBOOT_DEAD["Inrush"]
+  A3_STRATO["Upside-Down Sky"]
+  A3_COLDCHECK{"Battery Voltage"}
+  A3_BATTDIE["4.6... 4.3... 4.1..."]
+  A3_SILENT["Silence"]:::choice
+  A3_PACKETS["240 Kilometers"]:::choice
+  A3_FILTER["Clean Data"]
+  A3_JUMP["The Wrong Way"]
+  A3_BURST{"Twenty-Four Kilometers"}
+  A3_FLOAT["Twenty-Four Kilometers, and Holding"]:::choice
+  A3_FLOAT_CHASE["The State Line"]
+  A3_BLIND["Two Broken Altimeters"]
+  A3_TWOALT["Which One Is Lying?"]:::choice
+  A3_WRONGALT["No Hurry"]
+  A3_FALLING{"Burst"}
+  A3_TANGLED["Twenty Meters per Second"]
+  A3_HILL["Line of Sight"]:::choice
+  A3_HILLTOP{"The Ridge"}
+  A3_HILL_GOOD["120 Meters"]
+  A3_HILL_WEAK["900 Meters"]
+  A3_VALLEY["Behind the Hill"]
+  A4_ARRIVE{"The Landing Zone"}
+  A4_WRONGSIDE["Friday's Map"]
+  A4_GASDETOUR["Empty"]
+  A4_SPLASH["Clearwater Reservoir"]:::choice
+  A4_SPLASH_NO["Absolutely Not"]
+  A4_SPLASH_RANGER{"Tomorrow Morning"}
+  A4_TREE["Twelve Meters Up"]:::choice
+  A4_TREE_LINE{"Thirty Throws"}
+  A4_TREE_POLE{"The Neighbor"}
+  A4_TREE_WAIT{"Waiting for Wind"}
+  A4_FENCE["No Trespassing"]:::choice
+  A4_HOPPED["The Screen Door"]
+  A4_KNOCK["Mrs. Lindqvist"]
+  A4_FIND{"The Last Packet"}
+  A4_SQUINT["Black on Brown"]
+  A4_WIDE["Two Square Kilometers"]:::choice
+  A4_TRI["Three Lines"]
+  A4_WANDER["Stronger... Weaker... Stronger"]
+  A4_NEAR["Everywhere at Once"]:::choice
+  A4_CIRCLES["Circles"]
+  A4_CLOSE{"Listen"}
+  A4_BEEP["Beep"]:::choice
+  A4_DUDE["Over Here, Kid"]
+  A4_LINE["Row by Row"]
+  A4_SILENTGRID["No Beep"]:::choice
+  A4_GRID{"Flagging Tape"}
+  A4_RANDOM{"Everywhere and Nowhere"}
+  A4_RECOVER{"There It Is"}
+  A4_WRECK["Dented"]
+  A4_SHUTOFF["Still Blinking"]:::choice
+  A4_YANK["Click"]
+  A4_SHUTDOWN["END"]
+  A4_CARDS{"Two SD Cards"}
+  A4_DARK{"Sunset"}
+  A4_DARKSEARCH["Searching Blind"]
+  A4_GOHOME{"The Post"}
+  E_CURVE(["The Curve of the Earth"]):::best
+  E_CURVE_CAUGHT(["The Curve of the Earth (Caught in Time)"]):::best
+  E_LOWBURST(["Twenty Kilometers Short"]):::good
+  E_HALFWAY(["Halfway to Space"]):::partial
+  E_NOPICS(["Data, No Pictures"]):::partial
+  E_NODATA(["Pictures, No Data"]):::partial
+  E_EMPTY(["An Empty Box"]):::bad
+  E_SOGGY(["Waterlogged"]):::partial
+  E_SOGGY_BLANK(["Waterlogged and Wiped"]):::bad
+  E_TREE(["Hanging in There"]):::bad
+  E_COWS(["The Cows Got There First"]):::bad
+  E_FLOATER(["The One That Got Away"]):::bad
+  E_RETURN(["Return to Sender"]):::bad
+  E_LOST(["Lost Signal"]):::bad
+  E_GROUNDED(["Grounded"]):::bad
+  A1_OPEN --> A1_BATT
+  A1_BATT --> A1_ALKALINE
+  A1_BATT --> A1_LITHIUM
+  A1_BATT --> A1_FREEZER
+  A1_ALKALINE --> A1_PAINT
+  A1_LITHIUM --> A1_PAINT
+  A1_FREEZER --> A1_FREEZER_FIX
+  A1_FREEZER_FIX --> A1_PAINT
+  A1_PAINT --> A1_BLACK
+  A1_PAINT --> A1_ORANGE
+  A1_BLACK --> A1_WARMER
+  A1_ORANGE --> A1_WARMER
+  A1_WARMER --> A1_WARM
+  A1_WARMER --> A1_NOWARM
+  A1_WARM --> A1_GPS
+  A1_NOWARM --> A1_GPS
+  A1_GPS --> A1_GPS_VERIFY
+  A1_GPS --> A1_GPS_QUICK
+  A1_GPS --> A1_GPS_SKIP
+  A1_GPS_VERIFY --> A1_SD
+  A1_GPS_QUICK --> A1_SD
+  A1_GPS_SKIP --> A1_SD
+  A1_SD --> A1_FLUSH
+  A1_SD --> A1_NOFLUSH
+  A1_FLUSH --> A1_CAM
+  A1_NOFLUSH --> A1_CAM
+  A1_CAM --> A1_VIDEO
+  A1_CAM --> A1_PHOTOS
+  A1_CAM --> A1_CAMMATH
+  A1_VIDEO --> A1_SENSOR
+  A1_CAMMATH --> A1_PHOTOS
+  A1_PHOTOS --> A1_SENSOR
+  A1_SENSOR --> A1_SEALED
+  A1_SENSOR --> A1_VENTED
+  A1_SEALED --> A1_BEEPER
+  A1_VENTED --> A1_BEEPER
+  A1_BEEPER --> A1_BEEP_PRES
+  A1_BEEPER --> A1_BEEP_BOTH
+  A1_BEEP_PRES --> A1_ANTENNA
+  A1_BEEP_BOTH --> A1_ANTENNA
+  A1_ANTENNA --> A1_COILED
+  A1_ANTENNA --> A1_STRAIGHT
+  A1_COILED --> A1_LABEL
+  A1_STRAIGHT --> A1_LABEL
+  A1_LABEL --> A1_LABELED
+  A1_LABEL --> A1_NOLABEL
+  A1_LABELED --> A1_SOAK
+  A1_NOLABEL --> A1_SOAK
+  A1_SOAK --> A1_SOAKRUN
+  A1_SOAK --> A1_QUICKCHECK
+  A1_SOAKRUN -. "CAMFULL" .-> A1_SOAK_CAM
+  A1_SOAKRUN -. "NOFLUSH" .-> A1_SOAK_SD
+  A1_SOAKRUN -. "else" .-> A1_SOAK_CLEAN
+  A1_SOAK_CAM -. "NOFLUSH" .-> A1_SOAK_SD
+  A1_SOAK_CAM -. "else" .-> A1_SOAK_CLEAN
+  A1_SOAK_SD --> A1_SOAK_CLEAN
+  A1_SOAK_CLEAN --> A1_END
+  A1_QUICKCHECK --> A1_END
+  A1_END --> A2_OPEN
+  A2_OPEN --> A2_PREDICT
+  A2_PREDICT --> A2_REPREDICT
+  A2_PREDICT --> A2_OLDPREDICT
+  A2_OLDPREDICT --> A2_SPARE
+  A2_REPREDICT --> A2_LAKE
+  A2_LAKE --> A2_MOREGAS
+  A2_LAKE --> A2_WAIT
+  A2_LAKE --> A2_HOPE
+  A2_MOREGAS --> A2_SPARE
+  A2_WAIT --> A2_SPARE
+  A2_HOPE --> A2_SPARE
+  A2_SPARE --> A2_HEAVY
+  A2_SPARE --> A2_WEIGH_FIRST
+  A2_SPARE --> A2_GLOVES
+  A2_WEIGH_FIRST --> A2_GLOVES
+  A2_HEAVY --> A2_STRIP_BANK
+  A2_HEAVY --> A2_STRIP_BEEP
+  A2_HEAVY --> A2_STRIP_CAM
+  A2_STRIP_BANK --> A2_GLOVES
+  A2_STRIP_BEEP --> A2_GLOVES
+  A2_STRIP_CAM --> A2_GLOVES
+  A2_GLOVES --> A2_GLOVED
+  A2_GLOVES --> A2_BAREHAND
+  A2_GLOVED --> A2_FILL
+  A2_BAREHAND --> A2_FILL
+  A2_FILL --> A2_FILL_RIGHT
+  A2_FILL --> A2_FILL_LOW
+  A2_FILL --> A2_FILL_HIGH
+  A2_FILL_RIGHT --> A2_CHUTE
+  A2_FILL_LOW --> A2_CHUTE
+  A2_FILL_HIGH --> A2_CHUTE
+  A2_CHUTE --> A2_CHUTE_OPEN
+  A2_CHUTE --> A2_CHUTE_FOLDED
+  A2_CHUTE_OPEN --> A2_GONOGO
+  A2_CHUTE_FOLDED --> A2_GONOGO
+  A2_GONOGO --> A2_CHECK
+  A2_GONOGO --> A2_GATE
+  A2_CHECK -. "WEAKANT" .-> A2_CHECK_ANT
+  A2_CHECK -. "else" .-> A2_GATE
+  A2_CHECK_ANT --> A2_GATE
+  A2_GATE -. "launch>=6" .-> E_GROUNDED
+  A2_GATE -. "launch>=4" .-> A2_GUSTY
+  A2_GATE -. "else" .-> A2_RELEASE
+  A2_GUSTY --> A2_RELEASE
+  A2_GUSTY --> A2_SNAG
+  A2_SNAG --> A2_RELEASE
+  A2_RELEASE --> A3_OPEN
+  A3_OPEN --> A3_ROUTE
+  A3_ROUTE --> A3_STAY
+  A3_ROUTE --> A3_DRIVE
+  A3_STAY --> A3_GAS
+  A3_DRIVE --> A3_GAS
+  A3_GAS --> A3_GAS_NOW
+  A3_GAS --> A3_GAS_LATER
+  A3_GAS_NOW --> A3_CLIMB
+  A3_GAS_LATER --> A3_CLIMB
+  A3_CLIMB -. "GPSCAP" .-> A3_GPSDROP
+  A3_CLIMB -. "else" .-> A3_TEMP
+  A3_GPSDROP --> A3_TEMP
+  A3_GPSDROP --> A3_GPS_TURN
+  A3_GPSDROP --> A3_REBOOT
+  A3_GPS_TURN --> A3_TEMP
+  A3_TEMP --> A3_STRATO
+  A3_TEMP --> A3_REBOOT
+  A3_REBOOT -. "COLDCELLS" .-> A3_REBOOT_DEAD
+  A3_REBOOT -. "else" .-> A3_REBOOT_OK
+  A3_REBOOT_OK -. "!SAWTEMP" .-> A3_TEMP
+  A3_REBOOT_OK -. "else" .-> A3_STRATO
+  A3_REBOOT_DEAD --> A3_SILENT
+  A3_STRATO --> A3_COLDCHECK
+  A3_COLDCHECK -. "COLDCELLS & !WARM & !BLACKBOX" .-> A3_BATTDIE
+  A3_COLDCHECK -. "else" .-> A3_PACKETS
+  A3_BATTDIE --> A3_SILENT
+  A3_SILENT --> A4_DARKSEARCH
+  A3_SILENT --> A4_GOHOME
+  A3_PACKETS --> A3_FILTER
+  A3_PACKETS --> A3_JUMP
+  A3_FILTER --> A3_BURST
+  A3_JUMP --> A3_BURST
+  A3_BURST -. "FLOATER" .-> A3_FLOAT
+  A3_BURST -. "SEALED & GPSCAP" .-> A3_BLIND
+  A3_BURST -. "SEALED" .-> A3_TWOALT
+  A3_BURST -. "else" .-> A3_FALLING
+  A3_FLOAT --> A3_FLOAT_CHASE
+  A3_FLOAT --> E_FLOATER
+  A3_FLOAT_CHASE --> E_FLOATER
+  A3_BLIND --> A3_FALLING
+  A3_TWOALT --> A3_FALLING
+  A3_TWOALT --> A3_WRONGALT
+  A3_WRONGALT --> A3_FALLING
+  A3_FALLING -. "TANGLE" .-> A3_TANGLED
+  A3_FALLING -. "else" .-> A3_HILL
+  A3_TANGLED --> A4_ARRIVE
+  A3_HILL --> A3_HILLTOP
+  A3_HILL --> A3_VALLEY
+  A3_HILLTOP -. "WEAKANT" .-> A3_HILL_WEAK
+  A3_HILLTOP -. "else" .-> A3_HILL_GOOD
+  A3_HILL_GOOD --> A4_ARRIVE
+  A3_HILL_WEAK --> A4_ARRIVE
+  A3_VALLEY --> A4_ARRIVE
+  A4_ARRIVE -. "OLDPREDICT & !REROUTED" .-> A4_WRONGSIDE
+  A4_ARRIVE -. "LOWGAS & !GASSED" .-> A4_GASDETOUR
+  A4_ARRIVE -. "LAKERISK" .-> A4_SPLASH
+  A4_ARRIVE -. "daylight>=8" .-> A4_DARK
+  A4_ARRIVE -. "WOODS" .-> A4_TREE
+  A4_ARRIVE -. "else" .-> A4_FENCE
+  A4_WRONGSIDE --> A4_ARRIVE
+  A4_GASDETOUR --> A4_ARRIVE
+  A4_SPLASH --> A4_SPLASH_NO
+  A4_SPLASH --> A4_SPLASH_RANGER
+  A4_SPLASH_NO --> A4_SPLASH_RANGER
+  A4_SPLASH_RANGER -. "NOFLUSH" .-> E_SOGGY_BLANK
+  A4_SPLASH_RANGER -. "else" .-> E_SOGGY
+  A4_TREE --> A4_TREE_LINE
+  A4_TREE --> A4_TREE_POLE
+  A4_TREE --> A4_TREE_WAIT
+  A4_TREE_LINE -. "daylight>=8" .-> E_TREE
+  A4_TREE_LINE -. "else" .-> A4_RECOVER
+  A4_TREE_POLE -. "daylight>=8" .-> E_TREE
+  A4_TREE_POLE -. "else" .-> A4_RECOVER
+  A4_TREE_WAIT -. "daylight>=8" .-> E_TREE
+  A4_TREE_WAIT -. "else" .-> A4_TREE
+  A4_FENCE --> A4_KNOCK
+  A4_FENCE --> A4_HOPPED
+  A4_HOPPED --> E_COWS
+  A4_KNOCK --> A4_FIND
+  A4_FIND -. "BLACKBOX & !SQUINT" .-> A4_SQUINT
+  A4_FIND -. "HARDLAND" .-> A4_SILENTGRID
+  A4_FIND -. "BIGSEARCH" .-> A4_WIDE
+  A4_FIND -. "else" .-> A4_NEAR
+  A4_SQUINT --> A4_FIND
+  A4_WIDE --> A4_TRI
+  A4_WIDE --> A4_WANDER
+  A4_TRI --> A4_NEAR
+  A4_WANDER --> A4_NEAR
+  A4_NEAR --> A4_CLOSE
+  A4_NEAR --> A4_CIRCLES
+  A4_CIRCLES --> A4_CLOSE
+  A4_CLOSE -. "daylight>=8" .-> A4_DARK
+  A4_CLOSE -. "NOBEEP" .-> A4_SILENTGRID
+  A4_CLOSE -. "BEEPPRES & SEALED" .-> A4_SILENTGRID
+  A4_CLOSE -. "else" .-> A4_BEEP
+  A4_BEEP --> A4_DUDE
+  A4_BEEP --> A4_LINE
+  A4_DUDE --> A4_RECOVER
+  A4_LINE --> A4_RECOVER
+  A4_SILENTGRID --> A4_GRID
+  A4_SILENTGRID --> A4_RANDOM
+  A4_GRID -. "daylight>=8" .-> A4_DARK
+  A4_GRID -. "else" .-> A4_RECOVER
+  A4_RANDOM -. "daylight>=8" .-> A4_DARK
+  A4_RANDOM -. "else" .-> A4_RECOVER
+  A4_RECOVER -. "HARDLAND" .-> A4_WRECK
+  A4_RECOVER -. "else" .-> A4_SHUTOFF
+  A4_WRECK --> A4_CARDS
+  A4_SHUTOFF --> A4_YANK
+  A4_SHUTOFF --> A4_SHUTDOWN
+  A4_YANK --> A4_CARDS
+  A4_SHUTDOWN --> A4_CARDS
+  A4_CARDS -. "NOFLUSH & POWERCUT & NOCAM" .-> E_EMPTY
+  A4_CARDS -. "NOFLUSH & POWERCUT" .-> E_NODATA
+  A4_CARDS -. "NOCAM" .-> E_NOPICS
+  A4_CARDS -. "CAMFULL" .-> E_HALFWAY
+  A4_CARDS -. "EARLYBURST" .-> E_LOWBURST
+  A4_CARDS -. "CORRECTED" .-> E_CURVE_CAUGHT
+  A4_CARDS -. "else" .-> E_CURVE
+  A4_DARK -. "LABEL" .-> E_RETURN
+  A4_DARK -. "else" .-> E_LOST
+  A4_DARKSEARCH --> A4_DARK
+  A4_GOHOME -. "LABEL" .-> E_RETURN
+  A4_GOHOME -. "else" .-> E_LOST
+  classDef choice fill:#fde7c2,stroke:#c97f09
+  classDef best fill:#b7ebc0,stroke:#2e7d32
+  classDef good fill:#d8f0c8,stroke:#558b2f
+  classDef partial fill:#fff0b3,stroke:#b8860b
+  classDef bad fill:#f6c1c1,stroke:#b71c1c

@@ -1,0 +1,1649 @@
+# SPARK! Lost Signal — choice network (source of truth)
+#
+# Every page in the book is a node here. Page NUMBERS are not assigned
+# yet: they get laid out (and shuffled within each act, so a reader can't
+# skim ahead) once the prose exists. Until then, refer to pages by id.
+#
+# Check and render with:   python scripts/check_network.py Book3/network.yaml
+#
+# NODE FIELDS
+#   act        1–4, or 0 for endings
+#   title      working page title
+#   summary    what happens on the page (beats, not prose)
+#   steam      S | T | E | A | M — which letter a decision page teaches
+#   note       Engineering Note topic (60–100 words, see writing guide)
+#   sets       Mission Log boxes the reader ticks on arriving here
+#   clears     boxes the reader erases on arriving here
+#   cost       clock boxes crossed out on arriving: {launch: n} or {daylight: n}
+#   choices    [{text, to}] — the reader decides
+#   route      [{if: [...], to}] — the book decides, from the Mission Log.
+#              Conditions are ANDed: FLAG, !FLAG, launch>=N, daylight>=N.
+#              The first match wins; the last entry has no `if`.
+#   next       a single page to turn to
+#   ending     {tier, title} — tier is best | good | partial | bad
+#
+# A choice's consequences live on the page it leads to, so every wrong
+# answer gets its own page that shows what happened.
+
+clocks:
+  launch:
+    boxes: 6
+    each: "15 minutes of launch window"
+    meaning: "The winds pick up at 10:30. Cross out the sixth box and the launch is scrubbed."
+  daylight:
+    boxes: 8
+    each: "30 minutes of daylight"
+    meaning: "Sunset is 5:45. Cross out the eighth box and the search is over."
+
+# What the reader actually writes in their Mission Log. Wording is neutral
+# on purpose: a box records what you did, never whether it was smart.
+flags:
+  COLDCELLS:   "Alkaline batteries"
+  BLACKBOX:    "Galaxy-black box"
+  WARM:        "Hand warmer inside"
+  GPSCAP:      "GPS: airborne mode not confirmed"
+  NOFLUSH:     "Log saves at END only"
+  CAMFULL:     "Camera: video"
+  SEALED:      "Pressure sensor bagged"
+  BEEPPRES:    "Beeper listens to pressure only"
+  WEAKANT:     "Antenna coiled"
+  LABEL:       "If-found label"
+  CORRECTED:   "Caught one"
+  OLDPREDICT:  "Friday's prediction"
+  LAKERISK:    "Landing ellipse: reservoir"
+  WOODS:       "Landing ellipse: forest edge"
+  NOBEEP:      "No beeper"
+  NOCAM:       "No camera"
+  EARLYBURST:  "Balloon: early burst"
+  FLOATER:     "Balloon: light fill"
+  TANGLE:      "Chute in sleeve"
+  LOWGAS:      "Quarter tank"
+  SAWTEMP:     "Saw the temperature turn"
+  DEAD:        "Silence"
+  BIGSEARCH:   "Last packet: high"
+  HARDLAND:    "Hard landing"
+  POWERCUT:    "Power cut before END"
+  REROUTED:    "Crossed the map"
+  GASSED:      "Gas detour done"
+  SQUINT:      "Hunted for a black box"
+
+start: A1-OPEN
+
+nodes:
+
+  # ════════════════════════════════════════════════════════════════════
+  # ACT 1 — THE NIGHT BEFORE  (Friday, maker space, 6 pm → 11 pm)
+  # Nothing goes wrong tonight. Every choice here is a seed.
+  # ════════════════════════════════════════════════════════════════════
+
+  A1-OPEN:
+    act: 1
+    title: "Skylark"
+    summary: >-
+      Friday, 6:10 pm. Skylark sits on the workbench: a foam box holding an
+      Arduino, GPS, LoRa radio, pressure/temperature sensor, camera and
+      beeper. Launch is tomorrow at 9 from the county fairgrounds. Spark,
+      Bitsy, D.U.D.E.A.D. leaning on the bench. Mr. Torres locks up at 9.
+      Ms. Chen texts the pre-flight checklist. How the Mission Log works.
+    next: A1-BATT
+
+  A1-BATT:
+    act: 1
+    title: "Four AAs"
+    steam: S
+    note: "Battery chemistry in the cold"
+    summary: >-
+      Bitsy pulls a pack of alkaline AAs from the drawer: 'Batteries are
+      batteries.' Spark shakes his head. It's -55 °C at 15 km, and he has
+      seen cold batteries die. Lithium AAs cost $12 and the hardware store
+      closes at 8.
+    choices:
+      - text: "Use the alkalines. The foam box will keep them warm."
+        to: A1-ALKALINE
+      - text: "Ask Mr. Torres to drive you to the store for lithium AAs."
+        to: A1-LITHIUM
+      - text: "Put Skylark in the freezer, running on alkalines, and watch the voltage for an hour."
+        to: A1-FREEZER
+
+  A1-ALKALINE:
+    act: 1
+    title: "Good Enough"
+    summary: "Batteries in. Skylark boots. Bitsy: 'Six volts. We're good.'"
+    sets: [COLDCELLS]
+    next: A1-PAINT
+
+  A1-LITHIUM:
+    act: 1
+    title: "Twelve Dollars"
+    summary: "Back by 7:15 with lithium cells. Mr. Torres: 'Expensive batteries for a box.'"
+    next: A1-PAINT
+
+  A1-FREEZER:
+    act: 1
+    title: "The Freezer Test"
+    note: "Test in real conditions"
+    summary: >-
+      Forty minutes in the break-room freezer and the voltage sags from
+      6.0 to 4.4 V. The Arduino browns out. The store is closed now.
+    next: A1-FREEZER-FIX
+
+  A1-FREEZER-FIX:
+    act: 1
+    title: "The All-Night Pharmacy"
+    summary: >-
+      Mr. Torres knows a 24-hour pharmacy that sells lithium AAs. Second
+      freezer run holds 5.9 V the whole hour. D.U.D.E.A.D. approves.
+    next: A1-PAINT
+
+  A1-PAINT:
+    act: 1
+    title: "What Color Is Space?"
+    steam: A
+    note: "Color, sunlight and heat"
+    summary: >-
+      Bitsy designed a galaxy-black wrap for the box. Spark wants safety
+      orange "so we can find it." Both look great on the mockup.
+    choices:
+      - text: "Galaxy black. It's the coolest thing on the table."
+        to: A1-BLACK
+      - text: "Safety orange, with the galaxy as a mission patch on one side."
+        to: A1-ORANGE
+
+  A1-BLACK:
+    act: 1
+    title: "Galaxy Black"
+    summary: "The wrap goes on. It does look like a little piece of space."
+    sets: [BLACKBOX]
+    next: A1-WARMER
+
+  A1-ORANGE:
+    act: 1
+    title: "Safety Orange"
+    summary: "Orange box, galaxy patch. Bitsy signs the patch."
+    next: A1-WARMER
+
+  A1-WARMER:
+    act: 1
+    title: "The Hand Warmer"
+    steam: S
+    summary: >-
+      Spark wants to tape a hand warmer next to the batteries. Bitsy: they
+      run on oxygen and there's barely any up there. Does it even work?
+    choices:
+      - text: "Tape a hand warmer next to the battery pack."
+        to: A1-WARM
+      - text: "Skip it. That's one more thing that can go wrong."
+        to: A1-NOWARM
+
+  A1-WARM:
+    act: 1
+    title: "Toasty"
+    summary: "Taped in. It'll work less well up high, but it'll work."
+    sets: [WARM]
+    next: A1-GPS
+
+  A1-NOWARM:
+    act: 1
+    title: "Keep It Simple"
+    summary: "The box stays simple."
+    next: A1-GPS
+
+  A1-GPS:
+    act: 1
+    title: "The 12-Kilometer Problem"
+    steam: T
+    note: "GPS dynamic models"
+    summary: >-
+      Bitsy finds a forum post: this GPS module stops reporting above 12 km
+      unless you send it a command for 'airborne mode.' Spark: 'It got a
+      fix on the roof. It works.'
+    choices:
+      - text: "Add the airborne-mode command and read back the GPS's reply to prove it took."
+        to: A1-GPS-VERIFY
+      - text: "Add the airborne-mode command and move on. It's one line."
+        to: A1-GPS-QUICK
+      - text: "Skip it. It works on the roof."
+        to: A1-GPS-SKIP
+
+  A1-GPS-VERIFY:
+    act: 1
+    title: "NAK"
+    summary: >-
+      The GPS replies NAK, meaning 'rejected.' One byte of the command is a
+      typo. Bitsy fixes it; the reply comes back ACK.
+    next: A1-SD
+
+  A1-GPS-QUICK:
+    act: 1
+    title: "One Line"
+    summary: "The line goes in. The upload succeeds. Nobody reads the reply."
+    sets: [GPSCAP]
+    next: A1-SD
+
+  A1-GPS-SKIP:
+    act: 1
+    title: "It Works on the Roof"
+    summary: "The GPS shows a fix and twelve satellites. Spark shrugs: 'See?'"
+    sets: [GPSCAP]
+    next: A1-SD
+
+  A1-SD:
+    act: 1
+    title: "What If the Battery Pops Out?"
+    steam: T
+    note: "Buffers and flushing"
+    summary: >-
+      Bitsy asks it. Right now the logger holds data in memory and only
+      finishes the file when it gets the END command. She wants to flush
+      after every line. Spark: 'The battery's not going to pop out. Don't
+      slow it down.'
+    choices:
+      - text: "Have Bitsy flush the file after every line."
+        to: A1-FLUSH
+      - text: "Leave it. The END command closes the file properly."
+        to: A1-NOFLUSH
+
+  A1-FLUSH:
+    act: 1
+    title: "Flush"
+    summary: "Two lines of code. Spark watches the log scroll by. It's not slower."
+    next: A1-CAM
+
+  A1-NOFLUSH:
+    act: 1
+    title: "END"
+    summary: "The code stays as it is. Bitsy writes END on a sticky note for tomorrow, frowning."
+    sets: [NOFLUSH]
+    next: A1-CAM
+
+  A1-CAM:
+    act: 1
+    title: "Eight Gigabytes"
+    steam: M
+    note: "Data budgets"
+    summary: >-
+      The camera has an 8 GB card. Video eats about 130 MB a minute. The
+      flight lasts about two and a half hours. Spark really wants burst
+      footage.
+    choices:
+      - text: "Record video. The burst is the best part."
+        to: A1-VIDEO
+      - text: "Take one photo every five seconds."
+        to: A1-PHOTOS
+      - text: "Do the math on the whiteboard before deciding."
+        to: A1-CAMMATH
+
+  A1-VIDEO:
+    act: 1
+    title: "Rolling"
+    summary: "Video mode set. The preview looks amazing."
+    sets: [CAMFULL]
+    next: A1-SENSOR
+
+  A1-CAMMATH:
+    act: 1
+    title: "The Whiteboard"
+    summary: >-
+      8,000 MB ÷ 130 MB/min ≈ 61 minutes of video. Photos at 0.3 MB every
+      5 s ≈ 540 MB for the whole flight. Photos it is.
+    next: A1-PHOTOS
+
+  A1-PHOTOS:
+    act: 1
+    title: "Every Five Seconds"
+    summary: "Photo mode set. 1,800 pictures, plenty of room."
+    next: A1-SENSOR
+
+  A1-SENSOR:
+    act: 1
+    title: "In Case of Water"
+    steam: S
+    note: "Air pressure"
+    summary: >-
+      Bitsy has zipped the pressure sensor into a plastic bag in case
+      Skylark lands in water. Spark: 'Can it still feel the air in there?'
+      The reading looks normal on the bench.
+    choices:
+      - text: "Leave it sealed. Water and electronics don't mix."
+        to: A1-SEALED
+      - text: "Cut a vent and cover it with a scrap of breathable fabric."
+        to: A1-VENTED
+
+  A1-SEALED:
+    act: 1
+    title: "Sealed"
+    summary: "The bag stays zipped. The reading on the bench: 1013 hPa. Normal."
+    sets: [SEALED]
+    next: A1-BEEPER
+
+  A1-VENTED:
+    act: 1
+    title: "Vented"
+    summary: "A neat square of fabric over a hole. Bitsy admits it's tidy."
+    next: A1-BEEPER
+
+  A1-BEEPER:
+    act: 1
+    title: "When Should It Beep?"
+    steam: E
+    note: "Redundancy"
+    summary: >-
+      The beeper should switch on when Skylark comes back below 2 km so
+      you can hear it in a field. Bitsy wants it to check both pressure
+      and GPS altitude. Spark: 'Pressure's faster. One sensor, one line.
+      Done.'
+    choices:
+      - text: "Pressure altitude only. It updates faster."
+        to: A1-BEEP-PRES
+      - text: "Either one. Whichever says 'below 2 km' first."
+        to: A1-BEEP-BOTH
+
+  A1-BEEP-PRES:
+    act: 1
+    title: "Pressure Only"
+    summary: "One `if`. Simple."
+    sets: [BEEPPRES]
+    next: A1-ANTENNA
+
+  A1-BEEP-BOTH:
+    act: 1
+    title: "Belt and Suspenders"
+    summary: "One `if` with an `or`. D.U.D.E.A.D.: 'Two ways to be right. Good.'"
+    next: A1-ANTENNA
+
+  A1-ANTENNA:
+    act: 1
+    title: "Eight Point Two Centimeters"
+    steam: M
+    note: "Quarter-wave antennas"
+    summary: >-
+      Bitsy coiled the radio's wire antenna up inside the box so nothing
+      sticks out. Spark frowns: a 915 MHz quarter-wave is 8.2 cm long, and
+      a coil isn't 8.2 cm of anything.
+    choices:
+      - text: "Leave it coiled inside. Nothing to snag."
+        to: A1-COILED
+      - text: "Cut it to 8.2 cm and run it straight out the bottom."
+        to: A1-STRAIGHT
+
+  A1-COILED:
+    act: 1
+    title: "Neat"
+    summary: "Coiled and taped. The bench test still gets packets from across the room."
+    sets: [WEAKANT]
+    next: A1-LABEL
+
+  A1-STRAIGHT:
+    act: 1
+    title: "Straight Down"
+    summary: "A stiff little wire pointing at the ground. Measured twice."
+    next: A1-LABEL
+
+  A1-LABEL:
+    act: 1
+    title: "If Found"
+    steam: E
+    summary: >-
+      Ms. Chen's checklist, last item: 'Label?' It's 8:30. Bitsy is tired.
+      Spark: 'We're going to find it anyway.'
+    choices:
+      - text: "Write a big label: HARMLESS SCIENCE EXPERIMENT, a phone number, and REWARD."
+        to: A1-LABELED
+      - text: "Skip it. You're going to find it."
+        to: A1-NOLABEL
+
+  A1-LABELED:
+    act: 1
+    title: "Reward"
+    summary: "Three sides, in permanent marker. The reward is a pizza."
+    sets: [LABEL]
+    next: A1-SOAK
+
+  A1-NOLABEL:
+    act: 1
+    title: "We'll Find It"
+    summary: "The marker goes back in the cup."
+    next: A1-SOAK
+
+  A1-SOAK:
+    act: 1
+    title: "The Soak Test"
+    steam: E
+    note: "Soak testing"
+    summary: >-
+      8:40. Ms. Chen texts: 'Has it ever run for as long as the flight?'
+      It hasn't. A full test means three hours at Bitsy's house tonight and
+      a slow, tired morning.
+    choices:
+      - text: "Run the full three-hour soak test at Bitsy's house."
+        to: A1-SOAKRUN
+      - text: "Do a five-minute power-on check, then go home and sleep."
+        to: A1-QUICKCHECK
+
+  A1-SOAKRUN:
+    act: 1
+    title: "Three Hours on the Kitchen Table"
+    summary: "Skylark runs on Bitsy's kitchen table. You take turns watching it."
+    cost: {launch: 1}
+    route:
+      - if: [CAMFULL]
+        to: A1-SOAK-CAM
+      - if: [NOFLUSH]
+        to: A1-SOAK-SD
+      - to: A1-SOAK-CLEAN
+
+  A1-SOAK-CAM:
+    act: 1
+    title: "Recording Stopped"
+    summary: >-
+      At 1 hour 1 minute the camera stops: card full. The flight would
+      have lost everything above 18 km. Switch to photos every 5 s.
+    clears: [CAMFULL]
+    sets: [CORRECTED]
+    route:
+      - if: [NOFLUSH]
+        to: A1-SOAK-SD
+      - to: A1-SOAK-CLEAN
+
+  A1-SOAK-SD:
+    act: 1
+    title: "Zero Bytes"
+    summary: >-
+      At 2:40 Spark bumps the battery clip. Skylark reboots. The log file
+      from the first two hours is zero bytes. Bitsy adds the flush.
+    clears: [NOFLUSH]
+    sets: [CORRECTED]
+    next: A1-SOAK-CLEAN
+
+  A1-SOAK-CLEAN:
+    act: 1
+    title: "Midnight"
+    summary: "Three hours, every reading logged. You sleep four hours."
+    next: A1-END
+
+  A1-QUICKCHECK:
+    act: 1
+    title: "Five Minutes"
+    summary: "It boots, it beeps, it sends a packet. Home by 9:15."
+    next: A1-END
+
+  A1-END:
+    act: 1
+    title: "Packed"
+    summary: >-
+      Skylark is taped shut and in the van. D.U.D.E.A.D.: 'Kid, tomorrow
+      that box goes to the edge of space. Get some sleep.'
+    next: A2-OPEN
+
+  # ════════════════════════════════════════════════════════════════════
+  # ACT 2 — LAUNCH MORNING  (Saturday, fairgrounds, 7:30 → launch)
+  # The LAUNCH clock starts. Six boxes and the winds win.
+  # ════════════════════════════════════════════════════════════════════
+
+  A2-OPEN:
+    act: 2
+    title: "Frost on the Grass"
+    summary: >-
+      7:30, county fairgrounds. Helium tank, tarp, scale, laptop. Mr.
+      Torres reads the forecast: gusts after 10:30. How the Launch clock
+      works.
+    next: A2-PREDICT
+
+  A2-PREDICT:
+    act: 2
+    title: "Where Will It Land?"
+    steam: M
+    note: "Flight prediction"
+    summary: >-
+      Bitsy has last night's prediction printed: a landing 40 km northeast.
+      A new wind forecast came out at 6 am.
+    choices:
+      - text: "Rerun the prediction with this morning's winds."
+        to: A2-REPREDICT
+      - text: "Use last night's. Winds don't change that much overnight."
+        to: A2-OLDPREDICT
+
+  A2-OLDPREDICT:
+    act: 2
+    title: "Friday's Map"
+    summary: "The printout goes on the dashboard. Northeast it is."
+    sets: [OLDPREDICT, LAKERISK]
+    next: A2-SPARE
+
+  A2-REPREDICT:
+    act: 2
+    title: "Fifteen Kilometers East"
+    summary: >-
+      The new landing is 15 km farther east, and the landing ellipse
+      covers half of Clearwater Reservoir.
+    next: A2-LAKE
+
+  A2-LAKE:
+    act: 2
+    title: "The Reservoir"
+    steam: M
+    note: "Ascent rate and drift"
+    summary: >-
+      Three ways to move a landing: change how fast it climbs, change when
+      it leaves, or accept the risk. Bitsy runs the numbers on each.
+    choices:
+      - text: "Add more helium. It climbs faster, bursts lower, and lands short of the water."
+        to: A2-MOREGAS
+      - text: "Wait an hour for the winds to swing, like the forecast says."
+        to: A2-WAIT
+      - text: "Launch as planned. The reservoir is only half the ellipse."
+        to: A2-HOPE
+
+  A2-MOREGAS:
+    act: 2
+    title: "A Little More Lift"
+    summary: >-
+      The new prediction lands short of the water, right at the edge of a
+      state forest. Nobody says the word 'trees' out loud.
+    sets: [WOODS]
+    next: A2-SPARE
+
+  A2-WAIT:
+    act: 2
+    title: "An Hour on the Tarp"
+    summary: "You wait. The new prediction lands in open farmland. The breeze is stronger."
+    cost: {launch: 3}
+    next: A2-SPARE
+
+  A2-HOPE:
+    act: 2
+    title: "Fifty-Fifty"
+    summary: "Spark: 'Half the ellipse is dry land.' Bitsy doesn't answer."
+    sets: [LAKERISK]
+    next: A2-SPARE
+
+  A2-SPARE:
+    act: 2
+    title: "Just in Case"
+    steam: E
+    note: "Weight limits"
+    summary: >-
+      Bitsy brought her USB power bank 'for backup.' Payload boxes like
+      Skylark have to stay under 4 lb (1.8 kg) to fly without special
+      permission.
+    choices:
+      - text: "Tape the power bank in. More power, more safety."
+        to: A2-HEAVY
+      - text: "Weigh Skylark first, then decide."
+        to: A2-WEIGH-FIRST
+      - text: "Leave the power bank in the van."
+        to: A2-GLOVES
+
+  A2-WEIGH-FIRST:
+    act: 2
+    title: "1.74 Kilograms"
+    summary: "Skylark weighs 1.74 kg. The bank is 120 g. That's over. It stays in the van."
+    next: A2-GLOVES
+
+  A2-HEAVY:
+    act: 2
+    title: "1.86 Kilograms"
+    summary: >-
+      Taped shut, then weighed: 1.86 kg. Over. The tape comes off and
+      something has to come out.
+    cost: {launch: 1}
+    choices:
+      - text: "Take out the power bank."
+        to: A2-STRIP-BANK
+      - text: "Take out the hand warmer and the beeper. They're the least important parts."
+        to: A2-STRIP-BEEP
+      - text: "Take out the camera. You'll still have the data."
+        to: A2-STRIP-CAM
+
+  A2-STRIP-BANK:
+    act: 2
+    title: "Back to 1.74"
+    summary: "The bank comes out. Bitsy: 'Fine. It was a good idea, though.'"
+    sets: [CORRECTED]
+    next: A2-GLOVES
+
+  A2-STRIP-BEEP:
+    act: 2
+    title: "Lighter"
+    summary: "Beeper and warmer out: 1.79 kg. Under, barely."
+    clears: [WARM]
+    sets: [NOBEEP]
+    next: A2-GLOVES
+
+  A2-STRIP-CAM:
+    act: 2
+    title: "No Pictures"
+    summary: "Camera out: 1.66 kg. Bitsy is quiet for a while."
+    sets: [NOCAM]
+    next: A2-GLOVES
+
+  A2-GLOVES:
+    act: 2
+    title: "Bare Hands"
+    steam: S
+    note: "Latex and skin oil"
+    summary: >-
+      The balloon comes out of its bag. The nitrile gloves are in the van,
+      at the far end of the lot.
+    choices:
+      - text: "Go get the gloves."
+        to: A2-GLOVED
+      - text: "Handle it by the edges, bare-handed, very carefully."
+        to: A2-BAREHAND
+
+  A2-GLOVED:
+    act: 2
+    title: "Blue Gloves"
+    summary: "Ten minutes there and back. Everyone gloves up."
+    cost: {launch: 1}
+    next: A2-FILL
+
+  A2-BAREHAND:
+    act: 2
+    title: "Carefully"
+    summary: "Carefully. Fingerprints on latex, too faint to see."
+    sets: [EARLYBURST]
+    next: A2-FILL
+
+  A2-FILL:
+    act: 2
+    title: "Free Lift"
+    steam: S
+    note: "Lift, weight and Newton's second law"
+    summary: >-
+      Mr. Torres opens the tank. Bitsy's sheet says to fill until the
+      balloon lifts the payload's weight plus 1.2 kg. There's a fill weight
+      for exactly that.
+    choices:
+      - text: "Hang the fill weight on the neck and fill until it just floats."
+        to: A2-FILL-RIGHT
+      - text: "Eyeball it. Mr. Torres has filled plenty of balloons."
+        to: A2-FILL-LOW
+      - text: "Listen to Bitsy: 'Bigger balloon, higher flight.' Keep going past the mark."
+        to: A2-FILL-HIGH
+
+  A2-FILL-RIGHT:
+    act: 2
+    title: "Just Floats"
+    summary: "The weight lifts off the tarp and hangs. Valve closed."
+    next: A2-CHUTE
+
+  A2-FILL-LOW:
+    act: 2
+    title: "Looks About Right"
+    summary: "It's big, it's round, it's pulling. Looks about right."
+    sets: [FLOATER]
+    next: A2-CHUTE
+
+  A2-FILL-HIGH:
+    act: 2
+    title: "More Is More"
+    summary: "It's enormous. It wants to leave right now."
+    sets: [EARLYBURST]
+    next: A2-CHUTE
+
+  A2-CHUTE:
+    act: 2
+    title: "The Parachute"
+    steam: E
+    note: "Drag"
+    summary: >-
+      The parachute sits in the line between balloon and payload. Bitsy
+      has folded it into a neat sleeve so it won't flap during launch.
+    choices:
+      - text: "Shake it out and tie it in open."
+        to: A2-CHUTE-OPEN
+      - text: "Leave it in Bitsy's sleeve. It'll pop out when Skylark falls."
+        to: A2-CHUTE-FOLDED
+
+  A2-CHUTE-OPEN:
+    act: 2
+    title: "Open"
+    summary: "It flaps a little. That's fine."
+    next: A2-GONOGO
+
+  A2-CHUTE-FOLDED:
+    act: 2
+    title: "Tidy"
+    summary: "Tidy. It looks very professional."
+    sets: [TANGLE]
+    next: A2-GONOGO
+
+  A2-GONOGO:
+    act: 2
+    title: "Go / No-Go"
+    steam: T
+    note: "Ground checks"
+    summary: >-
+      Skylark is powered and tied on. Ms. Chen texts: 'What have you
+      confirmed from a distance?'
+    choices:
+      - text: "Walk it 100 m away and wait for a GPS lock and a radio packet before you let go."
+        to: A2-CHECK
+      - text: "Let it go. It'll lock on in the air."
+        to: A2-GATE
+
+  A2-CHECK:
+    act: 2
+    title: "One Hundred Meters"
+    summary: "Spark carries Skylark across the field. Bitsy watches the laptop."
+    cost: {launch: 1}
+    route:
+      - if: [WEAKANT]
+        to: A2-CHECK-ANT
+      - to: A2-GATE
+
+  A2-CHECK-ANT:
+    act: 2
+    title: "Packets Dropping"
+    summary: >-
+      At 100 m, half the packets are missing. The coiled antenna. Spark
+      cuts it to 8.2 cm and runs it straight. Every packet arrives.
+    clears: [WEAKANT]
+    sets: [CORRECTED]
+    next: A2-GATE
+
+  A2-GATE:
+    act: 2
+    title: "Wind Check"
+    summary: "Mr. Torres watches the fairground flag. Count your crossed-out Launch boxes."
+    route:
+      - if: ["launch>=6"]
+        to: E-GROUNDED
+      - if: ["launch>=4"]
+        to: A2-GUSTY
+      - to: A2-RELEASE
+
+  A2-GUSTY:
+    act: 2
+    title: "Gusts"
+    steam: E
+    summary: >-
+      The wind's picking up. The balloon leans hard and Skylark swings on
+      its line. Mr. Torres: 'Now or never.'
+    choices:
+      - text: "Walk the payload downwind and let go once the balloon is straight above you."
+        to: A2-RELEASE
+      - text: "Let go of everything at once."
+        to: A2-SNAG
+
+  A2-SNAG:
+    act: 2
+    title: "Thump"
+    summary: >-
+      The balloon lunges sideways and Skylark bounces once off the grass
+      before it climbs. The camera lens is cracked.
+    sets: [NOCAM]
+    next: A2-RELEASE
+
+  A2-RELEASE:
+    act: 2
+    title: "Liftoff"
+    summary: "Skylark climbs, gets small, gets smaller. Everyone runs to the van."
+    next: A3-OPEN
+
+  # ════════════════════════════════════════════════════════════════════
+  # ACT 3 — THE FLIGHT  (the chase van, launch → landing)
+  # The DAYLIGHT clock starts. Seeds from Acts 1–2 start coming due.
+  # ════════════════════════════════════════════════════════════════════
+
+  A3-OPEN:
+    act: 3
+    title: "Five Meters per Second"
+    summary: >-
+      Packets every 10 seconds on Bitsy's laptop. Mr. Torres driving,
+      D.U.D.E.A.D. riding shotgun with the map. How the Daylight clock works.
+    next: A3-ROUTE
+
+  A3-ROUTE:
+    act: 3
+    title: "Stay or Go"
+    summary: >-
+      Bitsy wants to watch the first half hour of data from here, where
+      reception is perfect. Mr. Torres has the engine running.
+    choices:
+      - text: "Stay at the fairgrounds and watch the first 30 minutes."
+        to: A3-STAY
+      - text: "Start driving toward the predicted landing now."
+        to: A3-DRIVE
+
+  A3-STAY:
+    act: 3
+    title: "Perfect Reception"
+    summary: "Beautiful data. The van finally rolls at 10:05."
+    cost: {daylight: 1}
+    next: A3-GAS
+
+  A3-DRIVE:
+    act: 3
+    title: "Rolling"
+    summary: "On the highway, packets still coming. Skylark's ahead of you and climbing."
+    next: A3-GAS
+
+  A3-GAS:
+    act: 3
+    title: "A Quarter Tank"
+    steam: M
+    summary: >-
+      Mr. Torres taps the gauge: a quarter tank, about 120 km. The landing
+      is 90 km out, then you have to drive home.
+    choices:
+      - text: "Fill up now at the station by the on-ramp."
+        to: A3-GAS-NOW
+      - text: "Later. There'll be a station out there."
+        to: A3-GAS-LATER
+
+  A3-GAS-NOW:
+    act: 3
+    title: "Pump Four"
+    summary: "The line is long. Skylark gets farther ahead."
+    cost: {daylight: 1}
+    next: A3-CLIMB
+
+  A3-GAS-LATER:
+    act: 3
+    title: "Later"
+    summary: "The van keeps rolling."
+    sets: [LOWGAS]
+    next: A3-CLIMB
+
+  A3-CLIMB:
+    act: 3
+    title: "Minus Forty"
+    summary: "8 km and -40 °C outside the box. Everything's nominal. Then 12 km."
+    route:
+      - if: [GPSCAP]
+        to: A3-GPSDROP
+      - to: A3-TEMP
+
+  A3-GPSDROP:
+    act: 3
+    title: "Frozen Dot"
+    steam: T
+    summary: >-
+      At 12.0 km the dot on the map stops moving, but packets keep
+      arriving. The GPS fields all read the same thing. Bitsy: 'Is it my
+      code?' Spark: 'Is it the antenna?'
+    choices:
+      - text: "Keep driving to the prediction. If it's the altitude limit, it'll come back on the way down."
+        to: A3-TEMP
+      - text: "Turn back toward the last position it reported."
+        to: A3-GPS-TURN
+      - text: "Send the reboot command to Skylark."
+        to: A3-REBOOT
+
+  A3-GPS-TURN:
+    act: 3
+    title: "U-Turn"
+    summary: "Twenty minutes back the way you came, toward a balloon that left long ago."
+    cost: {daylight: 2}
+    next: A3-TEMP
+
+  A3-TEMP:
+    act: 3
+    title: "Warmer?"
+    steam: S
+    note: "The stratosphere"
+    summary: >-
+      Outside temperature: -56 °C at 13 km... then -50... then -45 at 20 km.
+      It's getting warmer as it goes up. Bitsy: 'The sensor's broken. Reboot
+      it.' D.U.D.E.A.D.: 'Kid. Look at the altitude column.'
+    sets: [SAWTEMP]
+    choices:
+      - text: "Look up the layers of the atmosphere before you touch anything."
+        to: A3-STRATO
+      - text: "Send the reboot command."
+        to: A3-REBOOT
+
+  A3-REBOOT:
+    act: 3
+    title: "Rebooting at Minus Fifty"
+    summary: "Bitsy sends the command. The packets stop. Everyone counts."
+    route:
+      - if: [COLDCELLS]
+        to: A3-REBOOT-DEAD
+      - to: A3-REBOOT-OK
+
+  A3-REBOOT-OK:
+    act: 3
+    title: "Ninety Seconds"
+    summary: >-
+      Packets resume after 90 seconds. Nothing has changed: same dot, same
+      temperatures. You lost 90 seconds of data.
+    route:
+      - if: ["!SAWTEMP"]
+        to: A3-TEMP
+      - to: A3-STRATO
+
+  A3-REBOOT-DEAD:
+    act: 3
+    title: "Inrush"
+    summary: >-
+      A booting Arduino draws a surge of current. Frozen alkalines can't
+      supply it. Skylark tries to start, sags, tries again. Then nothing.
+    sets: [DEAD]
+    next: A3-SILENT
+
+  A3-STRATO:
+    act: 3
+    title: "Upside-Down Sky"
+    summary: >-
+      Above about 12 km, ozone soaks up sunlight and heats the air. The
+      sensor is fine. The sky is just upside down up there.
+    next: A3-COLDCHECK
+
+  A3-COLDCHECK:
+    act: 3
+    title: "Battery Voltage"
+    summary: "Check the Mission Log for the batteries and anything keeping them warm."
+    route:
+      - if: [COLDCELLS, "!WARM", "!BLACKBOX"]
+        to: A3-BATTDIE
+      - to: A3-PACKETS
+
+  A3-BATTDIE:
+    act: 3
+    title: "4.6... 4.3... 4.1..."
+    summary: >-
+      The battery voltage in each packet drops. Alkalines, no warmer, a
+      box that reflects the sun. At 21 km the packets stop.
+    sets: [DEAD]
+    next: A3-SILENT
+
+  A3-SILENT:
+    act: 3
+    title: "Silence"
+    summary: >-
+      Ten minutes, nothing. Twenty. Bitsy keeps refreshing. D.U.D.E.A.D.,
+      quietly: 'It's not coming back on its own, kid.'
+    choices:
+      - text: "Drive to the predicted landing and search until dark."
+        to: A4-DARKSEARCH
+      - text: "Go home, post Skylark's photo online, and hope someone finds it."
+        to: A4-GOHOME
+
+  A3-PACKETS:
+    act: 3
+    title: "240 Kilometers"
+    steam: T
+    note: "Checksums"
+    summary: >-
+      One packet puts Skylark 240 km away; the next is back where it was.
+      Bitsy's display shows every packet, even ones that fail the checksum.
+      Spark: 'Newest point wins. Go where it says.'
+    choices:
+      - text: "Ignore packets that fail the checksum or jump impossibly far."
+        to: A3-FILTER
+      - text: "Follow the newest point. It's the latest data."
+        to: A3-JUMP
+
+  A3-FILTER:
+    act: 3
+    title: "Clean Data"
+    summary: "Bitsy adds a filter in four minutes. The track is smooth again."
+    next: A3-BURST
+
+  A3-JUMP:
+    act: 3
+    title: "The Wrong Way"
+    summary: "Twenty-five minutes south before the next good packet puts you right."
+    cost: {daylight: 2}
+    next: A3-BURST
+
+  A3-BURST:
+    act: 3
+    title: "Twenty-Four Kilometers"
+    summary: "24 km and climbing slower. Any minute now. Check the Mission Log for the fill and the sensors."
+    route:
+      - if: [FLOATER]
+        to: A3-FLOAT
+      - if: [SEALED, GPSCAP]
+        to: A3-BLIND
+      - if: [SEALED]
+        to: A3-TWOALT
+      - to: A3-FALLING
+
+  A3-FLOAT:
+    act: 3
+    title: "Twenty-Four Kilometers, and Holding"
+    summary: >-
+      Skylark stops climbing at 24 km and doesn't come down. Too little
+      helium: it can't climb high enough to burst. It's a floater, riding
+      the jet stream east at 90 km/h.
+    choices:
+      - text: "Chase it east as far as Mr. Torres will drive."
+        to: A3-FLOAT-CHASE
+      - text: "Let it go and turn around."
+        to: E-FLOATER
+
+  A3-FLOAT-CHASE:
+    act: 3
+    title: "The State Line"
+    summary: "Two hours east. The packets get fainter. Mr. Torres pulls over."
+    cost: {daylight: 4}
+    next: E-FLOATER
+
+  A3-BLIND:
+    act: 3
+    title: "Two Broken Altimeters"
+    summary: >-
+      Above 12 km the GPS is dark, and the bagged pressure sensor has
+      been reading nonsense all along. Nobody can tell when it bursts.
+    cost: {daylight: 1}
+    sets: [BIGSEARCH]
+    next: A3-FALLING
+
+  A3-TWOALT:
+    act: 3
+    title: "Which One Is Lying?"
+    steam: S
+    summary: >-
+      GPS says 29 km and falling fast. Pressure altitude says 11 km and
+      barely moving. The bag held some of the ground's air in.
+    choices:
+      - text: "Trust the GPS. The pressure sensor is still in Spark's bag."
+        to: A3-FALLING
+      - text: "Trust the pressure sensor. The GPS has been glitchy all day."
+        to: A3-WRONGALT
+
+  A3-WRONGALT:
+    act: 3
+    title: "No Hurry"
+    summary: "You drive like there's an hour left. There are eleven minutes."
+    cost: {daylight: 2}
+    sets: [BIGSEARCH]
+    next: A3-FALLING
+
+  A3-FALLING:
+    act: 3
+    title: "Burst"
+    summary: >-
+      The altitude starts dropping. Burst. (EARLYBURST: it happened at 21 km,
+      not 31.) Skylark is coming down.
+    route:
+      - if: [TANGLE]
+        to: A3-TANGLED
+      - to: A3-HILL
+
+  A3-TANGLED:
+    act: 3
+    title: "Twenty Meters per Second"
+    summary: >-
+      It's falling too fast. The sleeve never let the chute open. The last
+      packet comes from 300 m, then nothing. It hit hard.
+    sets: [HARDLAND, NOCAM, NOBEEP, POWERCUT, BIGSEARCH]
+    next: A4-ARRIVE
+
+  A3-HILL:
+    act: 3
+    title: "Line of Sight"
+    steam: T
+    note: "Radio line of sight"
+    summary: >-
+      3 km up, coming down at 6 m/s: about eight minutes. The van is in a
+      valley. Spark points at a farm road climbing the ridge: radio needs
+      line of sight.
+    choices:
+      - text: "Pull up the ridge road so you can hear it all the way down."
+        to: A3-HILLTOP
+      - text: "Keep driving to get closer."
+        to: A3-VALLEY
+
+  A3-HILLTOP:
+    act: 3
+    title: "The Ridge"
+    summary: "Engine off. Everyone stares at the laptop."
+    route:
+      - if: [WEAKANT]
+        to: A3-HILL-WEAK
+      - to: A3-HILL-GOOD
+
+  A3-HILL-GOOD:
+    act: 3
+    title: "120 Meters"
+    summary: "The last packet arrives from 120 m up. You know where it is within a football field."
+    next: A4-ARRIVE
+
+  A3-HILL-WEAK:
+    act: 3
+    title: "900 Meters"
+    summary: "Even from the ridge, the last packet comes from 900 m up. The coiled antenna."
+    sets: [BIGSEARCH]
+    next: A4-ARRIVE
+
+  A3-VALLEY:
+    act: 3
+    title: "Behind the Hill"
+    summary: "The ridge is between you and Skylark. The last packet is from 1.5 km up."
+    sets: [BIGSEARCH]
+    next: A4-ARRIVE
+
+  # ════════════════════════════════════════════════════════════════════
+  # ACT 4 — THE SEARCH  (landing → sunset)
+  # ════════════════════════════════════════════════════════════════════
+
+  A4-ARRIVE:
+    act: 4
+    title: "The Landing Zone"
+    summary: "The van turns onto the county road nearest the last packet. Check the Mission Log and Daylight clock."
+    route:
+      - if: [OLDPREDICT, "!REROUTED"]
+        to: A4-WRONGSIDE
+      - if: [LOWGAS, "!GASSED"]
+        to: A4-GASDETOUR
+      - if: [LAKERISK]
+        to: A4-SPLASH
+      - if: ["daylight>=8"]
+        to: A4-DARK
+      - if: [WOODS]
+        to: A4-TREE
+      - to: A4-FENCE
+
+  A4-WRONGSIDE:
+    act: 4
+    title: "Friday's Map"
+    summary: >-
+      You've been driving toward Friday's prediction. Skylark came down 15 km
+      east of it. Back across the county.
+    cost: {daylight: 2}
+    sets: [REROUTED]
+    next: A4-ARRIVE
+
+  A4-GASDETOUR:
+    act: 4
+    title: "Empty"
+    summary: >-
+      The gauge is on E. The only station is 25 km off your route. Mr.
+      Torres doesn't say anything. He doesn't have to.
+    cost: {daylight: 2}
+    sets: [GASSED]
+    next: A4-ARRIVE
+
+  A4-SPLASH:
+    act: 4
+    title: "Clearwater Reservoir"
+    summary: >-
+      The last packets come from the middle of the reservoir. Through
+      binoculars there's a small box floating 40 m out.
+    choices:
+      - text: "Wade out and grab it. It's only 40 meters."
+        to: A4-SPLASH-NO
+      - text: "Call the park office number on the gate sign."
+        to: A4-SPLASH-RANGER
+
+  A4-SPLASH-NO:
+    act: 4
+    title: "Absolutely Not"
+    summary: >-
+      Mr. Torres has a hand on your shoulder before your shoe is wet.
+      October water, a soft bottom, nobody knows how deep. 'We call.'
+    next: A4-SPLASH-RANGER
+
+  A4-SPLASH-RANGER:
+    act: 4
+    title: "Tomorrow Morning"
+    summary: >-
+      The ranger can take a boat out tomorrow. The box drifts overnight
+      with water getting in. Sunday at 9 she hands it over, dripping.
+    route:
+      - if: [NOFLUSH]
+        to: E-SOGGY-BLANK
+      - to: E-SOGGY
+
+  A4-TREE:
+    act: 4
+    title: "Twelve Meters Up"
+    steam: S
+    note: "Levers and pulleys"
+    summary: >-
+      Skylark hangs from a pine at the forest edge, twelve meters up, chute
+      wrapped on a branch. Mr. Torres: 'Nobody climbs. Ideas?'
+    choices:
+      - text: "Throw a fishing weight on a line over the branch and pull it down."
+        to: A4-TREE-LINE
+      - text: "Knock at the house across the road and ask if they have a pole saw."
+        to: A4-TREE-POLE
+      - text: "Wait for the wind to bring it down."
+        to: A4-TREE-WAIT
+
+  A4-TREE-LINE:
+    act: 4
+    title: "Thirty Throws"
+    summary: "It takes thirty throws. On the thirty-first the line goes over the branch."
+    cost: {daylight: 2}
+    route:
+      - if: ["daylight>=8"]
+        to: E-TREE
+      - to: A4-RECOVER
+
+  A4-TREE-POLE:
+    act: 4
+    title: "The Neighbor"
+    summary: >-
+      Mr. Okafor has a pole saw and very strong opinions about balloons.
+      Twenty minutes later Skylark is on the ground.
+    cost: {daylight: 1}
+    route:
+      - if: ["daylight>=8"]
+        to: E-TREE
+      - to: A4-RECOVER
+
+  A4-TREE-WAIT:
+    act: 4
+    title: "Waiting for Wind"
+    summary: "Two hours. The chute flutters. The box doesn't move."
+    cost: {daylight: 4}
+    route:
+      - if: ["daylight>=8"]
+        to: E-TREE
+      - to: A4-TREE
+
+  A4-FENCE:
+    act: 4
+    title: "No Trespassing"
+    summary: >-
+      The signal points into a harvested cornfield behind a farmhouse, past
+      a wire fence with a NO TRESPASSING sign. Mr. Torres is on the phone
+      with Ms. Chen back at the van.
+    choices:
+      - text: "Knock on the farmhouse door and explain."
+        to: A4-KNOCK
+      - text: "Hop the fence with Spark. You'll be in and out in five minutes."
+        to: A4-HOPPED
+
+  A4-HOPPED:
+    act: 4
+    title: "The Screen Door"
+    summary: >-
+      You're halfway across the stubble when the screen door bangs. Mrs.
+      Lindqvist is not happy. Mr. Torres apologizes for a long time. She
+      says come back tomorrow, with permission, and leave now.
+    next: E-COWS
+
+  A4-KNOCK:
+    act: 4
+    title: "Mrs. Lindqvist"
+    summary: >-
+      She listens to the whole explanation, then gets her truck keys. 'My
+      grandson would love this. Get in the back.'
+    next: A4-FIND
+
+  A4-FIND:
+    act: 4
+    title: "The Last Packet"
+    summary: "Check the Mission Log for where the last packet came from."
+    route:
+      - if: [BLACKBOX, "!SQUINT"]
+        to: A4-SQUINT
+      - if: [HARDLAND]
+        to: A4-SILENTGRID
+      - if: [BIGSEARCH]
+        to: A4-WIDE
+      - to: A4-NEAR
+
+  A4-SQUINT:
+    act: 4
+    title: "Black on Brown"
+    steam: A
+    summary: >-
+      Plowed dirt is dark brown, and in the late-afternoon shade it's
+      nearly black. So is a galaxy-black box. Everyone squints. Safety
+      orange would be shouting from 200 m away.
+    cost: {daylight: 1}
+    sets: [SQUINT]
+    next: A4-FIND
+
+  A4-WIDE:
+    act: 4
+    title: "Two Square Kilometers"
+    steam: M
+    note: "Triangulation"
+    summary: >-
+      The last packet was high, so Skylark could be anywhere in about 2 km².
+      Spark has built an antenna out of a tape measure that only hears in
+      one direction.
+    choices:
+      - text: "Take bearings from three spots and draw them on the map. Search where the lines cross."
+        to: A4-TRI
+      - text: "Walk toward wherever the signal sounds strongest."
+        to: A4-WANDER
+
+  A4-TRI:
+    act: 4
+    title: "Three Lines"
+    summary: "Three pencil lines on the map make a little triangle. Skylark is inside it."
+    cost: {daylight: 1}
+    next: A4-NEAR
+
+  A4-WANDER:
+    act: 4
+    title: "Stronger... Weaker... Stronger"
+    summary: "You zigzag across three fields following the signal."
+    cost: {daylight: 3}
+    next: A4-NEAR
+
+  A4-NEAR:
+    act: 4
+    title: "Everywhere at Once"
+    steam: T
+    note: "Receiver overload"
+    summary: >-
+      Within 200 m, the receiver reads full strength in every direction.
+      Spark spins in a circle. It's loud everywhere.
+    choices:
+      - text: "Hold the antenna behind your body to block the signal, and turn until it's quietest."
+        to: A4-CLOSE
+      - text: "Keep sweeping. It'll sort itself out."
+        to: A4-CIRCLES
+
+  A4-CIRCLES:
+    act: 4
+    title: "Circles"
+    summary: "It doesn't sort itself out."
+    cost: {daylight: 2}
+    next: A4-CLOSE
+
+  A4-CLOSE:
+    act: 4
+    title: "Listen"
+    summary: "Everyone stops walking and holds their breath. Check the Mission Log for the beeper and the Daylight clock."
+    route:
+      - if: ["daylight>=8"]
+        to: A4-DARK
+      - if: [NOBEEP]
+        to: A4-SILENTGRID
+      - if: [BEEPPRES, SEALED]
+        to: A4-SILENTGRID
+      - to: A4-BEEP
+
+  A4-BEEP:
+    act: 4
+    title: "Beep"
+    summary: >-
+      Faint, high, somewhere in the stubble: beep... beep... D.U.D.E.A.D.'s
+      microphones pick it up before anyone else does.
+    choices:
+      - text: "Let D.U.D.E.A.D. walk the rows and follow the beep."
+        to: A4-DUDE
+      - text: "Spread out in a line and walk the rows."
+        to: A4-LINE
+
+  A4-DUDE:
+    act: 4
+    title: "Over Here, Kid"
+    summary: "D.U.D.E.A.D. stops dead in row 31. 'Here. You're welcome.'"
+    next: A4-RECOVER
+
+  A4-LINE:
+    act: 4
+    title: "Row by Row"
+    summary: "Forty minutes of walking. Bitsy finds it with her foot."
+    cost: {daylight: 1}
+    next: A4-RECOVER
+
+  A4-SILENTGRID:
+    act: 4
+    title: "No Beep"
+    summary: >-
+      No beep. The page says why for whichever box you ticked: the beeper
+      was removed, the landing knocked it out, or it was waiting on a
+      bagged pressure sensor that never read 'below 2 km.'
+    choices:
+      - text: "Grid search: mark rows with flagging tape and walk them in order."
+        to: A4-GRID
+      - text: "Split up and cover as much ground as you can."
+        to: A4-RANDOM
+
+  A4-GRID:
+    act: 4
+    title: "Flagging Tape"
+    summary: "Slow and boring and it works. Row 47."
+    cost: {daylight: 3}
+    route:
+      - if: ["daylight>=8"]
+        to: A4-DARK
+      - to: A4-RECOVER
+
+  A4-RANDOM:
+    act: 4
+    title: "Everywhere and Nowhere"
+    summary: "You each cover the same rows twice and miss others entirely."
+    cost: {daylight: 4}
+    route:
+      - if: ["daylight>=8"]
+        to: A4-DARK
+      - to: A4-RECOVER
+
+  A4-RECOVER:
+    act: 4
+    title: "There It Is"
+    summary: "Orange foam in the dirt (or galaxy black, much harder to spot). Everyone runs."
+    route:
+      - if: [HARDLAND]
+        to: A4-WRECK
+      - to: A4-SHUTOFF
+
+  A4-WRECK:
+    act: 4
+    title: "Dented"
+    summary: >-
+      Skylark is half-buried and cracked open. The chute is still in
+      Bitsy's sleeve. The battery clip popped loose on impact: no LED, no
+      beeper, no END. Whatever's on the cards is what's on the cards.
+    next: A4-CARDS
+
+  A4-SHUTOFF:
+    act: 4
+    title: "Still Blinking"
+    steam: T
+    note: "Safe shutdown"
+    summary: >-
+      Skylark is in the dirt, scuffed, and still blinking. Spark reaches
+      for the battery clip: 'Save the battery.'
+    choices:
+      - text: "Pull the battery so it stops wasting power."
+        to: A4-YANK
+      - text: "Have Bitsy send END from the laptop, wait for the LED, then switch it off."
+        to: A4-SHUTDOWN
+
+  A4-YANK:
+    act: 4
+    title: "Click"
+    summary: "The battery comes out. The LED goes dark."
+    sets: [POWERCUT]
+    next: A4-CARDS
+
+  A4-SHUTDOWN:
+    act: 4
+    title: "END"
+    summary: "END. The LED blinks twice: file closed. Then the switch."
+    next: A4-CARDS
+
+  A4-CARDS:
+    act: 4
+    title: "Two SD Cards"
+    summary: >-
+      Saturday night, back at the maker space. Two SD cards in Bitsy's laptop.
+      Check the Mission Log.
+    route:
+      - if: [NOFLUSH, POWERCUT, NOCAM]
+        to: E-EMPTY
+      - if: [NOFLUSH, POWERCUT]
+        to: E-NODATA
+      - if: [NOCAM]
+        to: E-NOPICS
+      - if: [CAMFULL]
+        to: E-HALFWAY
+      - if: [EARLYBURST]
+        to: E-LOWBURST
+      - if: [CORRECTED]
+        to: E-CURVE-CAUGHT
+      - to: E-CURVE
+
+  A4-DARK:
+    act: 4
+    title: "Sunset"
+    summary: >-
+      5:45. The field goes gray, then dark. Mr. Torres: 'That's it. We
+      come back if there's something to come back for.'
+    route:
+      - if: [LABEL]
+        to: E-RETURN
+      - to: E-LOST
+
+  A4-DARKSEARCH:
+    act: 4
+    title: "Searching Blind"
+    summary: >-
+      No signal, only a prediction. You walk fields until the sun goes
+      down. You find a fertilizer bag, a deflated birthday balloon and a
+      boot.
+    next: A4-DARK
+
+  A4-GOHOME:
+    act: 4
+    title: "The Post"
+    summary: >-
+      Bitsy posts the launch photo to three local groups with Ms. Chen's
+      number. Then you wait.
+    route:
+      - if: [LABEL]
+        to: E-RETURN
+      - to: E-LOST
+
+  # ════════════════════════════════════════════════════════════════════
+  # ENDINGS
+  # Each one names the outcome and the choices that caused it. Nobody is
+  # ever hurt, but nothing is fine 'because reasons' either.
+  # ════════════════════════════════════════════════════════════════════
+
+  E-CURVE:
+    act: 0
+    title: "The Curve of the Earth"
+    ending: {tier: best, title: "The Curve of the Earth"}
+    summary: >-
+      Every reading from launch to landing, and photo 1,412: a black sky
+      over a thin blue line with the Earth curving away beneath it. Clean
+      flight, clean recovery.
+
+  E-CURVE-CAUGHT:
+    act: 0
+    title: "The Curve of the Earth (Caught in Time)"
+    ending: {tier: best, title: "Caught in Time"}
+    summary: >-
+      The same photo, the same data, plus a list of the problems you found
+      before they could find you. Names exactly which test caught which one.
+
+  E-LOWBURST:
+    act: 0
+    title: "Twenty Kilometers Short"
+    ending: {tier: good, title: "Twenty Kilometers Short"}
+    summary: >-
+      Full data and photos, but the balloon burst at 21 km (bare hands or
+      overfilling), so the sky never turns black. Beautiful pictures, close
+      to space.
+
+  E-HALFWAY:
+    act: 0
+    title: "Halfway to Space"
+    ending: {tier: partial, title: "Halfway to Space"}
+    summary: >-
+      Perfect data. The video runs 61 minutes and stops at 18 km, with the
+      sky turning dark blue. The card filled up, just like the whiteboard
+      math said it would.
+
+  E-NOPICS:
+    act: 0
+    title: "Data, No Pictures"
+    ending: {tier: partial, title: "Data, No Pictures"}
+    summary: >-
+      Every reading is there; the camera isn't (removed for weight, cracked
+      at launch, or smashed on landing). A great graph, and nothing to hang
+      in the hallway.
+
+  E-NODATA:
+    act: 0
+    title: "Pictures, No Data"
+    ending: {tier: partial, title: "Pictures, No Data"}
+    summary: >-
+      1,800 gorgeous photos. The flight log is zero bytes: the file was
+      never closed before the power went. You can't say how high you went.
+
+  E-EMPTY:
+    act: 0
+    title: "An Empty Box"
+    ending: {tier: bad, title: "An Empty Box"}
+    summary: >-
+      You found it, you brought it home, and there's nothing on either
+      card. A scuffed foam box and a story nobody can check.
+
+  E-SOGGY:
+    act: 0
+    title: "Waterlogged"
+    ending: {tier: partial, title: "Waterlogged"}
+    summary: >-
+      The electronics are ruined. That's $140 of parts. The SD cards
+      survive the water, so the data and photos come back. It landed in
+      the half of the ellipse you bet against.
+
+  E-SOGGY-BLANK:
+    act: 0
+    title: "Waterlogged and Wiped"
+    ending: {tier: bad, title: "Waterlogged and Wiped"}
+    summary: >-
+      The water shorted the battery before any END could arrive. The photo
+      card survives; the log never got saved. Ruined parts and half a story.
+
+  E-TREE:
+    act: 0
+    title: "Hanging in There"
+    ending: {tier: bad, title: "Hanging in There"}
+    summary: >-
+      Sunset with Skylark still in the pine. The neighbor promises to call
+      if it ever comes down. In March, it does, after five months in the
+      rain.
+
+  E-COWS:
+    act: 0
+    title: "The Cows Got There First"
+    ending: {tier: bad, title: "The Cows Got There First"}
+    summary: >-
+      You come back Sunday with permission. Mrs. Lindqvist moved her cattle
+      into that field overnight. Skylark has been stepped on, chewed, and
+      licked. The cards are in pieces.
+
+  E-FLOATER:
+    act: 0
+    title: "The One That Got Away"
+    ending: {tier: bad, title: "The One That Got Away"}
+    summary: >-
+      Underfilled, it floated instead of bursting. The last packet came from
+      the next state at 24 km. It might cross the ocean. Nobody will ever
+      know.
+
+  E-RETURN:
+    act: 0
+    title: "Return to Sender"
+    ending: {tier: bad, title: "Return to Sender"}
+    summary: >-
+      Lost, until three weeks later a farmer calls the number on the label.
+      Dead batteries, frost-cracked foam, and the data stops where the
+      signal did. You owe him a pizza.
+
+  E-LOST:
+    act: 0
+    title: "Lost Signal"
+    ending: {tier: bad, title: "Lost Signal"}
+    summary: >-
+      Skylark is out there somewhere. Nobody knows whose it is or who to
+      call. Names each choice that made it unfindable, and what you'd do on
+      Skylark II.
+
+  E-GROUNDED:
+    act: 0
+    title: "Grounded"
+    ending: {tier: bad, title: "Grounded"}
+    summary: >-
+      10:30. The gusts arrive right on schedule and Mr. Torres calls it. The
+      helium is already in the balloon, and you can't put it back. Skylark
+      never leaves the ground.
