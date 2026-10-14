@@ -812,7 +812,7 @@ def t_legal_matches_config():
 def t_legal_draft_banner():
     assert not appmod.cfg.LEGAL_REVIEWED, "fixture expects the default"
     html = client().get("/legal/terms").get_data(as_text=True)
-    assert "not yet reviewed by a lawyer" in html.lower(), "no draft banner"
+    assert "not yet had legal review" in html.lower(), "no draft banner"
 
     appmod.cfg.LEGAL_REVIEWED = True
     try:

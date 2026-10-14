@@ -484,7 +484,11 @@ def t_locked_reasons():
     c = client()
     login(c, "ben")
     body = c.get(f"/locked?lesson_id={later}&why=prerequisite").get_data(as_text=True)
-    assert "opens a bit later" in body, "prerequisite lock did not explain itself"
+    assert "unlocked yet" in body, "prerequisite lock did not explain itself"
+    # Both explanations — another track's work, or the lesson before in this
+    # one — say what the lesson "builds on". Without it the page says locked
+    # and stops, which is the thing this check exists to catch.
+    assert "builds on" in body, "prerequisite lock says it is locked but not why"
     assert "subscription" not in body.lower(), "a staged lesson mentioned paying"
 
     # A student typing why=prerequisite at an unstaged lesson gets the
@@ -505,7 +509,9 @@ def t_menu_renders():
     for track in appmod.load_tracks():
         assert track["title"] in body, f"track {track['title']!r} missing from the menu"
     assert "In order" in body, "staged tracks are not marked as such"
-    assert "Opens when you finish" in body, "no explanation on a staged lesson"
+    assert "Not unlocked yet" in body, "staged lesson is not marked as locked"
+    assert re.search(r"Not unlocked yet\.\s*Finish .+ first", body), \
+        "no explanation on a staged lesson: it says locked but not what opens it"
 
 
 @check("every classroom and track page renders")

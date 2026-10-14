@@ -321,7 +321,11 @@ def t_state_cascades():
     signup(client(), "student", username="doomed", email="d@h.test",
            join_code=WORLD["code"], name="Doomed")
     doomed = db.user_by_username("doomed")
-    save(signed_in("doomed"), {"secret": "notes"})
+    # OPEN_LESSON requires code-01-loops. build_world() finishes that for the
+    # students it makes; this one is made here, so it needs the same.
+    db.set_lesson_status(doomed["id"], "code-01-loops", "completed", None)
+    res = save(signed_in("doomed"), {"secret": "notes"})
+    assert res.status_code == 200, f"saving fixture state failed: {res.status_code}"
     with db.query() as cur:
         cur.execute("SELECT count(*) AS n FROM lesson_state WHERE student_id = %s",
                     (doomed["id"],))
